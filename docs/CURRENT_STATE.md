@@ -1,36 +1,39 @@
 # CURRENT_STATE — 当前状态（每次接手先读这个）
 
-- **当前版本**: baseline → v0.1.0（Agent Kernel）
-- **阶段**: 初始化完成，v0.1.0 实现中
+- **当前版本**: v0.1.0 已 tag → **v0.2.0（Windows Workspace / Process / Permission）进行中**
 - **最近更新**: 2026-09-19
 
-## 已完成
+## 已发布
 
-- [x] git init（main），.gitignore（.reference/.venv/密钥等）
-- [x] `.reference/MM-Final-Skill` @ 5f507e0b、`.reference/Mrite` @ 72f87c78（快照固定，见 docs/spec/SOURCE_SNAPSHOT.md；MM 仓库以 protectNTFS=false + sparse-checkout 绕过 6 个 NTFS 非法文件名）
-- [x] 规格精读：README/SKILL.md/流程与档位/铁律/角色与契约/提示词与回流/监督清单 + 调度器/回路/本地蜂巢/契约表/统稿守卫 全文 + 蜂群驾驶（结构+wave/红队复算/G2门/级联/S5审稿场）+ 门检判据清单 + 审计结构
-- [x] `00_MM_AGENT_MASTER_PLAN.md`（总方案入库副本）
-- [x] docs/spec/{SOURCE_SNAPSHOT, SOURCE_MAP, FIDELITY_MATRIX, KNOWN_DEVIATIONS}.md
-- [x] AGENTS.md、docs/{PROJECT_PLAN, ARCHITECTURE, CURRENT_STATE}.md、docs/runs/RUN_LOG.md
+### v0.1.0 — Specification + Agent Kernel（GO，外审 8 轮）
 
-## 进行中（v0.1.0）
+- 18 个内核模块：SQLite schema v1（19 表 + events append-only 触发器）、迁移器、
+  事件存储、仓储层（状态机 11 态 + 租约 CAS + 专用收口函数 + outbox 事件）、
+  typed errors、取消令牌、路径策略（词法 reparse + Win32 加固）、
+  角色权限（scopes + host_code 位）、工作区（中文目录 + 单运行锁）、
+  产物校验 + 内容寻址封存、归一化 Provider 接口 + Mock、
+  工具注册表（fs.read/write/list + python.run 受管解释器）、AgentLoop、
+  预算骨架、阈值常量、项目 API。
+- 测试 74 全过（unit / integration / adversarial+failure / tools），ruff 干净。
+- 外审：GPT-5.6 Sol High 8 轮（R1: 3P0/8P1/8P2 → R8: GO），全部 P0/P1 闭环，
+  原文见 docs/reviews/v0.1.0-external-review*.md（8 份）。
 
-- [ ] pyproject.toml + uv venv + 依赖安装
-- [ ] mmagent 包骨架（state/agent/providers/tools/workspace/runtime/orchestration/mm）
-- [ ] SQLite schema v1 + migrations + 状态枚举 + event store
-- [ ] normalized provider 接口 + mock provider
-- [ ] tool registry + fs/python tools + 权限检查点（v0.1 基础版：workspace 内路径校验）
-- [ ] agent loop + artifact 校验 + typed errors + cancellation token
-- [ ] workspace 创建 + Mock Agent 闭环验收（写py→跑→traceback→改→重跑→artifact PASS）
-- [ ] tests: unit + integration + failure injection
-- [ ] review packet → GPT-5.6 Sol High 外审 → 修 P0/P1 → tag v0.1.0
+## 进行中（v0.2.0）
 
-## 下一步
+计划要点（总方案 §29）：
 
-v0.1.0 收尾后自动进 v0.2.0（Windows Workspace/Process/Permission），按 PROJECT_PLAN 循环。
+- [ ] path_policy 强化：handle-based open（GetFinalPathNameByHandle）评估/落地
+- [ ] Windows Job Object 进程树管理（pywin32），替代 taskkill /T；orphan 检测
+- [ ] 角色权限系统完整化（role scope 全量测试矩阵）
+- [ ] Environment Manager：XeLaTeX 深搜发现、MATLAB 双布局发现、capability cache、体检 API
+- [ ] 受管 Python bootstrap（uv）
+- [ ] v0.1 遗留 P2 清理：docstring 同步（transition_task/mark_task_cancelled）、create_invocation 私有化评估
+- [ ] 外审循环后 tag v0.2.0
 
 ## 环境备忘
 
-- 外审：内置浏览器 ChatGPT（wghela Plus / GPT-5.6 Sol High），标签页已 handoff 保留。
-- 无真实 API key：一切 provider 相关先 mock/contract 级。
-- XeLaTeX：`D:\Apps\texlive\texlive\2026\bin\windows\xelatex.exe`；MATLAB：`D:\Apps\Matlab\bin\matlab.exe`。
+- 外审：内置浏览器 ChatGPT（wghela Plus / GPT-5.6 Sol High），标签页 handoff 保留，直接复用。
+- API key：无真实 key；provider 层 mock/contract 级验证，real-provider 标 unverified。
+- XeLaTeX：`D:/Apps/texlive/texlive/2026/bin/windows/xelatex.exe`（发现逻辑深搜）。
+- MATLAB：`D:/Apps/Matlab/bin/matlab.exe`（双布局兼容）。
+- 教训（round6 事故）：改源码禁止盲 str.replace——必须 Read 后 Edit，或 assert + getsource 验证。

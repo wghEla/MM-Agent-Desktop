@@ -56,7 +56,7 @@
 | C1–C17 | 17 个角色（读题官/答卷预测官/规划师/建模师/红队/解读师/绘图师/图评师/撰稿师/章评师/读者/统稿师/审稿员/硬伤猎手/评委模拟/美化师/复盘官），各有 role.yaml + clean-room prompt + read/write scopes + tools + reasoning 档 + schema + tests | NOT IMPLEMENTED | 每角色 contract test + role smoke |
 | C18 | 角色分档（算证裁 xhigh；写审 high；看图/读者/复盘 medium） | NOT IMPLEMENTED | config test（v0.4） |
 | C19 | 红队硬隔离（权限层拒绝读 求解/**、建模笔记、解读） | NOT IMPLEMENTED | permission test（v0.2/v0.5） |
-| C20 | 腿成功不由模型自宣告（产物存在+schema+verifier+事务） | v0.1.0 起框架 | kernel test |
+| C20 | 腿成功不由模型自宣告（产物存在+schema+verifier+事务） | MATCH (v0.1.0) | test_kernel_acceptance + test_model_cannot_declare_success_without_artifact |
 
 ## D. 档位与阈值（复现值）
 
@@ -78,16 +78,16 @@
 
 | # | 机制 | 状态 | 验证方式 |
 |---|---|---|---|
-| E1 | 单运行锁（一父目录一驱动） | NOT IMPLEMENTED（v0.2） | test |
-| E2 | 断点续跑（节点级 + S5 轮级；RUNNING 残留不得假定成功） | PARTIAL（v0.1.0 event store/transactions） | resume test |
-| E3 | 暂停/恢复/取消 + 进程树回收 | NOT IMPLEMENTED（v0.2） | failure injection |
-| E4 | 超时分级（腿上限 < 波次超时，防双写；重派前回收旧副本 R60） | NOT IMPLEMENTED（v0.2/v0.3） | failure injection |
-| E5 | 429 限流降并发（不是任务失败） | NOT IMPLEMENTED（v0.3） | provider mock test |
-| E6 | 预算护栏（MAX_LEGS/MAX_HOURS；S2 逐问检查；转应急出版） | NOT IMPLEMENTED（v0.5） | pipeline test |
-| E7 | JSON 修复回路（校验失败带反馈重写一次） | NOT IMPLEMENTED（v0.5） | mock test |
+| E1 | 单运行锁（一父目录一驱动） | MATCH (v0.1.0 基础版：run.lock + pid 存活检查；v0.2 强化) | test_run_lock_prevents_second_owner + test_stale_lock_allows_takeover |
+| E2 | 断点续跑（节点级 + S5 轮级；RUNNING 残留不得假定成功） | PARTIAL（v0.1.0：事件/事务/崩溃恢复 reset_interrupted_tasks；轮级断点 v0.7） | test_crash_recovery_marks_running_failed |
+| E3 | 暂停/恢复/取消 + 进程树回收 | PARTIAL（v0.1.0：CancellationToken + python.run 进程树终止；Job Object v0.2） | test_cancel_mid_run + test_tool_timeout_kills_process |
+| E4 | 超时分级（腿上限 < 波次超时，防双写；重派前回收旧副本 R60） | PARTIAL（工具级超时已实现；波次/重派语义属编排层 v0.5+） | test_tool_timeout_kills_process |
+| E5 | 429 限流降并发（不是任务失败） | PARTIAL（v0.1.0：RateLimitError → QUEUED 可重试语义；并发调节 v0.5） | test_rate_limit_is_retryable_not_failure |
+| E6 | 预算护栏（MAX_LEGS/MAX_HOURS；S2 逐问检查；转应急出版） | PARTIAL（v0.1.0：Budget 类骨架；编排层接入 v0.5） | budget unit（随 v0.5 补） |
+| E7 | JSON 修复回路（校验失败带反馈重写一次） | PARTIAL（工具参数 JSON 错误回填模型可自愈；产物级修复回路 v0.5） | test_bad_tool_args_json_does_not_crash |
 | E8 | 编译修复循环（E 不归零重试 ≤N；连续失败插手语义） | NOT IMPLEMENTED（v0.6） | pipeline test |
 | E9 | 回流账（跑后统计；预算对照） | NOT IMPLEMENTED（v0.8） | metrics test |
-| E10 | 契约核对（消费字段 ⊆ 生产声明） | v0.1.0 起框架 | contract test |
+| E10 | 契约核对（消费字段 ⊆ 生产声明） | MATCH (v0.1.0 框架：Pydantic 单一权威 + artifacts schema 校验；完整 contract tests 随角色落地) | test_kernel_acceptance（schema_id 校验） |
 
 ## F. 明确不复制（有意偏差，详见 KNOWN_DEVIATIONS）
 

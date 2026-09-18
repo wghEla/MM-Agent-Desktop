@@ -20,3 +20,11 @@
 - 01:05 spec 四件套 + AGENTS.md + PROJECT_PLAN + ARCHITECTURE + CURRENT_STATE 落盘。
   总方案副本入库为 00_MM_AGENT_MASTER_PLAN.md。
 - 01:10 下一步：uv 环境 → mmagent 骨架 → v0.1.0 kernel 实现 → 测试 → baseline + v0.1.0 循环。
+- 01:30 v0.1.0 kernel 实现完成（18 模块），40 测试全过。
+- 01:35 review packet 发 GPT-5.6 Sol High 外审。R1：3 P0/8 P1/8 P2。
+- 01:40-02:20 修复全部 P0/P1/P2（含：SUCCEEDED 强制路径、词法 reparse、host_code 位、
+  任务租约 CAS、严格入口、取消统一、事件同事务、artifact 封存、变量注入防护、
+  Run 迁移表、finish 幂等、increment 收紧），52→73 测试。
+- 02:25 R8 终审 GO。期间 R3-R7 各轮共追加 11 条 P1 全部闭环
+  （str.replace 静默未命中事故：改为 assert+getsource 验证）。
+- 02:30 tag v0.1.0。
