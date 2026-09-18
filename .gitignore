@@ -1,0 +1,42 @@
+# ===== MM-Agent Desktop =====
+
+# 只读参考仓库（业务规格来源，不提交）
+.reference/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Node / Tauri（v0.9+）
+node_modules/
+apps/desktop/dist/
+apps/desktop/src-tauri/target/
+
+# 运行期产物
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.log
+run.lock
+
+# IDE / OS
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
+
+# 本地敏感信息（任何 API key 严禁入库）
+.env
+.env.*
+*.local.toml
