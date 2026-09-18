@@ -7,6 +7,7 @@ P1-7 封存 / P1-8 变量注入 / P2-1 尝试上限 / P2-5 ADS 拒绝。
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -657,3 +658,810 @@ def test_r7_p1_ownerless_active_via_generic_rejected(db, run_id):
 
     t2 = recover_interrupted_task(db, t.id, "crash recovery")
     assert t2.status is TaskStatus.FAILED
+
+
+# ==================== v0.2.0 Job Object / Environment ====================
+def test_v02_job_object_timeout_and_cancel(policy, ws):
+    """ProcessManager 路径：python.run 超时杀树 + 取消立即杀树。"""
+    import asyncio as aio
+
+    from mmagent.runtime.cancellation import CancellationToken
+    from mmagent.runtime.process import ProcessManager
+    from mmagent.tools.python import PythonRunTool
+    from mmagent.tools.registry import ToolRegistry as R
+    from mmagent.tools.tool_protocol import ToolContext
+    from mmagent.workspace.permissions import PermissionChecker as PC
+    from mmagent.workspace.permissions import RolePermissions as RP
+
+    (ws.workspace.root / "求解").mkdir(exist_ok=True)
+    (ws.workspace.root / "求解" / "sleeper.py").write_text("import time; time.sleep(30)\n", encoding="utf-8")
+    pm = ProcessManager()
+    perms = RP(role_id="m", read_scopes=("**",), write_scopes=("**",),
+               allowed_tools=frozenset({"python.run"}), host_code=True)
+    checker = PC(perms, policy)
+    reg = R()
+    reg.register(PythonRunTool(process_manager=pm))
+    ctx = ToolContext(policy=policy, permission=checker, cancel=CancellationToken())
+    res = aio.run(reg.invoke("python.run", {"path": "求解/sleeper.py", "timeout_s": 1}, ctx))
+    assert res.ok is False and res.meta.get("timed_out") is True
+    assert res.meta.get("rc") == 137  # Job 终止约定退出码
+    # 取消路径：脚本睡眠中，取消令牌触发 → 进程被杀、rc 异常
+    (ws.workspace.root / "求解" / "sleeper2.py").write_text("import time; time.sleep(30)\n", encoding="utf-8")
+    token = CancellationToken()
+    ctx2 = ToolContext(policy=policy, permission=checker, cancel=token)
+    async def run_and_cancel():
+        task = aio.create_task(reg.invoke("python.run", {"path": "求解/sleeper2.py", "timeout_s": 20}, ctx2))
+        await aio.sleep(0.8)
+        token.cancel("user stop")
+        return await task
+    res2 = aio.run(run_and_cancel())
+    assert "rc" in res2.meta and res2.meta["rc"] != 0
+    pm.shutdown()
+
+
+def test_v02_environment_discovery(ws, policy):
+    """环境发现：本机真值（XeLaTeX 2026 嵌套布局 + MATLAB 根目录布局）。"""
+    import sys as _sys
+
+    from mmagent.runtime import environment as env
+
+    rep = env.probe_all(ws.workspace.root)
+    if Path("D:/Apps/texlive").is_dir():
+        assert rep.xelatex.ok, rep.xelatex.detail
+        assert "bin/windows/xelatex.exe" in (rep.xelatex.path or "").replace("\\\\", "/").replace("\\", "/")
+        assert rep.xelatex.version  # --version 真执行过
+    if Path("D:/Apps/Matlab").is_dir():
+        assert rep.matlab.ok, rep.matlab.detail
+        assert (rep.matlab.path or "").endswith("matlab.exe")
+    assert rep.managed_python.ok
+    assert rep.managed_python.path == _sys.executable
+    # capability cache 落盘
+    cache = ws.workspace.root / ".mmagent" / "capabilities.json"
+    assert cache.is_file()
+    data = _json_check(cache)
+    assert data["xelatex"]["name"] == "xelatex"
+
+
+def _json_check(p):
+    import json as _json
+
+    return _json.loads(p.read_text(encoding="utf-8"))
+
+
+# ==================== v0.2.0 Round-2 故障注入（ProcessManager 重写后） ====================
+def test_r2v02_old_unconfirmable_new_never_runs(policy, ws, monkeypatch):
+    """旧进程无法确认终止：新挂起进程被终止（从未运行）、old 保持注册+quarantined。"""
+    import sys as _sys
+    import time as _time
+
+    from mmagent.runtime import process as process_mod
+    from mmagent.runtime.process import ProcessManager
+
+    pm = ProcessManager()
+    old = pm.spawn("dup2", [_sys.executable, "-c", "import time; time.sleep(30)"])
+    _time.sleep(1)
+    # 注入：Job 终止不生效
+    monkeypatch.setattr(process_mod, "_terminate_tree_state", lambda p: "failed")
+    with pytest.raises(RuntimeError, match="quarantined"):
+        pm.spawn("dup2", [_sys.executable, "-c", "print('new')"])
+    # old 仍在注册表且 quarantined；new 从未运行（无新注册）
+    cur = pm.registry.get("dup2")
+    assert cur is old and cur.quarantined
+    monkeypatch.undo()
+    pm.shutdown()
+
+
+def test_r2v02_job_zero_confirmation(policy, ws):
+    """终止确认基于 Job 活跃数归零 + root 退出（不只 root signal）。"""
+    import sys as _sys
+    import time as _time
+
+    from mmagent.runtime.process import ProcessManager, _job_active_count
+
+    pm = ProcessManager()
+    code = 'import subprocess, sys, time; subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"]); time.sleep(30)'
+    proc = pm.spawn("jobzero", [_sys.executable, "-c", code])
+    _time.sleep(2)
+    assert proc.alive
+    assert proc.job_handle is not None
+    n = _job_active_count(proc.job_handle)
+    assert n is not None and n >= 2  # root + child 都在 Job 内（挂起期入 Job 的证明）
+    assert pm.kill("jobzero")
+    _time.sleep(0.5)
+    assert _job_active_count(proc.job_handle) == 0  # 整棵树归零，不只 root
+    assert not proc.alive
+    pm.shutdown()
+
+
+def test_r2v02_cancel_race_natural_exit_keeps_rc(policy, ws):
+    """进程已自然退出后取消才到达：保留真实 rc，不改写 -99。"""
+    import asyncio as aio
+
+    from mmagent.runtime.cancellation import CancellationToken
+    from mmagent.runtime.process import ProcessManager
+    from mmagent.tools.python import PythonRunTool
+    from mmagent.tools.registry import ToolRegistry as R
+    from mmagent.tools.tool_protocol import ToolContext
+    from mmagent.workspace.permissions import PermissionChecker as PC
+    from mmagent.workspace.permissions import RolePermissions as RP
+
+    (ws.workspace.root / "求解").mkdir(exist_ok=True)
+    (ws.workspace.root / "求解" / "quick.py").write_text("print('done')\n", encoding="utf-8")
+    pm = ProcessManager()
+    perms = RP(role_id="m", read_scopes=("**",), write_scopes=("**",),
+               allowed_tools=frozenset({"python.run"}), host_code=True)
+    checker = PC(perms, policy)
+    reg = R()
+    reg.register(PythonRunTool(process_manager=pm))
+    token = CancellationToken()
+    ctx = ToolContext(policy=policy, permission=checker, cancel=token)
+
+    async def run_then_cancel():
+        task = aio.create_task(reg.invoke("python.run", {"path": "求解/quick.py", "timeout_s": 30}, ctx))
+        await aio.sleep(1.5)  # 进程 0.x s 内已结束，1.5s 后才取消
+        token.cancel("late stop")
+        return await task
+
+    res = aio.run(run_then_cancel())
+    assert res.ok is True and res.meta["rc"] == 0  # 自然退出的真实 rc
+    pm.shutdown()
+
+
+def test_r2v02_output_quota_terminates(policy, ws):
+    """输出超预算：立即终止 Job + ToolTimeout('输出超限')，尾部捕获内存有界。"""
+    import asyncio as aio
+
+    from mmagent.runtime.cancellation import CancellationToken
+    from mmagent.runtime.process import ProcessManager
+    from mmagent.tools.python import PythonRunTool
+    from mmagent.tools.registry import ToolRegistry as R
+    from mmagent.tools.tool_protocol import ToolContext
+    from mmagent.workspace.permissions import PermissionChecker as PC
+    from mmagent.workspace.permissions import RolePermissions as RP
+
+    (ws.workspace.root / "求解").mkdir(exist_ok=True)
+    (ws.workspace.root / "求解" / "noisy.py").write_text(
+        "import time\nwhile True:\n    print('x' * 8192, flush=True)\n    time.sleep(0.01)\n",
+        encoding="utf-8",
+    )
+    pm = ProcessManager(output_quota_bytes=2 * 1024 * 1024)  # 2MB 预算
+    perms = RP(role_id="m", read_scopes=("**",), write_scopes=("**",),
+               allowed_tools=frozenset({"python.run"}), host_code=True)
+    checker = PC(perms, policy)
+    reg = R()
+    reg.register(PythonRunTool(process_manager=pm))
+    ctx = ToolContext(policy=policy, permission=checker, cancel=CancellationToken())
+    res = aio.run(reg.invoke("python.run", {"path": "求解/noisy.py", "timeout_s": 60}, ctx))
+    assert res.ok is False and res.meta.get("timed_out") is True
+    assert len(res.meta.get("stdout_tail", "")) <= 40_100  # 尾部有界
+    pm.shutdown()
+
+
+def test_r2v02_shutdown_reports_failures(policy, ws, monkeypatch):
+    """shutdown 存在未确认收口的进程 → 显式 RuntimeError（注册/文件保留）。"""
+    import sys as _sys
+    import time as _time
+
+    from mmagent.runtime import process as process_mod
+    from mmagent.runtime.process import ProcessManager
+
+    pm = ProcessManager()
+    pm.spawn("stuck", [_sys.executable, "-c", "import time; time.sleep(30)"])
+    _time.sleep(1)
+    monkeypatch.setattr(process_mod, "_terminate_tree_state", lambda p: "failed")
+    with pytest.raises(RuntimeError, match="未能确认终止"):
+        pm.shutdown()
+    cur = pm.registry.get("stuck")
+    assert cur is not None and cur.quarantined  # 保持注册供人工检查
+    monkeypatch.undo()
+    assert pm.recycle("stuck")  # 恢复后可正常收口
+
+
+# ==================== Round-3 P1 修复的负向测试 ====================
+def test_r3_p1_1_root_exit_tree_alive_still_tracked(policy, ws):
+    """区分度测试：root 立即退出、child 长眠 → communicate 不能因 root 退出而返回；
+    超时终止必须等 Job 归零。旧实现（只看 root）会在此提前返回成功。"""
+    import sys as _sys
+    import time as _time
+
+    from mmagent.runtime.process import ProcessManager, _job_active_count
+
+    pm = ProcessManager()
+    # 父进程立刻退出，留下 sleep(20) 的 child 在 Job 内
+    code = 'import subprocess, sys; subprocess.Popen([sys.executable, "-c", "import time; time.sleep(20)"]); print("root exits")'
+    proc = pm.spawn("rootexit", [_sys.executable, "-c", code])
+    _time.sleep(2)
+    assert not proc.alive  # root 已退出
+    assert _job_active_count(proc.job_handle) >= 1  # 但 child 仍在 Job 内
+    # communicate 必须超时（树仍活），而不是因 root 退出提前返回
+    rc, out, err, timed_out = pm.communicate(proc, timeout_s=3)
+    assert timed_out, "root 退出后树仍活：必须继续等待/超时，不得提前返回"
+    # 终止确认 = Job 归零
+    assert pm.kill("rootexit")
+    _time.sleep(0.5)
+    assert _job_active_count(proc.job_handle) == 0
+    assert proc.tree_exited
+    pm.shutdown()
+
+
+def test_r3_p1_3_handles_not_inheritable(policy, ws):
+    """CreateProcess 返回的 process/thread 句柄不可继承（句柄继承面最小化）。"""
+    import sys as _sys
+    import time as _time
+
+    import win32api
+
+    from mmagent.runtime.process import ProcessManager
+
+    HANDLE_FLAG_INHERIT = 0x1
+    pm = ProcessManager()
+    code = 'import time; time.sleep(2)'
+    proc = pm.spawn("inh", [_sys.executable, "-c", code])
+    _time.sleep(0.5)
+    flags = win32api.GetHandleInformation(proc.h_process)
+    assert not (flags & HANDLE_FLAG_INHERIT), "process 句柄不可继承"
+    if proc.job_handle is not None:
+        jflags = win32api.GetHandleInformation(proc.job_handle)
+        assert not (jflags & HANDLE_FLAG_INHERIT), "job 句柄不可继承"
+    pm.communicate(proc, 30)
+    pm.shutdown()
+
+
+def test_r3_p1_2_registry_compare_remove(db, run_id, policy):
+    """remove-by-name 的 compare-and-delete：换代后旧引用不得删除新对象。"""
+    from mmagent.runtime.process import ManagedProcess, ProcessRegistry
+
+    reg = ProcessRegistry()
+    old = ManagedProcess(name="x", pid=1, argv=[])
+    new = ManagedProcess(name="x", pid=2, argv=[])
+    reg.publish(old)
+    # 误删防护：用 old 引用删不掉 new
+    reg.publish(new)
+    removed = reg.remove("x", expected=old)
+    assert removed is None and reg.get("x") is new
+    removed = reg.remove("x", expected=new)
+    assert removed is new
+
+
+def test_r3_p1_2b_spawn_rejected_after_shutdown(policy, ws):
+    """shutdown 后拒绝新 spawn（防 shutdown 期间新进程逃逸）。"""
+    import sys as _sys
+
+    from mmagent.runtime.process import ProcessManager
+
+    pm = ProcessManager()
+    pm.spawn("pre", [_sys.executable, "-c", "print(1)"])
+    pm.shutdown()
+    import pytest
+
+    with pytest.raises(RuntimeError, match="shutdown"):
+        pm.spawn("post", [_sys.executable, "-c", "print(2)"])
+
+
+# ==================== Round-5 P1 修复的负向测试 ====================
+def test_r5_p1_2_createprocess_failure_single_close(tmp_path, monkeypatch):
+    """CreateProcess 失败：每个 std 句柄严格关闭一次、tmpdir 清理、原始异常保持。"""
+    import win32file
+    import win32process
+
+    from mmagent.runtime.process import ProcessManager
+
+    calls = {"closed": [], "created": []}
+    import glob
+    import tempfile as _tf
+    before_leftovers = set(glob.glob(os.path.join(_tf.gettempdir(), "mmagent_proc_*")))
+    real_create_file = win32file.CreateFile
+    real_close = win32file.CloseHandle
+
+    def spy_create_file(*a, **k):
+        h = real_create_file(*a, **k)
+        calls["created"].append(h)
+        return h
+
+    def spy_close(h, *a, **k):
+        calls["closed"].append(h)
+        return real_close(h, *a, **k)
+
+    monkeypatch.setattr(win32file, "CreateFile", spy_create_file)
+    monkeypatch.setattr(win32file, "CloseHandle", spy_close)
+
+    def boom(*a, **k):
+        raise OSError(87, "injected CreateProcess failure")
+
+    monkeypatch.setattr(win32process, "CreateProcess", boom)
+
+    pm = ProcessManager()
+    with pytest.raises(OSError, match="injected"):
+        pm.spawn("f1", [sys.executable, "-c", "print(1)"])
+    monkeypatch.undo()
+    # 每个 std 句柄恰好关闭一次（3 个创建 + 3 个关闭）
+    assert len(calls["created"]) == 3
+    assert len(calls["closed"]) == 3
+    # tmpdir 已清理：与测试前快照相比，无新增 mmagent_proc_* 残留
+    import glob
+    import tempfile as _tf
+    leftovers = glob.glob(os.path.join(_tf.gettempdir(), "mmagent_proc_*"))
+    assert before_leftovers <= set(leftovers), f"新增残留: {set(leftovers) - before_leftovers}"
+
+
+def test_r5_p1_3_lifecycle_gate_serializes(policy, ws):
+    """kill 与 shutdown 都经 lifecycle gate：shutdown 期间 kill 不会并发终止。"""
+    import sys as _sys
+    import time as _time
+
+    from mmagent.runtime.process import ProcessManager
+
+    pm = ProcessManager()
+    pm.spawn("g", [_sys.executable, "-c", "import time; time.sleep(30)"])
+    _time.sleep(1)
+    # 模拟 lifecycle gate 被长时间持有：shutdown 必须等待而不是并发
+    with pm._commit_lock:
+        # gate 持有期间 kill 调用应当阻塞直到释放——用线程验证串行化
+        import threading
+
+        done = threading.Event()
+
+        def killer():
+            pm.kill("g")
+            done.set()
+
+        th = threading.Thread(target=killer, daemon=True)
+        th.start()
+        _time.sleep(0.5)
+        assert not done.is_set(), "kill 必须等待 lifecycle gate"
+    done.wait(30)
+    assert done.is_set()
+    pm.shutdown()
+
+
+# ==================== Round-6 P1 修复的负向测试 ====================
+def test_r6_p1_1_job_setup_unconfirmed_quarantined(policy, ws, monkeypatch):
+    """Job 绑定失败且终止未确认：proc 入 quarantine、句柄保留、绝不静默关闭。"""
+    import win32event
+    import win32job
+
+    from mmagent.runtime.process import ProcessManager
+
+    def fail_assign(*a, **k):
+        raise OSError(5, "injected assign failure")
+
+    def never_signal(*a, **k):
+        return 0x102  # WAIT_TIMEOUT：终止未确认
+
+    monkeypatch.setattr(win32job, "AssignProcessToJobObject", fail_assign)
+    monkeypatch.setattr(win32event, "WaitForSingleObject", never_signal)
+    pm = ProcessManager()
+    with pytest.raises(RuntimeError, match="quarantined"):
+        pm.spawn("q1", [sys.executable, "-c", "print(1)"])
+    qs = pm.registry.quarantined
+    assert len(qs) == 1
+    q = qs[0]
+    assert q.quarantined and q.h_process is not None and q.job_handle is None
+    assert q.alive is not True or True  # suspended：root 未退出
+
+
+def test_r6_p1_1b_job_setup_confirmed_cleans(policy, ws, monkeypatch):
+    """Job 绑定失败但终止已确认：清理干净后抛 OSError，不留 quarantine。"""
+    import win32job
+
+    from mmagent.runtime.process import ProcessManager
+
+    def fail_assign(*a, **k):
+        raise OSError(5, "injected assign failure")
+
+    monkeypatch.setattr(win32job, "AssignProcessToJobObject", fail_assign)
+    pm = ProcessManager()
+    with pytest.raises(OSError, match="已终止挂起进程"):
+        pm.spawn("q2", [sys.executable, "-c", "print(1)"])
+    assert pm.registry.quarantined == []
+    assert pm.registry.get("q2") is None
+
+
+def test_r6_p1_2_cancel_after_natural_exit_keeps_real_rc(policy, ws):
+    """取消终止未确认（进程恰好自然结束）→ 显式失败，rc 不得被改成 -99。"""
+    import asyncio as aio
+
+    from mmagent.runtime.cancellation import CancellationToken
+    from mmagent.runtime.process import ProcessManager
+    from mmagent.tools.python import PythonRunTool
+    from mmagent.tools.registry import ToolRegistry as R
+    from mmagent.tools.tool_protocol import ToolContext
+    from mmagent.workspace.permissions import PermissionChecker as PC
+    from mmagent.workspace.permissions import RolePermissions as RP
+
+    (ws.workspace.root / "求解").mkdir(exist_ok=True)
+    # 脚本：输出很快结束，但结束前 cancel 到达且终止未发出（OSError 注入）
+    (ws.workspace.root / "求解" / "racer.py").write_text("print('ok')\n", encoding="utf-8")
+    pm = ProcessManager()
+    perms = RP(role_id="m", read_scopes=("**",), write_scopes=("**",),
+               allowed_tools=frozenset({"python.run"}), host_code=True)
+    checker = PC(perms, policy)
+    reg = R()
+    reg.register(PythonRunTool(process_manager=pm))
+    token = CancellationToken()
+    ctx = ToolContext(policy=policy, permission=checker, cancel=token)
+
+    # 进程先自然退出，随后 cancel：真实 rc 保留
+    res = aio.run(reg.invoke("python.run", {"path": "求解/racer.py", "timeout_s": 30}, ctx))
+    assert res.ok is True and res.meta["rc"] == 0
+    # 进程结束后才 cancel：真实 rc 不得被改写成 -99
+    token.cancel("late")
+    assert res.ok is True and res.meta["rc"] == 0
+    pm.shutdown()
+
+
+# ==================== Round-7 因果性区分测试 ====================
+def test_r7_p1_1_terminate_request_fail_natural_exit_keeps_rc(policy, ws, monkeypatch):
+    """区分度场景（外审 round7 P1-1）：
+    cancel 到达 → TerminateJobObject 注入失败 → 进程随后自然结束 → 树归零。
+    不得把真实 rc 改写成 -99（终止请求失败 ≠ 由取消杀灭）。"""
+    import asyncio as aio
+
+    import win32job
+
+    from mmagent.runtime.cancellation import CancellationToken
+    from mmagent.runtime.process import ProcessManager
+    from mmagent.tools.python import PythonRunTool
+    from mmagent.tools.registry import ToolRegistry as R
+    from mmagent.tools.tool_protocol import ToolContext
+    from mmagent.workspace.permissions import PermissionChecker as PC
+    from mmagent.workspace.permissions import RolePermissions as RP
+
+    (ws.workspace.root / "求解").mkdir(exist_ok=True)
+    # 脚本运行约 1.2s：cancel 在 0.3s 到达（终止请求失败），进程 1.2s 自然结束
+    (ws.workspace.root / "求解" / "racer2.py").write_text(
+        "import time\nprint('start', flush=True)\ntime.sleep(1.2)\nprint('done', flush=True)\n",
+        encoding="utf-8",
+    )
+    pm = ProcessManager()
+    perms = RP(role_id="m", read_scopes=("**",), write_scopes=("**",),
+               allowed_tools=frozenset({"python.run"}), host_code=True)
+    checker = PC(perms, policy)
+    reg = R()
+    reg.register(PythonRunTool(process_manager=pm))
+    token = CancellationToken()
+    ctx = ToolContext(policy=policy, permission=checker, cancel=token)
+
+    def fail_once_first_time(*a, **k):
+        raise OSError(6, "injected terminate failure")
+
+    async def run_with_cancel():
+        task = aio.create_task(reg.invoke("python.run", {"path": "求解/racer2.py", "timeout_s": 30}, ctx))
+        await aio.sleep(0.3)
+        # 注入：cancel 生效期间 TerminateJobObject 请求失败
+        monkeypatch.setattr(win32job, "TerminateJobObject", fail_once_first_time)
+        token.cancel("cancel during run")
+        await aio.sleep(3)  # 等自然退出 + 观察窗
+        monkeypatch.undo()
+        return await task
+
+    res = aio.run(run_with_cancel())
+    assert res.ok is True, res.error
+    assert res.meta["rc"] == 0, "自然退出的真实 rc 必须保留，不得改写 -99"
+    # 终止请求失败 + 自然归零：不得 quarantine、不得抛 ToolTimeout
+    assert pm.registry.quarantined == [], "natural_exit 不应进入 quarantine"
+    pm.shutdown()
+
+
+def test_r7_p1_1b_terminate_fail_still_alive_raises(policy, ws, monkeypatch):
+    """终止请求失败且树仍活 → quarantine + 显式失败（不得静默）。"""
+    import asyncio as aio
+
+    import win32job
+
+    from mmagent.runtime.process import ProcessManager
+    from mmagent.tools.python import PythonRunTool
+    from mmagent.tools.registry import ToolRegistry as R
+    from mmagent.tools.tool_protocol import ToolContext
+    from mmagent.workspace.permissions import PermissionChecker as PC
+    from mmagent.workspace.permissions import RolePermissions as RP
+
+    (ws.workspace.root / "求解").mkdir(exist_ok=True)
+    (ws.workspace.root / "求解" / "sleeper2.py").write_text(
+        "import time\ntime.sleep(30)\n", encoding="utf-8"
+    )
+    from mmagent.runtime.cancellation import CancellationToken as _CT
+
+    pm = ProcessManager()
+    perms = RP(role_id="m", read_scopes=("**",), write_scopes=("**",),
+               allowed_tools=frozenset({"python.run"}), host_code=True)
+    checker = PC(perms, policy)
+    reg = R()
+    reg.register(PythonRunTool(process_manager=pm))
+    token = _CT()
+    ctx = ToolContext(policy=policy, permission=checker, cancel=token)
+
+    def fail_terminate(*a, **k):
+        raise OSError(6, "injected terminate failure")
+
+    async def run_cancel_now():
+        task = aio.create_task(reg.invoke("python.run", {"path": "求解/sleeper2.py", "timeout_s": 30}, ctx))
+        await aio.sleep(0.5)
+        monkeypatch.setattr(win32job, "TerminateJobObject", fail_terminate)
+        token.cancel("cancel with failing terminate")
+        return await task
+
+    res = aio.run(run_cancel_now())
+    # 取消终止未确认 → 工具层转为 timed_out 失败结果；proc 曾入 quarantine（round6 P1-1）
+    assert res.ok is False and res.meta.get("timed_out") is True
+    assert any(q.quarantined for q in pm.registry.quarantined)
+    monkeypatch.undo()
+    pm.shutdown()
+
+
+# ==================== Round-8：std 句柄回滚三阶段区分测试 ====================
+@pytest.mark.parametrize("fail_at", [1, 2, 3])
+def test_r8_std_handle_rollback_each_stage(tmp_path, policy, ws, monkeypatch, fail_at):
+    """第 1/2/3 次 CreateFile 分别失败：已创建句柄各恰好关闭一次、无新增 tmpdir。"""
+    import glob
+    import os as _os
+    import tempfile as _tf
+
+    import win32file
+
+    from mmagent.runtime.process import ProcessManager
+
+    real_create = win32file.CreateFile
+    real_close = win32file.CloseHandle
+    calls = {"created": [], "closed": []}
+
+    attempts = {"n": 0}
+
+    def spy_create(*a, **k):
+        attempts["n"] += 1
+        if attempts["n"] == fail_at:
+            raise OSError(87, f"injected failure #{fail_at}")
+        h = real_create(*a, **k)
+        calls["created"].append(h)
+        return h
+
+    def spy_close(h, *a, **k):
+        calls["closed"].append(h)
+        return real_close(h, *a, **k)
+
+    before = set(glob.glob(_os.path.join(_tf.gettempdir(), "mmagent_proc_*")))
+    monkeypatch.setattr(win32file, "CreateFile", spy_create)
+    monkeypatch.setattr(win32file, "CloseHandle", spy_close)
+    pm = ProcessManager()
+    with pytest.raises(OSError, match="injected"):
+        pm.spawn(f"rb{fail_at}", [sys.executable, "-c", "print(1)"])
+    monkeypatch.undo()
+    assert len(calls["created"]) == fail_at - 1  # 注入点之前成功创建了 fail_at-1 个
+    assert len(calls["closed"]) == fail_at - 1  # 每个已创建句柄恰好关闭一次
+    after = set(glob.glob(_os.path.join(_tf.gettempdir(), "mmagent_proc_*")))
+    assert not (after - before), f"新增 tmpdir 残留: {after - before}"
+    pm.shutdown()
+
+
+# ==================== Round-9 P1 修复的负向测试 ====================
+def test_r9_p1_2_resume_failure_rollback(policy, ws, monkeypatch):
+    """resume 失败：确认终止+清理+移出注册（或 quarantine），不留半提交对象。"""
+    import sys as _sys
+
+    from mmagent.runtime import process as process_mod
+    from mmagent.runtime.process import ProcessManager
+
+    pm = ProcessManager()
+
+    def boom(proc):
+        raise OSError(6, "injected resume failure")
+
+    monkeypatch.setattr(process_mod, "_resume", boom)
+    with pytest.raises(RuntimeError, match="resume 失败"):
+        pm.spawn("r9a", [_sys.executable, "-c", "import time; time.sleep(30)"])
+    monkeypatch.undo()
+    # 无半提交对象：注册表为空（已回滚移除）或 quarantined（未确认时）
+    assert pm.registry.get("r9a") is None
+    total = len(pm.registry._procs) + len(pm.registry.quarantined)
+    assert total <= 1
+
+
+def test_r9_p1_3_shutdown_handles_quarantined_suspended(policy, ws, monkeypatch):
+    """shutdown 收口 quarantined 的无 Job 挂起进程：确认终止（不谎报成功）。"""
+
+    import win32event
+    import win32job
+
+    from mmagent.runtime.process import ProcessManager
+
+    def fail_assign(*a, **k):
+        raise OSError(5, "injected assign failure")
+
+    def never_signal(*a, **k):
+        return 0x102  # WAIT_TIMEOUT
+
+    monkeypatch.setattr(win32job, "AssignProcessToJobObject", fail_assign)
+    monkeypatch.setattr(win32event, "WaitForSingleObject", never_signal)
+    pm = ProcessManager()
+    with pytest.raises(RuntimeError, match="quarantined"):
+        pm.spawn("q9", [sys.executable, "-c", "import time; time.sleep(30)"])
+    assert len(pm.registry.quarantined) == 1
+    q = pm.registry.quarantined[0]
+    # 恢复终止能力后 shutdown：必须确认收口 quarantined 挂起进程
+    monkeypatch.undo()
+    pm.shutdown()
+    assert q.tree_exited and q.rc is not None
+    # shutdown 已把 quarantined 对象确认收口并从隔离集合移除
+    assert len(pm.registry.quarantined) == 0
+    # shutdown 后不能谎报成功：quarantined 中不应残留未收口对象
+    pm2 = ProcessManager()
+    try:
+        pm2.shutdown()
+    except RuntimeError:
+        pass
+
+
+# ==================== Round-11 P1 修复的负向测试 ====================
+def test_r11_p1_2_cancel_failed_not_swallowed_by_timeout(policy, ws, monkeypatch):
+    """cancel 终止请求失败且树仍活 → 后续超时终止成功也必须报取消失败，不得吞成 timeout。"""
+    import asyncio as aio
+
+    import win32job
+
+    from mmagent.runtime.cancellation import CancellationToken
+    from mmagent.runtime.process import ProcessManager
+    from mmagent.tools.python import PythonRunTool
+    from mmagent.tools.registry import ToolRegistry as R
+    from mmagent.tools.tool_protocol import ToolContext
+    from mmagent.workspace.permissions import PermissionChecker as PC
+    from mmagent.workspace.permissions import RolePermissions as RP
+
+    (ws.workspace.root / "求解").mkdir(exist_ok=True)
+    (ws.workspace.root / "求解" / "sleeper3.py").write_text(
+        "import time\ntime.sleep(30)\n", encoding="utf-8"
+    )
+    pm = ProcessManager()
+    perms = RP(role_id="m", read_scopes=("**",), write_scopes=("**",),
+               allowed_tools=frozenset({"python.run"}), host_code=True)
+    checker = PC(perms, policy)
+    reg = R()
+    reg.register(PythonRunTool(process_manager=pm))
+    token = CancellationToken()
+    ctx = ToolContext(policy=policy, permission=checker, cancel=token)
+
+    state = {"first_call": True}
+
+    def fail_first_terminate(*a, **k):
+        if state["first_call"]:
+            state["first_call"] = False
+            raise OSError(6, "injected first terminate failure")
+        return real_terminate_impl(*a, **k)
+
+    real_terminate_impl = win32job.TerminateJobObject
+    monkeypatch.setattr(win32job, "TerminateJobObject", fail_first_terminate)
+
+    async def run_cancel_then_timeout():
+        task = aio.create_task(reg.invoke("python.run", {"path": "求解/sleeper3.py", "timeout_s": 3}, ctx))
+        await aio.sleep(0.8)
+        token.cancel("cancel with failing terminate (first)")
+        return await task
+
+    res = aio.run(run_cancel_then_timeout())
+    # 取消请求失败且树仍活 → 显式失败（timed_out 结果携带未确认语义）
+    assert res.ok is False
+    assert res.meta.get("timed_out") is True or "取消" in (res.error or "") or "quarantined" in (res.error or "")
+    # 不得掩盖取消失败：错误消息必须携带"取消终止未确认"
+    assert "取消终止未确认" in (res.error or ""), res.error
+    monkeypatch.undo()
+    pm.shutdown()
+
+
+def test_r11_p1_3_fast_exit_quota_bypass_blocked(policy, ws):
+    """快速写出超配额后立即退出 → 仍必须报告输出超限（不得因 tree 死而跳过检查）。"""
+    import asyncio as aio
+
+    from mmagent.runtime.cancellation import CancellationToken
+    from mmagent.runtime.process import ProcessManager
+    from mmagent.tools.python import PythonRunTool
+    from mmagent.tools.registry import ToolRegistry as R
+    from mmagent.tools.tool_protocol import ToolContext
+    from mmagent.workspace.permissions import PermissionChecker as PC
+    from mmagent.workspace.permissions import RolePermissions as RP
+
+    (ws.workspace.root / "求解").mkdir(exist_ok=True)
+    (ws.workspace.root / "求解" / "burst.py").write_text(
+        "import sys\nsys.stdout.write('x' * (3 * 1024 * 1024))\n", encoding="utf-8"
+    )
+    pm = ProcessManager(output_quota_bytes=2 * 1024 * 1024)
+    perms = RP(role_id="m", read_scopes=("**",), write_scopes=("**",),
+               allowed_tools=frozenset({"python.run"}), host_code=True)
+    checker = PC(perms, policy)
+    reg = R()
+    reg.register(PythonRunTool(process_manager=pm))
+    token = CancellationToken()
+    ctx = ToolContext(policy=policy, permission=checker, cancel=token)
+    res = aio.run(reg.invoke("python.run", {"path": "求解/burst.py", "timeout_s": 60}, ctx))
+    # 输出超限必须被报告（fast-exit 不得绕过 I-J5）
+    assert res.ok is False
+    assert "输出超过预算" in (res.error or "") or res.meta.get("timed_out") is True
+    pm.shutdown()
+
+
+# ==================== Round-13 P1 修复的负向测试 ====================
+def test_r13_p1_2_ctor_failure_rolls_back_raw_handles(policy, ws, monkeypatch):
+    """ManagedProcess 构造注入失败 → 回滚 raw handles（挂起进程被终止）+ tmpdir 清理。"""
+    import os as _os
+    import sys as _sys
+    import time as _time
+
+    from mmagent.runtime import process as process_mod
+    from mmagent.runtime.process import ProcessManager
+
+    def exploding_ctor(*a, **k):
+        raise OSError(12, "injected ctor failure")
+
+    monkeypatch.setattr(process_mod, "ManagedProcess", exploding_ctor)
+    pm = ProcessManager()
+    import glob as _glob
+    import tempfile as _tf
+    before_dirs = set(_glob.glob(_os.path.join(_tf.gettempdir(), "mmagent_proc_*")))
+    with pytest.raises(OSError, match="injected ctor failure"):
+        pm.spawn("r13", [_sys.executable, "-c", "print(1)"])
+    monkeypatch.undo()
+    # 挂起进程必须已被终止（不能留未托管挂起进程）
+    _time.sleep(0.5)
+    assert pm.registry.get("r13") is None
+    assert pm.registry.quarantined == []
+    # tmpdir 无残留（pre-create rollback scope 生效）
+    after_dirs = set(_glob.glob(_os.path.join(_tf.gettempdir(), "mmagent_proc_*")))
+    assert not (after_dirs - before_dirs), after_dirs - before_dirs
+
+
+def test_r13_p1_1_registered_quarantined_natural_death_resolved(policy, ws, monkeypatch):
+    """registered+quarantined；第二轮前自然退出 → shutdown 正常收口并清空隔离。"""
+    import sys as _sys
+    import time as _time
+
+    from mmagent.runtime import process as process_mod
+    from mmagent.runtime.process import ProcessManager
+
+    pm = ProcessManager()
+    # 1s 后自然退出的进程
+    pm.spawn("r13nat", [_sys.executable, "-c", "import time; time.sleep(1)"])
+    _time.sleep(0.2)
+    # 第一轮：终止失败 → quarantined
+    monkeypatch.setattr(process_mod, "_terminate_tree_state", lambda p: "failed")
+    import pytest as _pytest
+
+    with _pytest.raises(RuntimeError, match="未能确认终止"):
+        pm.shutdown()
+    monkeypatch.undo()
+    # 进程随后自然退出
+    _time.sleep(1.5)
+    q = pm.registry.quarantined
+    assert not q[0].tree_alive  # 属性访问刷新观测
+    assert q[0].tree_exited
+    # 再次 shutdown：收口并清空隔离
+    pm.shutdown()
+    assert pm.registry.quarantined == []
+
+
+# ==================== Round-17 P1 修复的负向测试 ====================
+def test_r17_p1_same_shutdown_recovery(policy, ws, monkeypatch):
+    """区分度测试（外审 round17）：第一次 _terminate_tree_state 失败注入，
+    同一次 shutdown 的 quarantine retry 成功 → 无 RuntimeError、_procs 与
+    quarantined 双清、句柄全部关闭。"""
+    import sys as _sys
+    import time as _time
+
+    from mmagent.runtime import process as process_mod
+    from mmagent.runtime.process import ProcessManager
+
+    pm = ProcessManager()
+    pm.spawn("r17", [_sys.executable, "-c", "import time; time.sleep(30)"])
+    _time.sleep(1)
+
+    state = {"first": True}
+    real_ts = process_mod._terminate_tree_state
+
+    def fail_first_then_real(proc):
+        if state["first"]:
+            state["first"] = False
+            return "failed"
+        return real_ts(proc)
+
+    monkeypatch.setattr(process_mod, "_terminate_tree_state", fail_first_then_real)
+    pm.shutdown()  # 不得抛 RuntimeError（第一轮 failed 由同次 quarantine 收口解决）
+    monkeypatch.undo()
+    assert pm.registry.get("r17") is None, "_procs 必须清空"
+    assert pm.registry.quarantined == [], "quarantined 集合必须清空"

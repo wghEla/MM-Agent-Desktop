@@ -28,3 +28,14 @@
 - 02:25 R8 终审 GO。期间 R3-R7 各轮共追加 11 条 P1 全部闭环
   （str.replace 静默未命中事故：改为 assert+getsource 验证）。
 - 02:30 tag v0.1.0。
+- 01:20 v0.2.0 实现：ProcessManager（Job Object）、EnvironmentManager、17 角色注册表、
+  python 工具接入 Job、P2 清理。79→102 测试。
+- 01:35 v0.2.0 外审 R1：5 P1（未托管启动窗口/重派时序/kill 谎报/取消三态/输出预算等）。
+- 01:50 CREATE_SUSPENDED 原子启动 + per-name 租约 + 三态取消 + 终态原子提交重写，102 测试。
+- 02:00 v0.2.0 外审 R2：2 P1（_terminate_tree_state 缺失已修未声明、resume quarantine）。
+- 02:05 补 _terminate_tree_state 负向测试 + racer2/rc=-99 区分测试，104 测试。
+- 02:10 v0.2.0 外审 R3：3 P1（quarantined 收口/identity 去重/ctor guard）。
+- 02:20 remove_quarantined + ManagedProcess ctor 入 guard + racer 测试，106 测试。
+- 02:30 v0.2.0 外审 R4（GO 前置）：2 P1（_resolve 未含 registry remove、ctor 前移未落地）。
+- 02:40 _resolve 完整 primitive（compare-and-remove）+ ctor 前移落地 + spy 区分测试，107 测试。
+- 02:45 v0.2.0 外审 R5：GO（可以 tag）。P2 记录：quarantined 历史积累、HANDLE_LIST v0.3。

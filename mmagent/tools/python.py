@@ -86,9 +86,11 @@ class PythonRunTool(Tool):
         },
     )
 
-    def __init__(self, interpreter: str | None = None):
+    def __init__(self, interpreter: str | None = None, process_manager=None):
         # 受管解释器：默认当前 venv 的 python（产品版由 Environment Manager 提供）
         self.interpreter = interpreter or sys.executable
+        # v0.2：ProcessManager——提供时进程纳入 Windows Job Object（KILL_ON_JOB_CLOSE）
+        self.process_manager = process_manager
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         rel = str(args.get("path", ""))
@@ -108,6 +110,56 @@ class PythonRunTool(Tool):
         env = _minimal_env(ctx.policy.root)
 
         started = time.monotonic()
+        if self.process_manager is not None:
+            # v0.2 路径：Windows Job Object 管理（杀树 + KILL_ON_JOB_CLOSE 崩溃兜底）
+            import uuid as _uuid
+
+            mp = self.process_manager.spawn(
+                f"py_{_uuid.uuid4().hex[:10]}",
+                [self.interpreter, "-X", "utf8", str(script)],
+                cwd=str(ctx.policy.root),
+                env=env,
+            )
+            from mmagent.agent.errors import ToolTimeout
+
+            try:
+                rc, out_b, err_b, timed_out = await asyncio.to_thread(
+                    self.process_manager.communicate, mp, timeout_s, ctx.cancel
+                )
+            except ToolTimeout as e:
+                self.process_manager.recycle(mp.name)
+                return ToolResult(
+                    ok=False,
+                    error=f"脚本超时（>{timeout_s:.0f}s），Job 树已终止：{e}",
+                    meta={"rc": None, "timed_out": True, "rel_path": rel, "detail": str(e)},
+                )
+            except Exception:
+                self.process_manager.recycle(mp.name)
+                raise
+            elapsed = time.monotonic() - started
+            stdout = out_b.decode("utf-8", errors="replace")
+            stderr = err_b.decode("utf-8", errors="replace")
+            ok = (rc == 0) and not timed_out
+            limit = 20_000
+            self.process_manager.recycle(mp.name)
+            meta: dict[str, Any] = {"rc": rc, "elapsed_s": round(elapsed, 1), "rel_path": rel,
+                    "stdout_tail": stdout[-2000:], "stderr_tail": stderr[-2000:]}
+            if timed_out:
+                meta["timed_out"] = True
+                return ToolResult(
+                    ok=False,
+                    error=f"脚本超时（>{timeout_s:.0f}s），已终止进程树",
+                    meta=meta,
+                )
+            return ToolResult(
+                ok=ok,
+                content=(
+                    f"rc={rc} elapsed={elapsed:.1f}s\n--- stdout ---\n{stdout[-limit:]}\n"
+                    f"--- stderr ---\n{stderr[-limit:]}"
+                ),
+                error=None if ok else f"脚本退出码 {rc}",
+                meta=meta,
+            )
         proc = await asyncio.create_subprocess_exec(
             self.interpreter,
             "-X",
