@@ -92,3 +92,46 @@ class TestS1Prototype:
         (root / "求解" / "问题1" / "原型_最小二乘.py").write_text("print(1)", encoding="utf-8")
         ok, issues = check_g1(root)
         assert ok, issues
+
+
+# ==================== v0.6.0 XeLaTeX/MATLAB 工具测试 ====================
+class TestLatexTool:
+    def test_page_count_from_log(self, tmp_path: Path):
+        from mmagent.tools.latex import LatexTool
+        log = tmp_path / "论文.log"
+        log.write_text("Output written on 论文.pdf (18 pages).", encoding="utf-8")
+        assert LatexTool.count_pages_text(log.read_text()) == 18
+
+    def test_errors_from_log(self, tmp_path: Path):
+        from mmagent.tools.latex import LatexTool
+        log = tmp_path / "test.log"
+        log.write_text("! Undefined control sequence.\nl.5 \badcmd\n", encoding="utf-8")
+        errors = LatexTool.inspect_log_text(log.read_text())
+        assert len(errors) >= 1
+        assert any("Undefined" in e for e in errors)
+
+    def test_real_xelatex_discovery(self):
+        from mmagent.runtime.environment import discover_xelatex
+        cap = discover_xelatex()
+        if cap.ok:
+            assert "xelatex" in (cap.path or "").lower()
+
+
+class TestMatlabTool:
+    def test_real_matlab_discovery(self):
+        from mmagent.runtime.environment import discover_matlab
+        cap = discover_matlab()
+        if cap.ok:
+            assert "matlab" in (cap.path or "").lower()
+            import pathlib
+            assert pathlib.Path(cap.path).is_file()
+
+    def test_run_script_missing(self, tmp_path: Path):
+        from mmagent.runtime.environment import discover_matlab
+        from mmagent.tools.matlab import MatlabTool
+        cap = discover_matlab()
+        if not cap.ok:
+            pytest.skip("MATLAB not available")
+        tool = MatlabTool(tmp_path, matlab_path=cap.path)
+        result = tool.run_script("nonexistent.m")
+        assert result["rc"] == -1
