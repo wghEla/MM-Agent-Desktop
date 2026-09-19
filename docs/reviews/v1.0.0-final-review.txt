@@ -1,0 +1,51 @@
+最终判定：HOLD。
+
+这次 HOLD 不是因为我发现了新的源码 bug，而是因为 v1.0.0 的 release evidence 还不足以让我给 GO。你目前给出的证据足以说明工程已经进入“候选发布版”状态，但还不足以证明 v0.7.0～v1.0.0 没有 release-blocking P1。
+
+结合本会话历史，我对各段的置信度是明确不同的：v0.1.0～v0.3.0 已经过多轮源码级对抗审查并最终 GO；v0.4.0～v0.5.0 至少经过 review packet + 针对性修复；v0.6.0 又有 XeLaTeX/MATLAB 真机发现证据。 这些我认可为已经关闭的历史版本，不要求重审。
+
+问题集中在 v0.7.0～v1.0.0 这一段。当前只有功能汇报：
+
+196 tests passed + ruff clean
+
+以及各版本功能列表，但没有看到这几个关键新增面的实现/负向测试证据。因此我的分级是：
+
+P0：0。
+根据现有信息，没有任何证据表明存在数据破坏、任意代码执行越权、双跑/孤儿、不可恢复状态等确定 P0。
+
+P1：3 个“尚未证明关闭的 release gate”，不是已确认源码缺陷。
+
+v0.7 Issue Ledger 的并发/幂等/身份合并语义尚未外审。
+这是一个真正的状态机：待改 → 待复核 → 已消解/未消解/搁置，又叠加身份合并、回执、裁定、熔断。这里最需要证明的是非法迁移 fail-closed、重复回执幂等、旧 identity 不能覆盖新 identity、merge 后引用不悬空、crash/retry 不重复推进。如果这里错，S5 的“收敛”可能是假收敛。
+
+v0.8 S5 的“评审 → Ledger → 回炉 → Guard”闭环尚未证明是闭环。
+五路评审都运行不等于闭环正确。必须证明 unresolved issue 不能被结构/页数/变化 guard 意外吞掉，也不能在回炉失败后被标记为已消解；熔断后状态和产物也必须一致。这个模块属于论文最终交付前的 correctness gate，因此我不会仅靠 happy-path tests 给它 GO。
+
+v1.0 所谓 E2E 仍然只明确覆盖 S0→G0→S1→G1 (mock provider)。
+这与“完整 Runtime v1.0.0”的发布表述之间还有证据缺口。你已经实现了 S5、编译链、Ledger、Desktop，但当前汇报的 E2E 没有证明这些关键组件被同一条 release-path 串起来。尤其 crash recovery 和 429 retry 属于故障路径，需要区分度测试，而不只是总测试数。
+
+v0.9.0 的 Tauri/React skeleton 我暂时不单列 P1：如果它只是 UI shell、没有把浏览器/IPC 输入直接升级为宿主高权限操作，那么可以作为非阻断项。但如果 Tauri command 已经暴露启动进程、文件写入、任意 workspace path 等能力，就必须把 command allowlist / path boundary / argument validation 纳入 v1.0 gate。
+
+因此现在的状态，我会定义为：
+
+v1.0.0-rc quality：可以。正式 v1.0.0 tag：暂 HOLD。
+
+要把它变成 GO，不需要再把 v0.1～v0.6 重发一遍。只需要针对 v0.7～v1.0 delta 给我一个最终 self-contained review packet，至少覆盖：
+
+Issue Ledger 的状态迁移表、identity merge、熔断和负向测试；
+
+S5 五路评审→台账→收敛→回炉→guards 的关键源码；
+
+crash recovery 的状态恢复不变量和故障注入测试；
+
+429 retry 的实际调用链及上限/Retry-After/不可重试错误测试；
+
+v1.0 E2E 到底覆盖哪些 stages，哪些仍为 mock；
+
+Tauri command 暴露面，如果目前有宿主能力；
+
+196 passed 对应的关键区分度测试名称/结果，而不仅是总数。
+
+当前结论：P0=0；已确认源码 P1=0；未关闭 release-evidence P1=3；HOLD。
+
+如果这几个面的 packet 能证明不变量，我不会再重新审已经 GO/tag 的 v0.1～v0.6，而是只审增量并直接给 v1.0.0 最终 GO/HOLD。

@@ -29,6 +29,7 @@ class Issue:
     回执: list[dict] = field(default_factory=list)
     历史: list[dict] = field(default_factory=list)
     对应: str = ""  # 引用的上轮 id
+    generation: int = 0  # 每次 reopen 递增（CAS 依据）
 
 
 _PUNCT_CHARS = "，。；：、()（）【】"
@@ -75,6 +76,7 @@ class IssueLedger:
                 if match.状态 == 已消解:
                     match.状态 = 待改
                     match.重开次数 += 1
+                    match.generation += 1  # generation 递增（round15 P1-1 CAS 依据）
                     stats["重开"] += 1
                 # 级别只升不降
                 if _级别序.get(新.get("级别", ""), 9) < _级别序.get(match.级别, 9):
@@ -131,26 +133,56 @@ class IssueLedger:
             if x is None:
                 stats["未知id"] += 1
                 continue
-            x.回执.append({"腿": 腿名, "改动": str(r.get("改动", ""))[:300], "证据": str(r.get("证据", ""))[:200]})
-            x.尝试次数 += 1  # 每次回执都计尝试（上游语义：修了2次仍没消解 → 熔断）
+            new_change = str(r.get("改动", ""))[:300]
+            import uuid as _uuid
+            receipt_id = str(r.get("receipt_id", "")) or str(_uuid.uuid4())
+            # 幂等（外审 round15 P1-2）：按 receipt_id 去重（非内容匹配）
+            if any(rc.get("receipt_id") == receipt_id for rc in x.回执):
+                continue
+            x.回执.append({"腿": 腿名, "改动": new_change,
+                           "证据": str(r.get("证据", ""))[:200],
+                           "receipt_id": receipt_id})
+            # generation CAS for receipt（round16 P1-2）
+            receipt_gen = r.get("generation")
+            if receipt_gen is not None and int(receipt_gen) != x.generation:
+                continue  # stale receipt → 忽略
+            x.尝试次数 += 1
             if x.状态 in (待改, 未消解):
                 x.状态 = 待复核
             stats["受理"] += 1
         return stats
 
     def 收裁定(self, 裁定们: list[dict], 轮次: int | None = None) -> dict[str, int]:
-        """评审腿裁定：只有评审能置已消解。"""
+        """评审腿裁定（外审 round16 P1-1）：per-item generation CAS + 状态迁移表。
+
+        - 每条 verdict 必须携带 generation（与 issue 当前 generation 做 equality CAS）；
+        - 只有 待复核 状态可以被裁定；
+        - generation 不匹配 = stale，跳过。
+        """
         stats = {"已消解": 0, "未消解": 0, "未知id": 0}
         for r in 裁定们 or []:
             x = self._get(str(r.get("id", "")).strip())
             if x is None:
                 stats["未知id"] += 1
                 continue
+            # per-item generation CAS（外审 round16 P1-1：每条 verdict 必须携带）
+            verdict_gen = r.get("generation")
+            if verdict_gen is None or int(verdict_gen) != x.generation:
+                stats["未知id"] += 1  # stale or missing generation → fail-closed
+                continue
+            # 状态迁移表（外审 round15 P1-2）
+            if x.状态 not in (待复核,):
+                stats["未知id"] += 1
+                continue
             裁 = str(r.get("裁定", "")).strip()
-            if 裁.startswith("已消解") or 裁.startswith("已解决"):
+            if 裁 == "已消解":
                 x.状态 = 已消解
                 stats["已消解"] += 1
+            elif 裁 == "未消解":
+                x.状态 = 未消解
+                stats["未消解"] += 1
             else:
+                # 未知裁定值 → 未消解（fail-closed，外审 round2 P1-3）
                 x.状态 = 未消解
                 stats["未消解"] += 1
             x.历史.append({"轮次": 轮次 or self.轮次, "裁定": 裁[:20]})
@@ -185,9 +217,16 @@ class IssueLedger:
         return [x for x in self.条目 if x.状态 in (待改, 未消解) and x.尝试次数 >= 阈值]
 
     def 搁置条目(self, id: str, 理由: str) -> bool:
+        """搁置（外审 round15 P1-3）：必须是熔断候选且有非空理由。"""
         x = self._get(id)
         if x is None:
             return False
+        if not 理由.strip():
+            return False  # 理由不许为空
+        if x.尝试次数 < 2:
+            return False  # 未经两次修订不得搁置
+        if x.状态 not in (待改, 未消解, 待复核):
+            return False  # 活跃态+待复核可搁置（待复核时评审可能延迟）
         x.状态 = 搁置
         x.历史.append({"裁定": "搁置", "理由": 理由[:200]})
         return True
