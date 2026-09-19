@@ -1,0 +1,130 @@
+最终判定：HOLD。 当前源码仍有 2 个 P1，其中第一处还说明“106 tests passed”的证据与这份源码无法同时成立。
+
+P1 — ManagedProcess 构造实际上仍在 rollback try 外。
+
+当前代码是：
+
+Python
+运行
+tmpdir = tempfile.mkdtemp(...)
+...
+created = []
+proc = ManagedProcess(...)   # ← try 外
+try:
+    ...
+except Exception:
+    ...
+    shutil.rmtree(tmpdir, ignore_errors=True)
+
+因此如果注入 ManagedProcess(...) 构造异常：
+
+CreateProcess 确实不会调用；
+
+不会产生 child；
+
+不会 quarantine；
+
+但 tmpdir 不会被这里删除。
+
+所以你声称的测试：
+
+ctor 异常 → CreateProcess 未调用 + 无 tmpdir 残留 + 无 quarantine
+
+对这份源码而言，“无 tmpdir 残留”应当失败。除非测试 fixture 自己清理了目录、patch 的不是当前模块中的 ManagedProcess，或实际运行源码并非这里贴出的版本。
+
+应改成：
+
+Python
+运行
+tmpdir = tempfile.mkdtemp(...)
+created = []
+try:
+    proc = ManagedProcess(...)
+    ...
+    h_process, ... = CreateProcess(...)
+    proc.h_process = h_process
+    ...
+except Exception:
+    ...
+
+P1 — shutdown 的“统一 _resolve()”没有真实落地。
+
+你定义：
+
+Python
+运行
+def _resolve(p):
+    _close_handles(p)
+    _cleanup_files(p)
+    self.registry.remove_quarantined(p)
+    p.quarantined = False
+    unresolved.pop(id(p), None)
+
+但第一轮 registered-success 仍然直接：
+
+Python
+运行
+_close_handles(p)
+_cleanup_files(p)
+self.registry.remove_quarantined(p)
+self.registry.remove(p.name, expected=p)
+
+没有调用 _resolve(p)，所以如果一个对象同时是 registered + quarantined，并且 shutdown 前已经自然死亡，最终会出现：
+
+p 不在 registry.quarantined
+p.quarantined == True
+
+两个 quarantine truth carrier 再次分裂。
+
+而第二轮三个 quarantine 成功出口又是：
+
+Python
+运行
+_close_handles(q)
+_cleanup_files(q)
+_resolve(q)
+
+于是 close/cleanup 被执行两次，也证明“成功出口全部只调用 _resolve()”与源码不符。
+
+建议把 registered removal 也纳入 primitive，例如：
+
+Python
+运行
+def _resolve(p, *, remove_registered=False):
+    _close_handles(p)
+    _cleanup_files(p)
+    self.registry.remove_quarantined(p)
+    p.quarantined = False
+    unresolved.pop(id(p), None)
+    if remove_registered:
+        self.registry.remove(p.name, expected=p)
+
+然后第一轮只调用：
+
+Python
+运行
+_resolve(p, remove_registered=True)
+
+第二轮只调用：
+
+Python
+运行
+_resolve(q)
+
+另有一个 P2：spawn() 成功收口一个此前 quarantined 的 old，以及 recycle() 成功处理 quarantined proc 时，也没有 remove_quarantined() / quarantined=False。当前不会造成双跑或孤儿，但 quarantine 状态仍可能残留到 shutdown。
+
+本轮 release gate 只需要补牢这两处，并至少保留两个区分度测试：
+
+Python
+运行
+# ctor failure
+assert create_process_calls == 0
+assert new_mmagent_tmpdirs == set()
+
+# already-dead registered + quarantined
+manager.shutdown()
+assert p not in registry.quarantined
+assert p.quarantined is False
+assert registry.get(p.name) is None
+
+除此之外，本轮没有再发现新的进程树终止、cancel 因果、Job confirmation、resume rollback 或 CreateProcess 后 ownership 级别的 blocker。
