@@ -63,7 +63,7 @@ _ROLES: tuple[RoleSpec, ...] = (
         display_name="答卷预测官",
         stage="S0",
         read_scopes=("输入/**", "交接/题面契约.json"),
-        write_scopes=("交接/答卷预测.json",),
+        write_scopes=("交接/答卷预测.json", "交接/典型答卷预测.md"),
         allowed_tools=_FS_RW,
         notes="预测高质量答卷需证明/结果/图/验证什么，驱动据此生成需求追踪矩阵",
     ),
