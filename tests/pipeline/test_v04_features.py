@@ -135,3 +135,62 @@ class TestMatlabTool:
         tool = MatlabTool(tmp_path, matlab_path=cap.path)
         result = tool.run_script("nonexistent.m")
         assert result["rc"] == -1
+
+
+# ==================== v0.7.0 守卫测试 ====================
+class TestChangeGuard:
+    def test_small_change_passes(self):
+        from mmagent.mm.guards.guards import change_guard
+        old = "这是第一句。这是第二句。这是第三句。"
+        new = "这是第一句。这是修改后的第二句。这是第三句。"
+        ok, ratio, detail = change_guard(old, new, [])
+        assert ok
+
+    def test_wholesale_rewrite_blocked(self):
+        from mmagent.mm.guards.guards import change_guard
+        old = "完全不同的第一段内容。" * 20
+        new = "彻底重写的全新段落。" * 20
+        ok, ratio, _ = change_guard(old, new, [])
+        assert not ok
+
+    def test_named_changes_exempt(self):
+        from mmagent.mm.guards.guards import change_guard
+        old = "这段关于公式一。这段关于公式二。这段关于公式三。"
+        new = "公式一已更新。这段关于公式二。这段关于公式三。"
+        items = [{"问题": "修改\u201c公式一\u201d那段", "指令": "更新公式一"}]
+        ok, ratio, _ = change_guard(old, new, items)
+        assert ok  # 点名处改动不计入
+
+
+class TestStructureGuard:
+    def test_input_removed_blocked(self):
+        from mmagent.mm.guards.guards import structure_guard
+        old = {"main.tex": "\\input{ch1}\n\\input{ch2}"}
+        new = {"main.tex": r"\input{ch1}"}
+        ok, issues = structure_guard(old, new)
+        assert not ok
+        assert any("ch2" in i for i in issues)
+
+    def test_empty_file_blocked(self):
+        from mmagent.mm.guards.guards import structure_guard
+        old = {"ch1.tex": "\\section{引言}\n内容"}
+        new = {"ch1.tex": ""}
+        ok, issues = structure_guard(old, new)
+        assert not ok
+
+
+class TestPageGuard:
+    def test_normal_growth_ok(self):
+        from mmagent.mm.guards.guards import page_guard
+        ok, _ = page_guard(20, 22)
+        assert ok
+
+    def test_excessive_growth_blocked(self):
+        from mmagent.mm.guards.guards import page_guard
+        ok, _ = page_guard(20, 30)
+        assert not ok
+
+    def test_sudden_drop_warned(self):
+        from mmagent.mm.guards.guards import page_guard
+        ok, _ = page_guard(20, 10)
+        assert not ok  # 骤降告警
