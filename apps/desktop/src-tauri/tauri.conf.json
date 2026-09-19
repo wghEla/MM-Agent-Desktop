@@ -1,0 +1,10 @@
+{
+  "productName": "MM-Agent Desktop",
+  "version": "0.9.0",
+  "identifier": "com.mmagent.desktop",
+  "build": { "frontendDist": "../dist" },
+  "app": {
+    "windows": [{ "title": "MM-Agent Desktop", "width": 1280, "height": 800 }],
+    "security": { "csp": null }
+  }
+}
