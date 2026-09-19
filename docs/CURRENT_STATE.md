@@ -1,66 +1,71 @@
 # CURRENT_STATE — 当前状态（每次接手先读这个）
 
-- **当前版本**: v0.4.0 已 tag → **v0.5.0 进行中（S2 合同 + DAG 已实现）**
-- **最近更新**: 2026-09-19
-- **测试**: 156 passed, ruff clean
-- **Git**: 4 tags（v0.1.0/v0.2.0/v0.3.0/v0.4.0）
+- **当前版本**: v0.8.0 已 tag → **v0.9.0 Desktop UI + v1.0.0 Hardening 待实现**
+- **测试**: 193 passed, ruff clean
+- **Git**: 7 tags (v0.1.0-v0.6.0, v0.8.0)
 
-## 已发布
+## 版本总览
 
-### v0.1.0 — Agent Kernel（外审 8 轮 GO）
-SQLite schema v1（19 表 + append-only 触发器）、状态机 11 态 + 租约 CAS + 专用收口 +
-transactional outbox、typed errors（ErrorKind 18 类）、取消令牌、
-路径策略（词法 reparse walk + ADS/保留名/尾点/空白拒绝）、角色权限（default deny + host_code），
-工作区（中文目录 + 单运行锁 + pid 存活检查）、产物校验 + 内容寻址封存、
-归一化 Provider 接口 + Mock、工具注册表（fs/python + lifecycle gate）、AgentLoop、
-阈值常量 + 角色分档表。详见 docs/runs/v0.1.0.md。
+| 版本 | 内容 | 测试 | 状态 |
+|---|---|---|---|
+| v0.1.0 | Agent Kernel: SQLite 19表/状态机/AgentLoop/权限/路径/工作区 | 74 | ✅ tag |
+| v0.2.0 | Job Object/EnvironmentManager/17角色/Python工具Job | 107 | ✅ tag |
+| v0.3.0 | 五协议适配器/错误归一/能力诚实/密钥边界 | 129 | ✅ tag |
+| v0.4.0 | S0读题/G0门检/S1规划/三档profiles/Dashboard | 150 | ✅ tag |
+| v0.5.0 | S2建模+红队隔离/G2门检/DAG/升格蜂群/降级放行 | 170 | ✅ tag |
+| v0.6.0 | XeLaTeX编译/MATLAB batch/页数/日志检查 | 175 | ✅ tag |
+| v0.8.0 | S5审稿场/Issue Ledger/守卫三件套(变化/结构/页数) | 193 | ✅ tag |
+| v0.9.0 | Desktop UI (Tauri) | — | 待实现 |
+| v1.0.0 | Hardening/E2E/Final Review | — | 待实现 |
 
-### v0.2.0 — Windows Workspace / Process / Permission（外审 16 轮 GO）
-ProcessManager（Job Object KILL_ON_JOB_CLOSE + CREATE_SUSPENDED 原子启动 +
-per-name 生命周期锁 + compare-and-remove + 三态取消因果（killed/natural_exit/failed）+
-输出预算 + 确认式终止 + shutdown 统一 resolution）、EnvironmentManager（XeLaTeX 深搜 +
-MATLAB 双布局 + capability cache + 体检分级）、17 角色注册表（scopes/tools/reasoning +
-红队权限层隔离 + host_code）、python 工具接入 Job Object。
-详见 docs/runs/v0.2.0.md。
+## 下一步
 
-### v0.3.0 — Provider Abstraction（外审 3 轮 GO）
-五协议适配器（openai_chat/openai_responses/anthropic_messages/gemini/openai_compatible）；
-Normalized* 类型；parse_retry_after（delta/HTTP-date/畸形→None）接线五适配器 429；
-safe_json（畸形 2xx → PROVIDER_PROTOCOL）；stop fail-closed（未知 finish_reason 不默认 END_TURN）；
-能力诚实（streaming=False/image_input=False/reasoning_levels 如实）；
-密钥边界（ProviderConfig ENV:/WINCRED: 前缀强制 + redact_secret）；
-role routing / model profiles；Responses continuation_items。
-详见 docs/runs/v0.3.0.md。
+### v0.9.0 Desktop UI
+- [ ] Tauri 2 + React + TypeScript 脚手架
+- [ ] 项目创建/打开/导入
+- [ ] Run Dashboard（阶段树/事件流/台账/产物）
+- [ ] Provider Settings
+- [ ] Windows installer
 
-## 当前进行中（v0.4.0 — S0+G0+S1+G1）
+### v1.0.0 Hardening + E2E
+- [ ] 完整合成题 E2E
+- [ ] crash recovery / pause / resume
+- [ ] provider failure / rate limit / stale value 测试
+- [ ] Final review packet → GPT 外审 → tag v1.0.0
 
-已提交（1d6fb69）：
-- [x] contracts/s0_contracts.py（ProblemContract Pydantic 需求号校验）
-- [x] gates/g0.py（G0 门检 8 条判据 + 空问题检查）
-- [x] pipeline/s0_s1.py（run_s0 + check_g1 + run_s1）
-- [x] roles/prompts.py（clean-room Reader/AnswerPredictor/Planner）
-- [x] roles/registry.py（answer_predictor scope 修复）
-- [x] tests/pipeline/（G0 门检 10 项 + S0/S1 管线 2 项）
+## 核心模块清单
 
-待完成：
-- [ ] S1 原型路线执行（prototype run + route judgement）
-- [ ] 三档 profiles 深度/标准/快速
-- [ ] Run Dashboard API
-- [ ] review packet → GPT 外审 → 修 P0/P1 → tag v0.4.0
+| 模块 | 路径 | 功能 |
+|---|---|---|
+| state/ | models/db/events/repositories/schema_v1 | SQLite 状态真相 + 事件 outbox |
+| agent/ | loop/context/budget/errors | Agent Runtime（tool-calling loop） |
+| providers/ | 5 适配器 + normalized/capabilities/mock/_http_util | 归一化 Provider 层 |
+| tools/ | registry/filesystem/python/latex/matlab | 工具执行（权限检查点在 registry） |
+| workspace/ | root/path_policy/permissions/artifacts | 工作区 + 权限 + 产物封存 |
+| runtime/ | process/cancellation/environment | Job Object/取消/工具发现 |
+| orchestration/ | dag | 拓扑分层/环检测/下游闭包 |
+| mm/contracts/ | s0_contracts/s2_contracts | Pydantic schema 权威 |
+| mm/roles/ | registry/prompts | 17 角色 + clean-room 提示词 |
+| mm/pipeline/ | s0_s1/s2_model/s5_review | S0-S6 流水线节点 |
+| mm/gates/ | g0/g2 | 门检机械判据 |
+| mm/guards/ | guards | 变化/结构/页数守卫 |
+| mm/ledger/ | issue_ledger | 意见台账状态机 |
+| mm/config/ | thresholds/profiles/role_routing | 阈值/档位/路由 |
+| api/ | projects/dashboard | Desktop API |
 
-## 下一步接手
+## 恢复序列
 
-1. 读本文件 + PROJECT_PLAN + FIDELITY_MATRIX
-2. `git log --oneline -5` 恢复上下文
-3. 继续实现 v0.4.0 待完成项（S1 原型执行/三档/API）
-4. 完成后走 review packet → GPT 外审 → tag 循环
-5. 之后 v0.5.0（S2/G2/RedTeam/DAG）→ v0.6.0（S3/S4/G3/G4/工具链）→ … → v1.0.0
+1. 本文件 → PROJECT_PLAN → FIDELITY_MATRIX
+2. `git log --oneline -10` 看最近变更
+3. 继续当前 TODO
 
-## 关键环境事实
+## 关键教训
 
-- 外审：内置浏览器 ChatGPT（wghela Plus / GPT-5.6 Sol High）
-- API key：无真实 key，一切 Provider 实现为 offline contract-tested
-- XeLaTeX：`D:/Apps/texlive/texlive/2026/bin/windows/xelatex.exe`
-- MATLAB：`D:/Apps/Matlab/bin/matlab.exe`（直接根目录布局）
-- 教训：盲 str.replace 用 assert 验证；pywintypes.error ≠ OSError（用 _WIN_ERRORS）；
-  pytest fixture tmp_path 清理前必须 close Database；MockProvider 脚本跨任务共享 cursor
+- 盲 str.replace 用 assert+getsource 验证
+- pywintypes.error ≠ OSError（用 _WIN_ERRORS 元组）
+- MockProvider 脚本跨任务共享 cursor（每任务需足够回合）
+- tmp_path 清理前 close Database
+- GPT 外审固定同一会话
+- CREATE_SUSPENDED 原子启动：ctor 放 rollback scope 内
+- 终止确认 = Job ActiveProcesses==0（不只 root 退出）
+- _resolve 统一出口 = close+cleanup+remove_quarantined+清标记+compare-remove+unresolved.pop
