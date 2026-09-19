@@ -39,3 +39,8 @@
 - 02:30 v0.2.0 外审 R4（GO 前置）：2 P1（_resolve 未含 registry remove、ctor 前移未落地）。
 - 02:40 _resolve 完整 primitive（compare-and-remove）+ ctor 前移落地 + spy 区分测试，107 测试。
 - 02:45 v0.2.0 外审 R5：GO（可以 tag）。P2 记录：quarantined 历史积累、HANDLE_LIST v0.3。
+- 03:00 v0.3.0 外审 R1：无 P0，多条 P1（image_input 能力虚假/Gemini id/continuation/Retry-After 等）。
+- 03:10 全部修复：image_input=False 五协议、anthropic reasoning 空集、gemini id+maxOutputTokens、
+  Responses continuation_items、safe_json/parse_retry_after/stop fail-closed、ProviderConfig ref 校验。117→124 测试。
+- 03:20 R2：1 P1（parse_retry_after 未接线 429 路径）。修复 + generate() 级集成测试 4 场景。124→129。
+- 03:30 R3：GO。tag v0.3.0。

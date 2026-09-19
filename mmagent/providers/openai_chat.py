@@ -20,6 +20,8 @@ from mmagent.agent.errors import (
     ProviderError,
     RateLimitError,
 )
+from mmagent.providers import redact_secret
+from mmagent.providers._http_util import parse_retry_after
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
 from mmagent.providers.normalized import (
@@ -88,7 +90,7 @@ def _msg_to_chat(m: NormalizedMessage) -> dict[str, Any]:
 def parse_chat_response(data: dict[str, Any], protocol: str = "openai_chat") -> NormalizedResponse:
     choices = data.get("choices") or []
     if not choices:
-        raise ProviderError("chat.completions 响应缺少 choices", kind=ErrorKind.PROVIDER_BAD_REQUEST)
+        raise ProviderError("chat.completions 响应缺少 choices", kind=ErrorKind.PROVIDER_PROTOCOL)
     ch = choices[0]
     msg = ch.get("message") or {}
     tool_calls = [
@@ -97,11 +99,19 @@ def parse_chat_response(data: dict[str, Any], protocol: str = "openai_chat") -> 
         for tc in (msg.get("tool_calls") or [])
     ]
     finish = ch.get("finish_reason")
-    stop = {
+    known = {
         "tool_calls": StopReason.TOOL_CALLS,
         "length": StopReason.MAX_TOKENS,
         "stop": StopReason.END_TURN,
-    }.get(finish, StopReason.END_TURN)
+        "function_call": StopReason.TOOL_CALLS,
+    }
+    if finish not in known:
+        # 未知 finish_reason 不得默认 END_TURN（外审 round1 K3 fail-open）
+        raise ProviderError(
+            f"chat 未知 finish_reason: {finish!r}",
+            kind=ErrorKind.PROVIDER_PROTOCOL,
+        )
+    stop = known[finish]
     usage_d = data.get("usage") or {}
     content = [TextPart(text=msg.get("content") or "")]
     return NormalizedResponse(
@@ -134,7 +144,8 @@ class OpenAIChatProvider(BaseProvider):
         extra_headers: dict[str, str] | None = None,
     ):
         self.base_url = base_url.rstrip("/")
-        self._key_getter = api_key_getter
+        self._key = api_key_getter()  # 初始化时取一次（脱敏 + 头部共用）
+        self._key_getter = lambda: self._key
         self._client = client or httpx.AsyncClient(timeout=600.0)
         self._extra_headers = extra_headers or {}
 
@@ -142,7 +153,7 @@ class OpenAIChatProvider(BaseProvider):
         return CapabilitySet(
             protocol=self.protocol,
             tool_calling=True,
-            image_input=True,
+            image_input=False,  # 图片输入未实现（诚实声明，v0.4 随图片腿落地）
             streaming=False,  # v0.3.x：SSE 流式解析落地后启用
             reasoning_levels=frozenset({"low", "medium", "high"}),
             max_output_tokens_limit=None,
@@ -176,16 +187,22 @@ class OpenAIChatProvider(BaseProvider):
             retry_after = resp.headers.get("retry-after")
             raise RateLimitError(
                 f"429 rate limited（elapsed={elapsed:.1f}s）",
-                retry_after_s=float(retry_after) if retry_after else None,
+                retry_after_s=parse_retry_after(retry_after),
             )
         if resp.status_code in (401, 403):
             raise ProviderError(f"鉴权失败 {resp.status_code}", kind=ErrorKind.PROVIDER_AUTH)
         if resp.status_code >= 500:
             raise ProviderError(f"服务端错误 {resp.status_code}", kind=ErrorKind.PROVIDER_SERVER, retryable=True)
         if resp.status_code >= 400:
-            raise ProviderError(f"请求错误 {resp.status_code}: {resp.text[:300]}",
+            detail = redact_secret(resp.text[:300], self._key)
+            raise ProviderError(f"请求错误 {resp.status_code}: {detail}",
                                 kind=ErrorKind.PROVIDER_BAD_REQUEST)
-        return parse_chat_response(resp.json(), self.protocol)
+        try:
+            data = resp.json()
+        except Exception as e:
+            raise ProviderError(f"chat 响应不是合法 JSON: {e}",
+                                kind=ErrorKind.PROVIDER_PROTOCOL) from e
+        return parse_chat_response(data, self.protocol)
 
     async def test_connection(self) -> dict:
         # 无 key/模型列表端点依赖：以最小 models 请求探测（兼容 OpenAI 语义）

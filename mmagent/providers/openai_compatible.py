@@ -9,6 +9,7 @@ from __future__ import annotations
 import httpx
 
 from mmagent.agent.errors import ErrorKind, ProviderError, RateLimitError
+from mmagent.providers._http_util import parse_retry_after
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
 from mmagent.providers.normalized import NormalizedMessage, NormalizedResponse, NormalizedTool
@@ -85,7 +86,7 @@ class OpenAICompatibleProvider(BaseProvider):
             raise ProviderError(f"completions 网络错误: {e}", kind=ErrorKind.PROVIDER_NETWORK, retryable=True) from e
         if resp.status_code == 429:
             retry_after = resp.headers.get("retry-after")
-            raise RateLimitError("429 rate limited", retry_after_s=float(retry_after) if retry_after else None)
+            raise RateLimitError("429 rate limited", retry_after_s=parse_retry_after(retry_after))
         if resp.status_code in (401, 403):
             raise ProviderError(f"鉴权失败 {resp.status_code}", kind=ErrorKind.PROVIDER_AUTH)
         if resp.status_code >= 500:

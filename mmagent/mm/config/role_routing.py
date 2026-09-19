@@ -9,17 +9,30 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+_ALLOWED_REF_PREFIXES = ("ENV:", "WINCRED:")
+
 
 @dataclass(frozen=True)
 class ProviderConfig:
-    """一个 Provider 渠道配置（api_key 永不入库/入日志）。"""
+    """一个 Provider 渠道配置。
+
+    数据模型强制：只有 api_key_ref（凭据引用），没有明文 api_key 字段；
+    ref 必须带前缀 ENV: / WINCRED:（外审 round1 secret boundary）。
+    """
 
     profile_id: str
     name: str
     protocol: str  # openai_chat | openai_responses | anthropic_messages | gemini | openai_compatible
     base_url: str
-    api_key_ref: str = ""  # 凭据引用（Credential Manager 键名 / 环境变量名），非明文
+    api_key_ref: str = ""  # 凭据引用（ENV:NAME / WINCRED:NAME），非明文
     extra_headers: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.api_key_ref:
+            if not self.api_key_ref.startswith(_ALLOWED_REF_PREFIXES):
+                raise ValueError(
+                    f"api_key_ref 必须以 ENV: 或 WINCRED: 开头（禁止明文/裸名）: {self.api_key_ref[:8]}..."
+                )
 
 
 @dataclass(frozen=True)

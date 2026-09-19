@@ -293,3 +293,157 @@ def test_role_routing_defaults_and_override():
     assert pc.api_key_ref.startswith("ENV:")
     mp = ModelProfile(profile_id="m1", provider_id="p1", model="model-x", reasoning="high")
     assert mp.reasoning == "high"
+
+
+# ==================== Round-1 外审修复的负向测试 ====================
+def test_r1_capabilities_image_input_honest():
+    """image_input 已如实降为 False（图片输入未实现，v0.4 随图片腿落地）。"""
+    for maker in (
+        lambda: OpenAIChatProvider("u", lambda: "k"),
+        lambda: OpenAIResponsesProvider("u", lambda: "k"),
+        lambda: AnthropicMessagesProvider("u", lambda: "k"),
+        lambda: GeminiProvider("u", lambda: "k"),
+        lambda: OpenAICompatibleProvider("u", lambda: "k"),
+    ):
+        assert maker().capabilities().image_input is False
+
+
+def test_r1_anthropic_reasoning_honest():
+    """thinking 预算映射未实现 → reasoning_levels 空集（不伪装）。"""
+    p = AnthropicMessagesProvider("u", lambda: "k")
+    assert p.capabilities().reasoning_levels == frozenset()
+
+
+def test_r1_retry_after_http_date_and_malformed():
+    import email.utils
+    import time as _t
+
+    from mmagent.providers._http_util import parse_retry_after
+
+    # delta-seconds
+    assert parse_retry_after("7") == 7.0
+    # HTTP-date（合法）
+    http_date = email.utils.formatdate(_t.time() + 30, usegmt=True)
+    v = parse_retry_after(http_date)
+    assert v is not None and 0 <= v <= 60
+    # 畸形（HTTP-date 无效 / 乱码）→ None，绝不抛
+    assert parse_retry_after("not-a-date") is None
+    assert parse_retry_after("") is None
+    assert parse_retry_after(None) is None
+
+
+def test_r1_malformed_2xx_json_wrapped():
+    """HTTP 200 但响应体非 JSON → ProviderError（协议错误），不抛裸 json 异常。"""
+    import asyncio as aio
+
+    from mmagent.agent.errors import ErrorKind
+    from mmagent.providers.openai_chat import OpenAIChatProvider as P
+
+    def handler(request):
+        return httpx.Response(200, content=b"THIS IS NOT JSON")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    p = P("https://api.test/v1", lambda: "k", client=client)
+    with pytest.raises(ProviderError) as ei:
+        aio.run(p.generate([NormalizedMessage(role="user", content=[TextPart(text="x")])], [], model="m"))
+    assert ei.value.kind == ErrorKind.PROVIDER_PROTOCOL
+    aio.run(client.aclose())
+
+
+def test_r1_unknown_stop_reason_fail_closed():
+    """未知 finish_reason/stop_reason → ProviderError，不得默认 END_TURN。"""
+
+    from mmagent.providers.anthropic_messages import parse_messages_response
+    from mmagent.providers.gemini import parse_generate_response
+    from mmagent.providers.openai_chat import parse_chat_response
+
+    with pytest.raises(ProviderError):
+        parse_chat_response({"choices": [{"message": {"role": "assistant", "content": "x"},
+                                          "finish_reason": "mystery"}]})
+    with pytest.raises(ProviderError):
+        parse_messages_response({"content": [{"type": "text", "text": "x"}],
+                                 "stop_reason": "martian_requirement"})
+    with pytest.raises(ProviderError):
+        parse_generate_response({"candidates": [{"content": {"parts": [{"text": "x"}]},
+                                                 "finishReason": "MARTIAN"}]})
+
+
+def test_r9_responses_continuation_items_prepended():
+    """continuation_items 支持上一轮 output items 回传（reasoning 模型多步工具）。"""
+    from mmagent.providers.openai_responses import build_responses_payload
+
+    prior = [{"type": "reasoning", "summary": []}, {"type": "message", "id": "m1"}]
+    payload = build_responses_payload(
+        [NormalizedMessage(role="tool", content=[TextPart(text="res")], tool_call_id="fc1")],
+        [], model="m", reasoning=None, max_output_tokens=None,
+        continuation_items=prior,
+    )
+    assert payload["input"][0] == prior[0]
+    assert payload["input"][1] == prior[1]
+    assert payload["input"][-1]["type"] == "function_call_output"
+
+
+def test_r1_provider_config_rejects_plaintext_key():
+    from mmagent.mm.config.role_routing import ProviderConfig
+
+    # 明文/裸名 ref 必须拒绝
+    with pytest.raises(ValueError):
+        ProviderConfig(profile_id="p", name="n", protocol="openai_chat",
+                       base_url="https://x", api_key_ref="sk-literal-secret")
+    with pytest.raises(ValueError):
+        ProviderConfig(profile_id="p", name="n", protocol="openai_chat",
+                       base_url="https://x", api_key_ref="BARE_NAME")
+    # 合法引用
+    pc = ProviderConfig(profile_id="p", name="n", protocol="openai_chat",
+                        base_url="https://x", api_key_ref="ENV:KEY_X")
+    assert pc.api_key_ref == "ENV:KEY_X"
+
+
+# ==================== Round-2 P1 修复的集成测试 ====================
+# generate() 级 429 集成：Retry-After 头的三种形态 + 缺失，经真实 generate() 路径
+@pytest.mark.asyncio
+@pytest.mark.parametrize("header_value,expect_s", [
+    ("120", 120.0),          # delta-seconds
+    (None, None),             # 无 header
+    ("garbage", None),        # 畸形
+])
+async def test_r2_p1_generate_429_retry_after_wired(header_value, expect_s):
+    """429 + Retry-After 各形态经 generate() 全路径 → RateLimitError 不裸抛。"""
+    headers = {"retry-after": header_value} if header_value else {}
+    def handler(request):
+        return httpx.Response(429, headers=headers, json={"error": "slow"})
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    p = OpenAIChatProvider("https://api.test/v1", lambda: "k", client=client)
+    with pytest.raises(RateLimitError) as ei:
+        await p.generate([NormalizedMessage(role="user", content=[TextPart(text="x")])], [], model="m")
+    assert ei.value.retry_after_s == expect_s
+    assert ei.value.retryable
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_r2_p1_generate_429_http_date():
+    """429 + HTTP-date → retry_after_s 合法非负秒数 → 不得 ValueError。"""
+    import email.utils
+    import time as _t
+
+    def handler(request):
+        http_date = email.utils.formatdate(_t.time() + 45, usegmt=True)
+        return httpx.Response(429, headers={"retry-after": http_date}, json={"error": "slow"})
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    p = OpenAIChatProvider("https://api.test/v1", lambda: "k", client=client)
+    with pytest.raises(RateLimitError) as ei:
+        await p.generate([NormalizedMessage(role="user", content=[TextPart(text="x")])], [], model="m")
+    assert ei.value.retry_after_s is not None
+    assert 0 <= ei.value.retry_after_s <= 60
+    await client.aclose()
+
+
+def test_r2_p2_choices_missing_protocol_error():
+    """choices 缺失 → PROVIDER_PROTOCOL（上游协议违规，非本地 bad request）。"""
+    from mmagent.agent.errors import ErrorKind
+    from mmagent.providers.openai_chat import parse_chat_response
+
+    with pytest.raises(ProviderError) as ei:
+        parse_chat_response({"id": "x", "choices": []})
+    assert ei.value.kind == ErrorKind.PROVIDER_PROTOCOL

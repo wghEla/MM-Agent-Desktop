@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from mmagent.agent.errors import ErrorKind, ProviderError, RateLimitError
+from mmagent.providers._http_util import parse_retry_after
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
 from mmagent.providers.normalized import (
@@ -26,6 +27,7 @@ from mmagent.providers.normalized import (
     Usage,
 )
 
+# anthropic-version：当前官方稳定版；可按渠道覆盖（构造参数 api_version）
 _ANTHROPIC_VERSION = "2023-06-01"
 
 
@@ -97,11 +99,20 @@ def parse_messages_response(data: dict[str, Any], protocol: str = "anthropic_mes
                 name=block.get("name") or "",
                 arguments_json=json.dumps(block.get("input") or {}, ensure_ascii=False),
             ))
-    stop = {
+    known = {
         "end_turn": StopReason.END_TURN,
+        "stop_sequence": StopReason.END_TURN,
         "tool_use": StopReason.TOOL_CALLS,
         "max_tokens": StopReason.MAX_TOKENS,
-    }.get(data.get("stop_reason"), StopReason.END_TURN)
+        "pause_turn": StopReason.END_TURN,
+        "refusal": StopReason.END_TURN,
+    }
+    if data.get("stop_reason") not in known:
+        raise ProviderError(
+            f"messages 未知 stop_reason: {data.get('stop_reason')!r}",
+            kind=ErrorKind.PROVIDER_PROTOCOL,
+        )
+    stop = known[data["stop_reason"]]
     usage_d = data.get("usage") or {}
     return NormalizedResponse(
         message=NormalizedMessage(role="assistant", content=[TextPart(text="".join(text_parts))],
@@ -131,9 +142,9 @@ class AnthropicMessagesProvider(BaseProvider):
         return CapabilitySet(
             protocol=self.protocol,
             tool_calling=True,
-            image_input=True,
+            image_input=False,  # 图片输入未实现（v0.4）
             streaming=False,  # v0.3.x：SSE 流式解析落地后启用
-            reasoning_levels=frozenset({"medium", "high"}),  # thinking 预算档映射
+            reasoning_levels=frozenset(),  # thinking 预算映射未实现（v0.4；诚实声明空集）
         )
 
     def _headers(self) -> dict[str, str]:
@@ -162,7 +173,7 @@ class AnthropicMessagesProvider(BaseProvider):
             raise ProviderError(f"messages 网络错误: {e}", kind=ErrorKind.PROVIDER_NETWORK, retryable=True) from e
         if resp.status_code == 429:
             retry_after = resp.headers.get("retry-after")
-            raise RateLimitError("429 rate limited", retry_after_s=float(retry_after) if retry_after else None)
+            raise RateLimitError("429 rate limited", retry_after_s=parse_retry_after(retry_after))
         if resp.status_code in (401, 403):
             raise ProviderError(f"鉴权失败 {resp.status_code}", kind=ErrorKind.PROVIDER_AUTH)
         if resp.status_code >= 500:

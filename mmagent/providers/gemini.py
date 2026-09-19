@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from mmagent.agent.errors import ErrorKind, ProviderError, RateLimitError
+from mmagent.providers._http_util import parse_retry_after
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
 from mmagent.providers.normalized import (
@@ -32,6 +33,7 @@ def build_generate_payload(
     tools: list[NormalizedTool],
     *,
     system_text: str | None = None,
+    max_output_tokens: int | None = None,
 ) -> dict[str, Any]:
     contents: list[dict[str, Any]] = []
     system_parts: list[str] = []
@@ -62,6 +64,9 @@ def build_generate_payload(
     payload: dict[str, Any] = {"contents": contents}
     if system_parts or system_text:
         payload["systemInstruction"] = {"parts": [{"text": "\n".join(filter(None, [system_text or "", *system_parts]))}]}
+    if max_output_tokens is not None:
+        # round9：max_output_tokens 必须真实映射 generationConfig（不得静默丢弃）
+        payload["generationConfig"] = {"maxOutputTokens": max_output_tokens}
     if tools:
         payload["tools"] = [{
             "functionDeclarations": [
@@ -89,17 +94,25 @@ def parse_generate_response(data: dict[str, Any], protocol: str = "gemini") -> N
             text_parts.append(part["text"])
         elif "functionCall" in part:
             fc = part["functionCall"]
+            # 优先官方 id 字段；legacy 无 id 时以 name 兜底（functionResponse 按 name 回填）
             tool_calls.append(NormalizedToolCall(
-                id=fc.get("name") or "",  # Gemini 无独立 call id，以 name 代替
+                id=fc.get("id") or fc.get("name") or "",
                 name=fc.get("name") or "",
                 arguments_json=json.dumps(fc.get("args") or {}, ensure_ascii=False),
             ))
     finish = cand.get("finishReason")
-    stop = {
+    known = {
         "STOP": StopReason.END_TURN,
         "MAX_TOKENS": StopReason.MAX_TOKENS,
         "SAFETY": StopReason.END_TURN,
-    }.get(finish, StopReason.END_TURN)
+        "RECITATION": StopReason.END_TURN,
+    }
+    if finish not in known:
+        raise ProviderError(
+            f"generateContent 未知 finishReason: {finish!r}",
+            kind=ErrorKind.PROVIDER_PROTOCOL,
+        )
+    stop = known[finish]
     usage_d = data.get("usageMetadata") or {}
     return NormalizedResponse(
         message=NormalizedMessage(role="assistant", content=[TextPart(text="".join(text_parts))],
@@ -127,7 +140,7 @@ class GeminiProvider(BaseProvider):
         return CapabilitySet(
             protocol=self.protocol,
             tool_calling=True,
-            image_input=True,
+            image_input=False,  # 图片输入未实现（v0.4）
             streaming=False,  # v0.3.x：SSE 流式解析落地后启用
             reasoning_levels=frozenset(),
         )
@@ -149,7 +162,8 @@ class GeminiProvider(BaseProvider):
         if messages and messages[0].role == "system":
             system_text = messages[0].text
             messages = messages[1:]
-        payload = build_generate_payload(messages, tools, system_text=system_text or None)
+        payload = build_generate_payload(messages, tools, system_text=system_text or None,
+                                         max_output_tokens=max_output_tokens)
         url = f"{self.base_url}/v1beta/models/{model}:generateContent"
         try:
             resp = await self._client.post(url, json=payload, headers=self._headers(), timeout=timeout_s)
@@ -159,7 +173,7 @@ class GeminiProvider(BaseProvider):
             raise ProviderError(f"generateContent 网络错误: {e}", kind=ErrorKind.PROVIDER_NETWORK, retryable=True) from e
         if resp.status_code == 429:
             retry_after = resp.headers.get("retry-after")
-            raise RateLimitError("429 rate limited", retry_after_s=float(retry_after) if retry_after else None)
+            raise RateLimitError("429 rate limited", retry_after_s=parse_retry_after(retry_after))
         if resp.status_code in (401, 403):
             raise ProviderError(f"鉴权失败 {resp.status_code}", kind=ErrorKind.PROVIDER_AUTH)
         if resp.status_code >= 500:

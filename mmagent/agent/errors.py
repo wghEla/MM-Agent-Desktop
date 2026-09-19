@@ -15,6 +15,7 @@ class ErrorKind(enum.StrEnum):
     PROVIDER_SERVER = "provider_server"
     PROVIDER_NETWORK = "provider_network"
     PROVIDER_BAD_REQUEST = "provider_bad_request"
+    PROVIDER_PROTOCOL = "provider_protocol"
     PROVIDER_CANCELLED = "provider_cancelled"
     PERMISSION_DENIED = "permission_denied"
     PATH_ESCAPE = "path_escape"
