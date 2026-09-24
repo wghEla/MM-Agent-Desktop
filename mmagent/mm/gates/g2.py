@@ -59,7 +59,7 @@ def mechanical_red_team_verdict(
     except (OSError, json.JSONDecodeError):
         pass
 
-   口径_keys: set[str] = set()
+    口径_keys: set[str] = set()
     raw_discrepancies = report.get("分歧明细") or []
     if isinstance(raw_discrepancies, list):
         for item in raw_discrepancies:
