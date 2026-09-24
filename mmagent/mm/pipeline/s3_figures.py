@@ -46,6 +46,7 @@ async def _run_agent_leg(
     instructions: str,
     expected: list[ExpectedArtifact],
     question_num: int | None = None,
+    image_paths: list[str] | None = None,
     cancel=None,
 ) -> str:
     role = get_role(role_id)
@@ -64,6 +65,7 @@ async def _run_agent_leg(
         model="mock",
         reasoning=role.reasoning,
         expected_artifacts=expected,
+        image_paths=list(image_paths or []),
     )
     outcome = await loop.run(spec)
     return outcome.status.value
@@ -112,23 +114,50 @@ async def run_s3(
             return {"g3_pass": False, "g3_issues": exec_issues, "reviews": history}
 
         for round_num in range(1, rounds + 1):
-            review_rel = f"审稿/图评R{round_num}_问题{q}.json"
-            review_status = await _run_agent_leg(
-                db, provider, registry, policy, run_id,
-                role_id="figure_reviewer",
-                node_key=f"S3:问{q}:图评R{round_num}",
-                instructions=(
-                    f"评审问题{q}的图片，写 {review_rel}；顶层给出数值字段 总分。"
-                    f"固定通过阈值为 {threshold:.1f}。"
-                ),
-                expected=[ExpectedArtifact(rel_path=review_rel)],
-                question_num=q,
-                cancel=cancel,
+            images = sorted(
+                p for p in (policy.root / "求解" / f"问题{q}" / "图片").glob("*.png")
+                if p.is_file()
             )
-            review_path = policy.root / review_rel
-            score = _review_score(review_path)
-            history.append({"question": q, "round": round_num, "score": score})
-            if review_status == "SUCCEEDED" and score >= threshold:
+            if not images:
+                return {
+                    "g3_pass": False,
+                    "g3_issues": [f"问{q} 无实际图片可供图评"],
+                    "reviews": history,
+                }
+            batches = [images[i:i + 8] for i in range(0, len(images), 8)]
+            batch_scores: list[float] = []
+            batch_ok = True
+            review_rels: list[str] = []
+            for batch_index, batch in enumerate(batches, 1):
+                suffix = "" if len(batches) == 1 else f"_B{batch_index}"
+                review_rel = f"审稿/图评R{round_num}_问题{q}{suffix}.json"
+                review_rels.append(review_rel)
+                rel_images = [p.relative_to(policy.root).as_posix() for p in batch]
+                review_status = await _run_agent_leg(
+                    db, provider, registry, policy, run_id,
+                    role_id="figure_reviewer",
+                    node_key=f"S3:问{q}:图评R{round_num}{suffix}",
+                    instructions=(
+                        f"视觉评审问题{q}这一批实际图片，写 {review_rel}；"
+                        f"顶层给出数值字段 总分，固定通过阈值为 {threshold:.1f}。"
+                        "必须依据随任务附带的图片本身，不得只读文件名推测。"
+                    ),
+                    expected=[ExpectedArtifact(rel_path=review_rel)],
+                    question_num=q,
+                    image_paths=rel_images,
+                    cancel=cancel,
+                )
+                score = _review_score(policy.root / review_rel)
+                batch_scores.append(score)
+                batch_ok = batch_ok and review_status == "SUCCEEDED"
+            score = min(batch_scores) if batch_scores else 0.0
+            history.append({
+                "question": q,
+                "round": round_num,
+                "score": score,
+                "batches": len(batches),
+            })
+            if batch_ok and score >= threshold:
                 break
             if round_num >= rounds:
                 break
@@ -138,7 +167,7 @@ async def run_s3(
                 role_id="plotter",
                 node_key=f"S3:问{q}:修图R{round_num}",
                 instructions=(
-                    f"只根据 {review_rel} 定向修改问题{q}的绘图脚本/图，保持结果事实不变；"
+                    f"只根据这些图评 {review_rels} 定向修改问题{q}的绘图脚本/图，保持结果事实不变；"
                     f"同步更新 {caption}。"
                 ),
                 expected=[ExpectedArtifact(rel_path=caption)],
