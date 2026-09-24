@@ -132,6 +132,7 @@ class AgentLoop:
         invocation_id: str | None = None
         usage = Usage()
         turns = 0
+        effective_model = self.provider.resolve_model(spec.model)
         try:
             # attempt+invocation+事件在同一事务（外审 round2 gate #4）
             attempt, invocation_id = repositories.begin_task_attempt(
@@ -140,7 +141,7 @@ class AgentLoop:
                 owner,
                 role_id=spec.role_id,
                 provider_profile=spec.provider_profile,
-                model=spec.model,
+                model=effective_model,
                 reasoning=spec.reasoning,
                 context_manifest=spec.context_manifest.to_dict() if spec.context_manifest else None,
             )
@@ -167,7 +168,7 @@ class AgentLoop:
                 response = await self.provider.generate(
                     messages,
                     tools,
-                    model=spec.model,
+                    model=effective_model,
                     reasoning=spec.reasoning,
                 )
                 usage = Usage(
