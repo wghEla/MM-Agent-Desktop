@@ -42,7 +42,8 @@ def _default_render(root: Path) -> list[Path]:
 async def _leg(
     db: Database, provider: BaseProvider, registry: ToolRegistry, policy: PathPolicy,
     run_id: str, *, stage: str, role_id: str, node: str, instructions: str,
-    expected: list[ExpectedArtifact], question_num: int | None = None, cancel=None,
+    expected: list[ExpectedArtifact], question_num: int | None = None,
+    image_paths: list[str] | None = None, cancel=None,
 ) -> str:
     role = get_role(role_id)
     vars = {"question": str(question_num)} if question_num is not None else {}
@@ -57,6 +58,7 @@ async def _leg(
         task_id=task.id, node_key=node, role_id=role_id,
         system_prompt=get_system_prompt(role_id), instructions=instructions,
         model="mock", reasoning=role.reasoning, expected_artifacts=expected,
+        image_paths=list(image_paths or []),
     ))
     return result.status.value
 
@@ -207,19 +209,32 @@ async def run_s5b(
             }
         if not pages:
             return {"pass": False, "issues": ["论文页图缺失，无法执行美化页审"], "rounds": rounds}
-        review_rel = f"审稿/美{round_num}.json"
-        status = await _leg(
-            db, provider, registry, policy, run_id,
-            stage="S5b", role_id="beautifier", node=f"S5b:页审R{round_num}",
-            instructions=(
-                f"逐页检查 论文/页/ 下的实际页图，写 {review_rel}。"
-                "每条页问题必须含 目标=图|文、页、严重度、问题、修改指令。"
-            ),
-            expected=[ExpectedArtifact(rel_path=review_rel)], cancel=cancel,
-        )
-        if status != "SUCCEEDED":
-            return {"pass": False, "issues": ["美化师页审失败"], "rounds": rounds}
-        issues = _page_issues(policy.root / review_rel)
+        batches = [pages[i:i + 8] for i in range(0, len(pages), 8)]
+        issues: list[dict] = []
+        for batch_index, batch in enumerate(batches, 1):
+            suffix = "" if len(batches) == 1 else f"_B{batch_index}"
+            review_rel = f"审稿/美{round_num}{suffix}.json"
+            rel_images = [p.relative_to(policy.root).as_posix() for p in batch]
+            status = await _leg(
+                db, provider, registry, policy, run_id,
+                stage="S5b", role_id="beautifier",
+                node=f"S5b:页审R{round_num}{suffix}",
+                instructions=(
+                    f"逐页视觉检查本批当前 PDF 页图，写 {review_rel}。"
+                    "每条页问题必须含 目标=图|文、页、严重度、问题、修改指令；"
+                    "必须依据附带图片本身，不得根据文件名猜测。"
+                ),
+                expected=[ExpectedArtifact(rel_path=review_rel)],
+                image_paths=rel_images,
+                cancel=cancel,
+            )
+            if status != "SUCCEEDED":
+                return {
+                    "pass": False,
+                    "issues": [f"美化师页审失败 batch={batch_index}"],
+                    "rounds": rounds,
+                }
+            issues.extend(_page_issues(policy.root / review_rel))
         failures = await _apply_beauty_issues(
             db, provider, registry, policy, run_id, round_num, issues, cancel=cancel
         )
