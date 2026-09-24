@@ -12,6 +12,7 @@ from mmagent.mm.audit import audit_paper
 from mmagent.mm.config.profiles import get_profile
 from mmagent.mm.gates.g5 import check_g5
 from mmagent.mm.guards.guards import page_guard
+from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
 from mmagent.mm.roles.prompts import get_system_prompt
 from mmagent.mm.roles.registry import get_role
 from mmagent.providers.base import BaseProvider
@@ -170,6 +171,11 @@ async def _apply_beauty_issues(
         )
         if status != "SUCCEEDED":
             failures.append(f"美化图路问{q}失败")
+            continue
+        execute_issues = await run_question_plot_scripts(
+            registry, policy, q, cancel=cancel
+        )
+        failures.extend(execute_issues)
     return failures
 
 
