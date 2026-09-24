@@ -96,6 +96,7 @@ _ROLES: tuple[RoleSpec, ...] = (
             "交接/实验记录.json",
             "交接/换版清单_问题{question}.json",
             "交接/升格笔记_问题{question}_*.md",
+            "审稿/回执_*.json",
         ),
         allowed_tools=_FS_PY,
         host_code=True,  # 真正运行求解脚本的角色（host_code 语义见 permissions.py）
