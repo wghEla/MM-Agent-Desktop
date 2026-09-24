@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from mmagent.agent.loop import AgentLoop, AgentTask
+from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
 from mmagent.mm.roles.prompts import get_system_prompt
 from mmagent.mm.roles.registry import get_role
 from mmagent.providers.base import BaseProvider
@@ -176,6 +177,11 @@ async def run_s6(
         ))
         if outcome.status.value != "SUCCEEDED":
             return {"pass": False, "issues": [f"S6 问{q}终审改图失败"]}
+        execute_issues = await run_question_plot_scripts(
+            registry, policy, q, cancel=cancel
+        )
+        if execute_issues:
+            return {"pass": False, "issues": execute_issues}
 
     compiled = compiler(policy.root)
     if compiled.get("rc") not in (0, None) or compiled.get("errors"):
