@@ -11,6 +11,7 @@ from mmagent.mm.pipeline.s5_finalize import run_g5, run_s5a, run_s5b
 from mmagent.providers.mock import MockProvider, MockScript, MockTurn
 from mmagent.state import repositories
 from mmagent.tools.filesystem import FsReadTool, FsWriteTool
+from mmagent.tools.python import PythonRunTool
 from mmagent.tools.registry import ToolRegistry
 from mmagent.workspace.path_policy import PathPolicy
 
@@ -19,6 +20,7 @@ def _registry() -> ToolRegistry:
     reg = ToolRegistry()
     reg.register(FsReadTool())
     reg.register(FsWriteTool())
+    reg.register(PythonRunTool())
     return reg
 
 
@@ -116,13 +118,28 @@ async def test_s5b_routes_figure_issue_to_plotter_question_scope(tmp_path: Path)
             _write("b", "审稿/美1.json", {
                 "页问题": [{"页": 4, "目标": "图", "严重度": 2, "问题": "问题1 图例过小", "修改指令": "放大图例"}]
             })
-            + _write("p", "审稿/回执_美化R1_图问1.json", {"改动": "放大图例"})
+            + [
+                MockTurn(tool_calls=[
+                    ("p-script", "fs.write", {
+                        "path": "求解/问题1/绘图_美化.py",
+                        "content": "from pathlib import Path\nPath('求解/问题1/图片').mkdir(parents=True, exist_ok=True)\nPath('求解/问题1/图片/beauty-rerun.marker').write_text('rerun', encoding='utf-8')\n",
+                    }),
+                    ("p-receipt", "fs.write", {
+                        "path": "审稿/回执_美化R1_图问1.json",
+                        "content": json.dumps({"改动": "放大图例"}, ensure_ascii=False),
+                    }),
+                ]),
+                MockTurn(text="图修改完成"),
+            ]
         )
         result = await run_s5b(
             handle.workspace.db, MockProvider(script), _registry(), PathPolicy(root), run_id,
             profile="快速", compile_paper=_compile, render_pages=_render,
         )
         assert result["pass"] is True
+        assert (root / "求解" / "问题1" / "图片" / "beauty-rerun.marker").read_text(
+            encoding="utf-8"
+        ) == "rerun"
     finally:
         handle.workspace.db.close()
 
