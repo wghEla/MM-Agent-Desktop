@@ -173,6 +173,7 @@ async def run_s3(
                     f"同步更新 {caption}。"
                 ),
                 expected=[ExpectedArtifact(rel_path=caption)],
+                question_num=q,
                 cancel=cancel,
             )
             if revision_status != "SUCCEEDED":
