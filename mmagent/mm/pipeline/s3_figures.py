@@ -46,10 +46,12 @@ async def _run_agent_leg(
     node_key: str,
     instructions: str,
     expected: list[ExpectedArtifact],
+    question_num: int | None = None,
     cancel=None,
 ) -> str:
     role = get_role(role_id)
-    checker = PermissionChecker(role.permissions(), policy)
+    permission_vars = {"question": str(question_num)} if question_num is not None else {}
+    checker = PermissionChecker(role.permissions(**permission_vars), policy)
     loop = AgentLoop(db, provider, registry, checker, policy, cancel=cancel)
     task = repositories.create_task(
         db, run_id=run_id, stage_key="S3", node_key=node_key, role_id=role_id
@@ -130,6 +132,7 @@ async def run_s3(
                 "只写脚本，由 Runtime 统一执行。"
             ),
             expected=[ExpectedArtifact(rel_path=caption)],
+            question_num=q,
             cancel=cancel,
         )
         if status != "SUCCEEDED":
@@ -150,6 +153,7 @@ async def run_s3(
                     f"固定通过阈值为 {threshold:.1f}。"
                 ),
                 expected=[ExpectedArtifact(rel_path=review_rel)],
+                question_num=q,
                 cancel=cancel,
             )
             review_path = policy.root / review_rel
