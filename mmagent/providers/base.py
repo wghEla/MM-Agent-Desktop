@@ -51,6 +51,13 @@ class BaseProvider(abc.ABC):
     @abc.abstractmethod
     def capabilities(self) -> CapabilitySet: ...
 
+    async def aclose(self) -> None:
+        """Release adapter-owned network resources when present."""
+        client = getattr(self, "_client", None)
+        closer = getattr(client, "aclose", None)
+        if closer is not None:
+            await closer()
+
 
 class ModelBoundProvider(BaseProvider):
     """Bind a concrete model to an existing protocol adapter.
@@ -111,3 +118,6 @@ class ModelBoundProvider(BaseProvider):
 
     def capabilities(self) -> CapabilitySet:
         return self.inner.capabilities()
+
+    async def aclose(self) -> None:
+        await self.inner.aclose()
