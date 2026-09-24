@@ -142,7 +142,7 @@ async def test_crash_recovery_preserves_state(tmp_path: Path):
 
     # 模拟崩溃恢复：检查 RUNNING 残留
     from mmagent.api.projects import reset_interrupted_tasks
-    n = reset_interrupted_tasks(handle, run_id)
+    reset_interrupted_tasks(handle, run_id)
     # 第二次 S0：新 run_id（崩溃后重新启动的正确语义）
     provider2 = MockProvider(_s0_script())
     run_id2 = repositories.create_run(db, project_id=handle.project_id, profile="标准")
