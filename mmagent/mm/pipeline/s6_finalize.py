@@ -32,7 +32,10 @@ def _default_compile(root: Path) -> dict[str, Any]:
         return {"rc": -1, "errors": [str(exc)], "pages": 0}
 
 
-async def _leg(db, provider, registry, policy, run_id, *, role_id, node, instructions, expected, cancel=None):
+async def _leg(
+    db, provider, registry, policy, run_id, *, role_id, node, instructions,
+    expected, image_paths: list[str] | None = None, cancel=None,
+):
     role = get_role(role_id)
     loop = AgentLoop(
         db, provider, registry, PermissionChecker(role.permissions(), policy), policy, cancel=cancel
@@ -44,6 +47,7 @@ async def _leg(db, provider, registry, policy, run_id, *, role_id, node, instruc
         task_id=task.id, node_key=node, role_id=role_id,
         system_prompt=get_system_prompt(role_id), instructions=instructions,
         model="mock", reasoning=role.reasoning, expected_artifacts=expected,
+        image_paths=list(image_paths or []),
     ))
     return result.status.value
 
@@ -108,20 +112,30 @@ async def run_s6(
     if not pages:
         return {"pass": False, "issues": ["S6 无页图，不能逐页终审"]}
 
-    review_rel = "审稿/终审_1.json"
-    review = await _leg(
-        db, provider, registry, policy, run_id,
-        role_id="beautifier", node="S6:逐页终审",
-        instructions=(
-            f"逐页检查当前页图并写 {review_rel}；"
-            "只列必须修的提交级问题，每条含页、严重度、目标、问题、修改指令。"
-        ),
-        expected=[ExpectedArtifact(rel_path=review_rel)], cancel=cancel,
-    )
-    if review != "SUCCEEDED":
-        return {"pass": False, "issues": ["S6 逐页终审失败"]}
-
-    issues = _final_issues(policy.root / review_rel)
+    batches = [pages[i:i + 8] for i in range(0, len(pages), 8)]
+    issues: list[dict] = []
+    for batch_index, batch in enumerate(batches, 1):
+        suffix = "" if len(batches) == 1 else f"_B{batch_index}"
+        review_rel = f"审稿/终审_1{suffix}.json"
+        rel_images = [p.relative_to(policy.root).as_posix() for p in batch]
+        review = await _leg(
+            db, provider, registry, policy, run_id,
+            role_id="beautifier", node=f"S6:逐页终审{suffix}",
+            instructions=(
+                f"逐页视觉检查本批当前 PDF 页图并写 {review_rel}；"
+                "只列必须修的提交级问题，每条含页、严重度、目标、问题、修改指令；"
+                "必须依据附带图片本身，不得根据文件名猜测。"
+            ),
+            expected=[ExpectedArtifact(rel_path=review_rel)],
+            image_paths=rel_images,
+            cancel=cancel,
+        )
+        if review != "SUCCEEDED":
+            return {
+                "pass": False,
+                "issues": [f"S6 逐页终审失败 batch={batch_index}"],
+            }
+        issues.extend(_final_issues(policy.root / review_rel))
     text_issues = [
         x for x in issues if isinstance(x, dict) and str(x.get("目标", "文")) == "文"
     ]
