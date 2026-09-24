@@ -17,13 +17,14 @@ from mmagent.mm.roles.registry import get_role
 from mmagent.providers.base import BaseProvider
 from mmagent.state import events, repositories
 from mmagent.state.db import Database
-from mmagent.tools.latex import LatexTool
+from mmagent.tools.latex import LatexTool, render_pdf_pages
 from mmagent.tools.registry import ToolRegistry
 from mmagent.workspace.artifacts import ExpectedArtifact
 from mmagent.workspace.path_policy import PathPolicy
 from mmagent.workspace.permissions import PermissionChecker
 
 CompileFn = Callable[[Path], dict[str, Any]]
+RenderFn = Callable[[Path], list[Path]]
 
 
 def _default_compile(root: Path) -> dict[str, Any]:
@@ -31,6 +32,10 @@ def _default_compile(root: Path) -> dict[str, Any]:
         return LatexTool(root).compile("论文/论文.tex")
     except RuntimeError as exc:
         return {"rc": -1, "errors": [str(exc)], "pages": 0}
+
+
+def _default_render(root: Path) -> list[Path]:
+    return render_pdf_pages(root)
 
 
 def _ledger_view(ledger: IssueLedger) -> list[dict[str, Any]]:
@@ -275,6 +280,7 @@ async def run_s5(
     *,
     max_rounds: int = 4,
     compile_paper: CompileFn | None = None,
+    render_pages: RenderFn | None = None,
     cancel=None,
 ) -> dict[str, Any]:
     """Run review rounds. The last round is review-only when still unconverged."""
@@ -283,12 +289,26 @@ async def run_s5(
     converged = False
     needs_escalation: list[str] = []
     compiler = compile_paper or _default_compile
+    renderer = render_pages or _default_render
 
     for round_num in range(1, max_rounds + 1):
         compile_result = compiler(policy.root)
+        render_issue: str | None = None
+        if compile_result.get("rc") in (0, None) and not compile_result.get("errors"):
+            try:
+                renderer(policy.root)
+            except (OSError, RuntimeError, ValueError) as exc:
+                render_issue = f"页图渲染失败: {exc}"
         audit_paper(policy.root)
         gate_ok, gate_issues = check_g4(policy.root)
         mechanical = _mechanical_opinions(gate_issues)
+        if render_issue:
+            mechanical.append({
+                "级别": "硬伤", "目标": "文", "定位": "页图",
+                "问题": render_issue,
+                "指令": "修复 PDF/页图渲染链路后重新编译渲染。",
+                "验收": "当前 PDF 对应页图可重新生成。", "来源": "机械门",
+            })
         if compile_result.get("rc") not in (0, None) or compile_result.get("errors"):
             mechanical.append({
                 "级别": "硬伤", "目标": "文", "定位": "编译",
