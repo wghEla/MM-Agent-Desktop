@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import secrets
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any
@@ -124,12 +125,22 @@ def create_app(
         raise ValueError("sidecar token must contain at least 24 characters")
 
     state = SidecarState(token=token, credentials=credentials or _default_credentials())
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        try:
+            yield
+        finally:
+            await state.runs.shutdown()
+            state.close()
+
     app = FastAPI(
         title="MM-Agent Desktop Sidecar",
         version="0.1",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=lifespan,
     )
     app.state.mmagent = state
 
