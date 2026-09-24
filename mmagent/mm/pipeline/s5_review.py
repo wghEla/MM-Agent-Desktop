@@ -102,6 +102,18 @@ def _extract_review_payload(path: Path) -> tuple[list[dict], list[dict]]:
     )
 
 
+def _sample_representative_pages(pages: list[Path], limit: int = 8) -> list[Path]:
+    if len(pages) <= limit:
+        return pages
+    if limit <= 1:
+        return [pages[0]]
+    indices = {
+        round(i * (len(pages) - 1) / (limit - 1))
+        for i in range(limit)
+    }
+    return [pages[i] for i in sorted(indices)]
+
+
 async def _run_review_legs(
     db: Database,
     provider: BaseProvider,
@@ -110,6 +122,7 @@ async def _run_review_legs(
     run_id: str,
     round_num: int,
     *,
+    page_images: list[Path] | None = None,
     cancel=None,
 ) -> tuple[list[dict], list[dict]]:
     opinions: list[dict] = []
@@ -129,18 +142,28 @@ async def _run_review_legs(
         task = repositories.create_task(
             db, run_id=run_id, stage_key="S5", node_key=node, role_id=role_id
         )
+        visual_paths: list[str] = []
+        instructions = (
+            f"执行第{round_num}轮独立审稿并写 {artifact}。"
+            "新意见写入 意见；若审稿台账视图中存在待复核条目，逐条给出 id、generation、裁定。"
+        )
+        if role_id == "judge_simulator":
+            selected = _sample_representative_pages(list(page_images or []))
+            visual_paths = [p.relative_to(policy.root).as_posix() for p in selected]
+            instructions += (
+                " 你是页图评委，只依据随任务附带的当前 PDF 代表页判断第一印象与版式；"
+                "看不到的内容必须弃权，不得推测。"
+            )
         outcome = await loop.run(AgentTask(
             task_id=task.id,
             node_key=node,
             role_id=role_id,
             system_prompt=get_system_prompt(role_id),
-            instructions=(
-                f"执行第{round_num}轮独立审稿并写 {artifact}。"
-                "新意见写入 意见；若审稿台账视图中存在待复核条目，逐条给出 id、generation、裁定。"
-            ),
+            instructions=instructions,
             model="mock",
             reasoning=role.reasoning,
             expected_artifacts=[ExpectedArtifact(rel_path=artifact)],
+            image_paths=visual_paths,
         ))
         if outcome.status.value != "SUCCEEDED":
             continue
@@ -294,9 +317,10 @@ async def run_s5(
     for round_num in range(1, max_rounds + 1):
         compile_result = compiler(policy.root)
         render_issue: str | None = None
+        rendered_pages: list[Path] = []
         if compile_result.get("rc") in (0, None) and not compile_result.get("errors"):
             try:
-                renderer(policy.root)
+                rendered_pages = renderer(policy.root)
             except (OSError, RuntimeError, ValueError) as exc:
                 render_issue = f"页图渲染失败: {exc}"
         audit_paper(policy.root)
@@ -318,7 +342,14 @@ async def run_s5(
 
         _write_ledger_view(policy, ledger)
         opinions, verdicts = await _run_review_legs(
-            db, provider, registry, policy, run_id, round_num, cancel=cancel
+            db,
+            provider,
+            registry,
+            policy,
+            run_id,
+            round_num,
+            page_images=rendered_pages,
+            cancel=cancel,
         )
         verdict_stats = ledger.收裁定(verdicts, 轮次=round_num)
         missed_verdicts = ledger.待复核未裁()
