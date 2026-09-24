@@ -17,6 +17,7 @@ from mmagent.providers._http_util import parse_retry_after
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
 from mmagent.providers.normalized import (
+    ImagePart,
     NormalizedMessage,
     NormalizedResponse,
     NormalizedTool,
@@ -42,7 +43,16 @@ def build_responses_payload(
         if m.role == "system":
             input_items.append({"role": "system", "content": [{"type": "input_text", "text": text}]})
         elif m.role == "user":
-            input_items.append({"role": "user", "content": [{"type": "input_text", "text": text}]})
+            content: list[dict[str, Any]] = []
+            if text:
+                content.append({"type": "input_text", "text": text})
+            for image in m.content:
+                if isinstance(image, ImagePart):
+                    content.append({
+                        "type": "input_image",
+                        "image_url": f"data:{image.media_type};base64,{image.b64}",
+                    })
+            input_items.append({"role": "user", "content": content})
         elif m.role == "tool":
             input_items.append({
                 "type": "function_call_output",
@@ -132,7 +142,7 @@ class OpenAIResponsesProvider(BaseProvider):
         return CapabilitySet(
             protocol=self.protocol,
             tool_calling=True,
-            image_input=False,  # 图片输入未实现（v0.4）
+            image_input=True
             streaming=False,  # v0.3.x：SSE 流式解析落地后启用
             reasoning_levels=frozenset({"minimal", "low", "medium", "high"}),
         )
