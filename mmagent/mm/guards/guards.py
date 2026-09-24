@@ -117,3 +117,58 @@ def page_guard(old_pages: int, new_pages: int, *, baseline: int | None = None) -
     if new_pages < base * 0.8 and base > 5:
         return False, f"页数骤降: {new_pages} < {base}*0.8（可能丢章）"
     return True, ""
+
+
+
+def stale_value_guard(workspace_root, *, include_globs: tuple[str, ...] = (
+    "论文/**/*.tex", "交接/图注素材*.json", "审稿/**/*.json"
+)) -> tuple[bool, list[str]]:
+    """换版旧值守卫：换版清单中的旧值不得继续残留在发布载体。
+
+    只扫描文本 carrier，不扫描换版清单自身，避免旧值定义把自己判成残留。
+    新旧值相同或旧值为空时跳过。返回 (通过, 明细)。
+    """
+    import json
+    from pathlib import Path
+
+    root = Path(workspace_root)
+    changes: list[tuple[str, str, str]] = []
+    for manifest in root.glob("交接/换版清单_问题*.json"):
+        try:
+            raw = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False, [f"换版清单不可解析: {manifest.name}"]
+        items = raw.get("条目", []) if isinstance(raw, dict) else raw
+        if not isinstance(items, list):
+            return False, [f"换版清单格式错误: {manifest.name}"]
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            old = str(item.get("旧值", "")).strip()
+            new = str(item.get("新值", "")).strip()
+            key = str(item.get("键", "?"))
+            if old and old != new:
+                changes.append((key, old, new))
+
+    if not changes:
+        return True, []
+
+    files: list[Path] = []
+    seen: set[Path] = set()
+    for pattern in include_globs:
+        for path in root.glob(pattern):
+            if path.is_file() and path not in seen and "换版清单_" not in path.name:
+                seen.add(path)
+                files.append(path)
+
+    issues: list[str] = []
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for key, old, new in changes:
+            if old in text:
+                rel = path.relative_to(root).as_posix()
+                issues.append(f"旧值残留: {key} {old!r} -> {new!r} 仍见于 {rel}")
+    return not issues, issues
