@@ -15,7 +15,7 @@ from mmagent.mm.roles.registry import get_role
 from mmagent.providers.base import BaseProvider
 from mmagent.state import events, repositories
 from mmagent.state.db import Database
-from mmagent.tools.latex import LatexTool
+from mmagent.tools.latex import LatexTool, render_pdf_pages
 from mmagent.tools.registry import ToolRegistry
 from mmagent.workspace.artifacts import ExpectedArtifact
 from mmagent.workspace.path_policy import PathPolicy
@@ -100,11 +100,11 @@ async def run_s6(
     render_pages: RenderFn | None = None, cancel=None,
 ) -> dict[str, Any]:
     compiler = compile_paper or _default_compile
-    pages = (
-        render_pages(policy.root)
-        if render_pages
-        else sorted((policy.root / "论文" / "页").glob("*.png"))
-    )
+    renderer = render_pages or render_pdf_pages
+    try:
+        pages = renderer(policy.root)
+    except (OSError, RuntimeError, ValueError) as exc:
+        return {"pass": False, "issues": [f"S6 页图渲染失败: {exc}"]}
     if not pages:
         return {"pass": False, "issues": ["S6 无页图，不能逐页终审"]}
 
