@@ -193,6 +193,7 @@ _ROLES: tuple[RoleSpec, ...] = (
             "论文/*.tex",
             "交接/叙事底稿.md",
             "交接/论点脊柱.json",
+            "交接/需求覆盖.json",
             "审稿/回执_*.json",
         ),
         allowed_tools=_FS_RW,
