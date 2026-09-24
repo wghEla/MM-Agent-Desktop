@@ -320,6 +320,7 @@ class PaperFoundryEngine:
                     self.db, self.provider, self.registry, self.policy, self.run_id,
                     max_rounds=profile.审稿轮数,
                     compile_paper=self.hooks.compile_paper,
+                    render_pages=self.hooks.render_pages,
                     cancel=self.cancel,
                 )
             await execute_once("S5", s5)
