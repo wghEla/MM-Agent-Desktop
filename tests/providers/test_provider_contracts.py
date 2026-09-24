@@ -452,7 +452,7 @@ def test_r2_p2_choices_missing_protocol_error():
 
 def test_native_multimodal_payload_shapes():
     from mmagent.providers.anthropic_messages import build_messages_payload
-    from mmagent.providers.gemini import build_gemini_payload
+    from mmagent.providers.gemini import build_generate_payload
     from mmagent.providers.openai_chat import build_chat_payload
     from mmagent.providers.openai_responses import build_responses_payload
 
@@ -476,14 +476,14 @@ def test_native_multimodal_payload_shapes():
     assert responses["input"][0]["content"][1]["type"] == "input_image"
 
     anthropic = build_messages_payload(
-        [msg], [], model="m", max_output_tokens=100, reasoning=None
+        [msg], [], model="m", max_output_tokens=100
     )
     image = anthropic["messages"][0]["content"][1]
     assert image["type"] == "image"
     assert image["source"]["data"] == "YWJj"
 
-    gemini = build_gemini_payload(
-        [msg], [], model="m", reasoning=None, max_output_tokens=None
+    gemini = build_generate_payload(
+        [msg], [], max_output_tokens=None
     )
     inline = gemini["contents"][0]["parts"][1]["inlineData"]
     assert inline["mimeType"] == "image/png"
