@@ -18,7 +18,7 @@ from mmagent.mm.roles.registry import get_role
 from mmagent.providers.base import BaseProvider
 from mmagent.state import events, repositories
 from mmagent.state.db import Database
-from mmagent.tools.latex import LatexTool
+from mmagent.tools.latex import LatexTool, render_pdf_pages
 from mmagent.tools.registry import ToolRegistry
 from mmagent.workspace.artifacts import ExpectedArtifact
 from mmagent.workspace.path_policy import PathPolicy
@@ -35,8 +35,8 @@ def _default_compile(root: Path) -> dict[str, Any]:
         return {"rc": -1, "errors": [str(exc)], "pages": 0}
 
 
-def _existing_pages(root: Path) -> list[Path]:
-    return sorted(p for p in (root / "论文" / "页").glob("*.png") if p.is_file())
+def _default_render(root: Path) -> list[Path]:
+    return render_pdf_pages(root)
 
 
 async def _leg(
@@ -187,6 +187,7 @@ async def run_s5b(
     """Page-image beautification loop with figure/text routing and page guard."""
     cfg = get_profile(profile)
     compiler = compile_paper or _default_compile
+    renderer = render_pages or _default_render
     initial = compiler(policy.root)
     if initial.get("rc") not in (0, None) or initial.get("errors"):
         return {"pass": False, "issues": ["美化前编译失败"], "rounds": []}
@@ -196,7 +197,14 @@ async def run_s5b(
 
     rounds: list[dict[str, Any]] = []
     for round_num in range(1, cfg.美化轮数 + 1):
-        pages = render_pages(policy.root) if render_pages else _existing_pages(policy.root)
+        try:
+            pages = renderer(policy.root)
+        except (OSError, RuntimeError, ValueError) as exc:
+            return {
+                "pass": False,
+                "issues": [f"论文页图渲染失败: {exc}"],
+                "rounds": rounds,
+            }
         if not pages:
             return {"pass": False, "issues": ["论文页图缺失，无法执行美化页审"], "rounds": rounds}
         review_rel = f"审稿/美{round_num}.json"
