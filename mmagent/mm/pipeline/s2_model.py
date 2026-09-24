@@ -7,7 +7,7 @@ from typing import Any
 
 from mmagent.agent.loop import AgentLoop, AgentTask
 from mmagent.mm.config.thresholds import DEFAULT_THRESHOLDS
-from mmagent.mm.gates.g2 import check_g2
+from mmagent.mm.gates.g2 import check_g2, normalize_red_team_report
 from mmagent.mm.roles.prompts import get_system_prompt
 from mmagent.mm.roles.registry import get_role
 from mmagent.orchestration.dag import build_dependency_graph, topological_layers
@@ -184,7 +184,15 @@ async def _red_team_cycle(
         expected=[ExpectedArtifact(rel_path=f"交接/红队_问题{q}.json")],
         cancel=cancel,
     )
-    return report == "SUCCEEDED", "" if report == "SUCCEEDED" else "红队报告腿失败"
+    if report != "SUCCEEDED":
+        return False, "红队报告腿失败"
+    passed, mechanical_issues = normalize_red_team_report(policy.root, q)
+    detail = "" if passed else "红队机械复核不齐"
+    if mechanical_issues:
+        detail += ": " + "; ".join(mechanical_issues)
+    # A numeric mismatch is a valid red-team finding, not a leg execution failure.
+    # Return success here so the caller can arbitrate based on normalized 结论.
+    return True, detail
 
 
 def _red_conclusion(policy: PathPolicy, q: int) -> str:
