@@ -1,4 +1,8 @@
-"""三档 profiles（深度/标准/快速）—— 复现上游 档位表（FIDELITY_MATRIX D8–D10）。"""
+"""Three execution profiles (深度/标准/快速).
+
+The persisted/API layer historically used both English and Chinese spellings.
+Normalize them here so every pipeline stage consumes one canonical tier.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -19,7 +23,7 @@ class Profile:
     美化轮数: int = 2
     max_legs: int = 600
     max_hours: float = 40.0
-    角色分档: bool = False  # True = 按 ROLE_REASONING_TIERS 分档；False = 全员同档
+    角色分档: bool = False
     描述: str = ""
 
 
@@ -43,13 +47,30 @@ class Profile:
 )
 
 _PROFILES: dict[str, Profile] = {"深度": 深度, "标准": 标准, "快速": 快速}
+_ALIASES: dict[str, ProfileTier] = {
+    "deep": "深度",
+    "depth": "深度",
+    "standard": "标准",
+    "normal": "标准",
+    "quick": "快速",
+    "fast": "快速",
+}
+
+
+def normalize_profile(tier: str) -> ProfileTier:
+    value = str(tier).strip()
+    if value in _PROFILES:
+        return value  # type: ignore[return-value]
+    canonical = _ALIASES.get(value.lower())
+    if canonical is None:
+        raise ValueError(
+            f"未知档位 {tier!r}：可选 深度/标准/快速（兼容 deep/standard/quick）"
+        )
+    return canonical
 
 
 def get_profile(tier: str) -> Profile:
-    p = _PROFILES.get(tier)
-    if p is None:
-        raise ValueError(f"未知档位 {tier!r}：可选 深度/标准/快速")
-    return p
+    return _PROFILES[normalize_profile(tier)]
 
 
 def all_profiles() -> dict[str, Profile]:
