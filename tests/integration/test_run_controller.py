@@ -17,6 +17,7 @@ class FakeEngine:
     def __init__(self, workspace, provider, registry, run_id, *, hooks=None):
         self.workspace = workspace
         self.db = workspace.db
+        self.provider = provider
         self.run_id = run_id
         self.cancelled = False
         self.started = asyncio.Event()
