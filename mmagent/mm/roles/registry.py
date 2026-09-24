@@ -112,6 +112,7 @@ _ROLES: tuple[RoleSpec, ...] = (
             "交接/题面契约.json",
             "交接/数据档案.json",
             "交接/结果声明_问题{question}.json",
+            "求解/问题{question}/红队结果/**",
         ),
         write_scopes=(
             "求解/问题{question}/复算.py",
