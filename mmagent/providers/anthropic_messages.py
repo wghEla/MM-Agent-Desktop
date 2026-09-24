@@ -18,6 +18,7 @@ from mmagent.providers._http_util import parse_retry_after
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
 from mmagent.providers.normalized import (
+    ImagePart,
     NormalizedMessage,
     NormalizedResponse,
     NormalizedTool,
@@ -66,8 +67,24 @@ def build_messages_payload(
                 content.append({"type": "tool_use", "id": tc.id, "name": tc.name, "input": args})
             api_messages.append({"role": "assistant", "content": content})
             continue
-        api_messages.append({"role": "user" if m.role == "user" else "assistant",
-                             "content": [{"type": "text", "text": text}]})
+        content: list[dict[str, Any]] = []
+        if text:
+            content.append({"type": "text", "text": text})
+        if m.role == "user":
+            for image in m.content:
+                if isinstance(image, ImagePart):
+                    content.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": image.media_type,
+                            "data": image.b64,
+                        },
+                    })
+        api_messages.append({
+            "role": "user" if m.role == "user" else "assistant",
+            "content": content,
+        })
     payload: dict[str, Any] = {
         "model": model,
         "max_tokens": max_output_tokens or 8192,
@@ -142,7 +159,7 @@ class AnthropicMessagesProvider(BaseProvider):
         return CapabilitySet(
             protocol=self.protocol,
             tool_calling=True,
-            image_input=False,  # 图片输入未实现（v0.4）
+            image_input=True
             streaming=False,  # v0.3.x：SSE 流式解析落地后启用
             reasoning_levels=frozenset(),  # thinking 预算映射未实现（v0.4；诚实声明空集）
         )
