@@ -72,3 +72,44 @@ class LatexTool:
         if not log_path.is_file():
             return 0
         return self.count_pages_text(log_path.read_text(encoding="utf-8", errors="replace"))
+
+
+
+def render_pdf_pages(
+    workspace_root: Path,
+    pdf_file: str = "论文/论文.pdf",
+    *,
+    output_dir: str = "论文/页",
+    dpi: int = 144,
+) -> list[Path]:
+    """Render the current paper PDF into deterministic PNG page images.
+
+    This is a trusted runtime operation rather than an Agent-authored script.
+    Existing page PNGs are removed first so reviewers cannot accidentally inspect
+    stale pages from an older PDF revision.
+    """
+    if dpi < 72 or dpi > 300:
+        raise ValueError("dpi must be between 72 and 300")
+
+    import fitz
+
+    root = Path(workspace_root)
+    pdf_path = root / pdf_file
+    if not pdf_path.is_file():
+        raise FileNotFoundError(f"PDF 不存在: {pdf_file}")
+
+    out = root / output_dir
+    out.mkdir(parents=True, exist_ok=True)
+    for old in out.glob("*.png"):
+        old.unlink()
+
+    rendered: list[Path] = []
+    scale = dpi / 72.0
+    matrix = fitz.Matrix(scale, scale)
+    with fitz.open(pdf_path) as doc:
+        for index, page in enumerate(doc, 1):
+            pix = page.get_pixmap(matrix=matrix, alpha=False)
+            path = out / f"page_{index:03d}.png"
+            pix.save(path)
+            rendered.append(path)
+    return rendered
