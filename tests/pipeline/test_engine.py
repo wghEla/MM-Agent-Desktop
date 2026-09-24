@@ -164,7 +164,7 @@ async def test_pause_stops_at_safe_boundary(monkeypatch, tmp_path: Path) -> None
 
     row = handle.workspace.db.query_one("SELECT status FROM runs WHERE id = ?", (run_id,))
     assert row["status"] == RunStatus.PAUSED.value
-    handle.workspace.release_run_lock()
+    assert not (handle.workspace.root / ".mmagent" / "run.lock").exists()
     handle.workspace.db.close()
 
 
