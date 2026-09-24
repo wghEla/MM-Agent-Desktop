@@ -157,6 +157,18 @@ class RunController:
         active = self._require_active(run_id)
         return await active.task
 
+    async def shutdown(self) -> None:
+        """Stop process-local tasks while preserving unfinished runs as resumable."""
+        tasks = [
+            active.task
+            for active in self._active.values()
+            if not active.task.done()
+        ]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
     def prune_finished(self) -> int:
         finished = [rid for rid, active in self._active.items() if active.task.done()]
         for rid in finished:
@@ -178,7 +190,16 @@ class RunController:
             # Pause is an expected control-flow boundary, not an error.
             return None
         except asyncio.CancelledError:
-            engine.cancel_run("controller task cancelled")
+            # Controller/sidecar shutdown is resumable.  Explicit user Stop uses
+            # engine.cancel_run() through cancel() and remains CANCELLED.
+            row = engine.db.query_one(
+                "SELECT status FROM runs WHERE id = ?", (run_id,)
+            )
+            if row is not None and RunStatus(row["status"]) is RunStatus.RUNNING:
+                repositories.set_run_status(
+                    engine.db, run_id, RunStatus.PAUSED
+                )
+            engine.workspace.release_run_lock()
             raise
         except BaseException as exc:
             active = self._active.get(run_id)
