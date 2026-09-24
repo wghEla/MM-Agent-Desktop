@@ -7,7 +7,7 @@ import re
 
 def _正文单位(text: str) -> list[str]:
     """tex 正文切成句子级单位（去 % 注释行，按句末标点切分）。"""
-    lines = [l for l in text.splitlines() if not l.strip().startswith("%")]
+    lines = [line for line in text.splitlines() if not line.strip().startswith("%")]
     units: list[str] = []
     for line in lines:
         if not line.strip():
