@@ -11,15 +11,14 @@ from mmagent.mm.config.thresholds import DEFAULT_THRESHOLDS
 from mmagent.mm.gates.g3 import check_g3
 from mmagent.mm.roles.prompts import get_system_prompt
 from mmagent.mm.roles.registry import get_role
+from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
 from mmagent.providers.base import BaseProvider
-from mmagent.runtime.cancellation import CancellationToken
 from mmagent.state import repositories
 from mmagent.state.db import Database
 from mmagent.tools.registry import ToolRegistry
-from mmagent.tools.tool_protocol import ToolContext
 from mmagent.workspace.artifacts import ExpectedArtifact
 from mmagent.workspace.path_policy import PathPolicy
-from mmagent.workspace.permissions import PermissionChecker, RolePermissions
+from mmagent.workspace.permissions import PermissionChecker
 
 
 def _review_score(path: Path) -> float:
@@ -70,36 +69,6 @@ async def _run_agent_leg(
     return outcome.status.value
 
 
-async def _execute_question_plot_scripts(
-    registry: ToolRegistry, policy: PathPolicy, question_num: int, *, cancel=None
-) -> list[str]:
-    """Execute model-authored plotting scripts through the trusted runtime boundary."""
-    issues: list[str] = []
-    scripts = sorted(policy.root.glob(f"求解/问题{question_num}/绘图_*.py"))
-    if not scripts:
-        return [f"问{question_num} 没有绘图脚本"]
-    if not registry.has("python.run"):
-        return ["ToolRegistry 缺 python.run，无法执行绘图脚本"]
-
-    runtime_permissions = RolePermissions(
-        role_id="runtime_plot_executor",
-        read_scopes=("求解/**",),
-        write_scopes=("求解/**",),
-        allowed_tools=frozenset({"python.run"}),
-        host_code=True,
-    )
-    checker = PermissionChecker(runtime_permissions, policy)
-    token = cancel or CancellationToken()
-    ctx = ToolContext(policy=policy, permission=checker, cancel=token)
-
-    for script in scripts:
-        rel = script.relative_to(policy.root).as_posix()
-        result = await registry.invoke("python.run", {"path": rel, "timeout_s": 600}, ctx)
-        if not result.ok:
-            issues.append(f"{rel} 执行失败: {result.error}")
-    return issues
-
-
 async def run_s3(
     db: Database,
     provider: BaseProvider,
@@ -138,7 +107,7 @@ async def run_s3(
         if status != "SUCCEEDED":
             return {"g3_pass": False, "g3_issues": [f"问{q} 绘图腿失败"], "reviews": history}
 
-        exec_issues = await _execute_question_plot_scripts(registry, policy, q, cancel=cancel)
+        exec_issues = await run_question_plot_scripts(registry, policy, q, cancel=cancel)
         if exec_issues:
             return {"g3_pass": False, "g3_issues": exec_issues, "reviews": history}
 
@@ -178,7 +147,7 @@ async def run_s3(
             )
             if revision_status != "SUCCEEDED":
                 return {"g3_pass": False, "g3_issues": [f"问{q} 修图腿失败"], "reviews": history}
-            exec_issues = await _execute_question_plot_scripts(registry, policy, q, cancel=cancel)
+            exec_issues = await run_question_plot_scripts(registry, policy, q, cancel=cancel)
             if exec_issues:
                 return {"g3_pass": False, "g3_issues": exec_issues, "reviews": history}
 
