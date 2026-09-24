@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+from mmagent.api.projects import create_project
 from mmagent.api.providers import (
     build_provider,
     create_provider_profile,
     delete_provider_profile,
     public_profile,
 )
-from mmagent.api.projects import create_project
 from mmagent.providers.base import ModelBoundProvider
 from mmagent.runtime.credentials import MemoryCredentialStore
 
