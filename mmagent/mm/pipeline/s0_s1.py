@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from mmagent.agent.loop import AgentLoop, AgentTask
-from mmagent.mm.roles.prompts import ANSWER_PREDICTOR_SYSTEM, PLANNER_SYSTEM, READER_SYSTEM
+from mmagent.mm.roles.prompts import ANSWER_PREDICTOR_SYSTEM, READER_SYSTEM
 from mmagent.mm.roles.registry import get_role
 from mmagent.providers.base import BaseProvider
 from mmagent.state import repositories
@@ -66,8 +66,6 @@ async def run_s0(
 
 
 def _s0_specs() -> list[tuple[str, str, str, str, list[ExpectedArtifact]]]:
-    reader = get_role("reader")
-    predictor = get_role("answer_predictor")
     return [
         ("reader", "S0.2:读题", READER_SYSTEM,
          "读取 输入/题目/ 下的题目文件与 输入/数据/ 下的附件清单。"
