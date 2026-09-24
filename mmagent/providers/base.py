@@ -28,6 +28,10 @@ class BaseProvider(abc.ABC):
         """Resolve a task-level model placeholder to the provider's effective model."""
         return requested
 
+    def resolve_reasoning(self, requested: str | None) -> str | None:
+        """Resolve task reasoning to the effective provider setting."""
+        return requested
+
     @abc.abstractmethod
     async def generate(
         self,
@@ -56,16 +60,30 @@ class ModelBoundProvider(BaseProvider):
     preserving explicit non-placeholder model requests.
     """
 
-    def __init__(self, inner: BaseProvider, model: str):
+    def __init__(
+        self,
+        inner: BaseProvider,
+        model: str,
+        *,
+        reasoning: str | None = None,
+        max_output_tokens: int | None = None,
+        timeout_s: float | None = None,
+    ):
         if not model.strip():
             raise ValueError("bound model must be non-empty")
         self.inner = inner
         self.model = model.strip()
+        self.reasoning = reasoning
+        self.max_output_tokens = max_output_tokens
+        self.timeout_s = timeout_s
         self.protocol = inner.protocol
 
     def resolve_model(self, requested: str) -> str:
         value = (requested or "").strip()
         return self.model if value in ("", "mock") else value
+
+    def resolve_reasoning(self, requested: str | None) -> str | None:
+        return self.reasoning if self.reasoning is not None else requested
 
     async def generate(
         self,
@@ -81,9 +99,11 @@ class ModelBoundProvider(BaseProvider):
             messages,
             tools,
             model=self.resolve_model(model),
-            reasoning=reasoning,
-            max_output_tokens=max_output_tokens,
-            timeout_s=timeout_s,
+            reasoning=self.resolve_reasoning(reasoning),
+            max_output_tokens=(
+                self.max_output_tokens if max_output_tokens is None else max_output_tokens
+            ),
+            timeout_s=self.timeout_s if self.timeout_s is not None else timeout_s,
         )
 
     async def test_connection(self) -> dict:
