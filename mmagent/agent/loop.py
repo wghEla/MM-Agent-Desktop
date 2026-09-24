@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import time
 import uuid
@@ -34,6 +35,7 @@ from mmagent.agent.errors import (
 )
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.normalized import (
+    ImagePart,
     NormalizedMessage,
     NormalizedToolCall,
     StopReason,
@@ -72,6 +74,7 @@ class AgentTask:
     provider_profile: str = "default"
     reasoning: str | None = None
     expected_artifacts: list[ExpectedArtifact] = field(default_factory=list)
+    image_paths: list[str] = field(default_factory=list)
     max_turns: int = 16
     context_manifest: ContextManifest | None = None
 
@@ -365,15 +368,52 @@ class AgentLoop:
         parts = [spec.instructions]
         if spec.context_manifest:
             parts.append("\n" + spec.context_manifest.render())
+
+        user_content: list[TextPart | ImagePart] = [TextPart(text="\n".join(parts))]
+        if spec.image_paths:
+            if len(spec.image_paths) > 8:
+                raise MMAgentError("单条图片腿最多允许 8 张图片")
+            if not self.provider.capabilities().image_input:
+                raise MMAgentError(
+                    f"当前 Provider {self.provider.protocol} 未声明 image_input 能力，"
+                    "不能运行需要视觉输入的角色"
+                )
+            media_types = {
+                ".png": "image/png",
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
+                ".webp": "image/webp",
+            }
+            for rel in spec.image_paths:
+                self.permission.check_read(rel)
+                path = self.policy.resolve(rel, must_exist=True)
+                media_type = media_types.get(path.suffix.lower())
+                if media_type is None:
+                    raise MMAgentError(f"不支持的图片格式: {rel}")
+                data = path.read_bytes()
+                if len(data) > 12 * 1024 * 1024:
+                    raise MMAgentError(f"图片过大（>12 MiB）: {rel}")
+                user_content.append(
+                    ImagePart(
+                        b64=base64.b64encode(data).decode("ascii"),
+                        media_type=media_type,
+                    )
+                )
+
         return [
             NormalizedMessage(role="system", content=[TextPart(text=spec.system_prompt)]),
-            NormalizedMessage(role="user", content=[TextPart(text="\n".join(parts))]),
+            NormalizedMessage(role="user", content=user_content),
         ]
 
     def _persist_message(self, invocation_id: str, msg: NormalizedMessage, *, seq: int) -> None:
+        # Persist image metadata but never duplicate base64 image payloads into SQLite.
+        payload = msg.model_dump(mode="json")
+        for part in payload.get("content", []):
+            if part.get("type") == "image":
+                part["b64"] = "<omitted>"
         self.db.execute(
             "INSERT INTO messages(invocation_id, seq, role, content_json) VALUES (?,?,?,?)",
-            (invocation_id, seq, msg.role, msg.model_dump_json()),
+            (invocation_id, seq, msg.role, json.dumps(payload, ensure_ascii=False)),
         )
 
     def _persist_tool_call(
