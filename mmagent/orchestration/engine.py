@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from mmagent.agent.errors import TaskCancelled
 from mmagent.mm.config.profiles import get_profile
 from mmagent.mm.pipeline.s0_s1 import run_s0, run_s1
 from mmagent.mm.pipeline.s2_model import run_s2
@@ -122,6 +123,10 @@ class PaperFoundryEngine:
                 self.db, "pipeline.paused_at_boundary", {}, run_id=self.run_id
             )
             raise PipelinePaused("run 已暂停；将在当前阶段边界停止")
+
+    def cancel_run(self, reason: str = "user cancelled") -> None:
+        """Request cooperative cancellation for this live engine instance."""
+        self.cancel.cancel(reason)
 
     def recover_interrupted_tasks(self) -> int:
         """Crash recovery: active orphan tasks become FAILED, never assumed successful."""
@@ -391,6 +396,18 @@ class PaperFoundryEngine:
 
         except PipelinePaused:
             # External pause request already moved RUNNING -> PAUSED.
+            raise
+        except TaskCancelled as exc:
+            row = self._run_row()
+            if RunStatus(row["status"]) is RunStatus.RUNNING:
+                repositories.set_run_status(self.db, self.run_id, RunStatus.CANCELLED)
+            self.workspace.release_run_lock()
+            events.append_event(
+                self.db,
+                "pipeline.cancelled",
+                {"reason": str(exc), "completed": sorted(completed)},
+                run_id=self.run_id,
+            )
             raise
         except BaseException as exc:
             row = self._run_row()
