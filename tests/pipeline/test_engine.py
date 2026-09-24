@@ -12,6 +12,7 @@ from mmagent.orchestration.engine import (
     PaperFoundryEngine,
     PipelineHooks,
     PipelinePaused,
+    PipelineStageError,
     request_pause,
 )
 from mmagent.providers.mock import MockProvider, MockScript
@@ -51,19 +52,26 @@ async def test_engine_runs_authoritative_stage_order(monkeypatch, tmp_path: Path
     _plan(handle.workspace.root)
 
     async def s0(*args, **kwargs):
-        calls.append("S0"); return {"g0_pass": True, "g0_issues": []}
+        calls.append("S0")
+        return {"g0_pass": True, "g0_issues": []}
     async def s1(*args, **kwargs):
-        calls.append("S1"); return {"g1_pass": True, "g1_issues": []}
+        calls.append("S1")
+        return {"g1_pass": True, "g1_issues": []}
     async def s2(*args, **kwargs):
-        calls.append("S2"); return {"gates": {"问1": {"pass": True, "issues": []}}, "downgraded": []}
+        calls.append("S2")
+        return {"gates": {"问1": {"pass": True, "issues": []}}, "downgraded": []}
     async def s3(*args, **kwargs):
-        calls.append("S3"); return {"g3_pass": True, "g3_issues": []}
+        calls.append("S3")
+        return {"g3_pass": True, "g3_issues": []}
     async def s4(*args, **kwargs):
-        calls.append("S4"); return {"g4_pass": True, "g4_issues": []}
+        calls.append("S4")
+        return {"g4_pass": True, "g4_issues": []}
     async def s5(*args, **kwargs):
-        calls.append("S5"); return {"converged": True}
+        calls.append("S5")
+        return {"converged": True}
     async def s5a(*args, **kwargs):
-        calls.append("S5a"); return {"pass": True}
+        calls.append("S5a")
+        return {"pass": True}
     async def s5b(*args, **kwargs):
         calls.append("S5b")
         events.append_event(
@@ -72,9 +80,11 @@ async def test_engine_runs_authoritative_stage_order(monkeypatch, tmp_path: Path
         )
         return {"pass": True, "beauty_baseline_pages": 10}
     async def g5(*args, **kwargs):
-        calls.append("G5"); return {"pass": True, "issues": []}
+        calls.append("G5")
+        return {"pass": True, "issues": []}
     async def s6(*args, **kwargs):
-        calls.append("S6"); return {"pass": True, "issues": []}
+        calls.append("S6")
+        return {"pass": True, "issues": []}
 
     for name, func in {
         "run_s0": s0, "run_s1": s1, "run_s2": s2, "run_s3": s3, "run_s4": s4,
@@ -115,21 +125,29 @@ async def test_resume_skips_completed_stage_checkpoints(monkeypatch, tmp_path: P
         raise AssertionError("completed stage reran")
 
     async def s2(*args, **kwargs):
-        calls.append("S2"); return {"gates": {"问1": {"pass": True, "issues": []}}, "downgraded": [1]}
+        calls.append("S2")
+        return {"gates": {"问1": {"pass": True, "issues": []}}, "downgraded": [1]}
     async def pass_s3(*args, **kwargs):
-        calls.append("S3"); return {"g3_pass": True, "g3_issues": []}
+        calls.append("S3")
+        return {"g3_pass": True, "g3_issues": []}
     async def pass_s4(*args, **kwargs):
-        calls.append("S4"); return {"g4_pass": True, "g4_issues": []}
+        calls.append("S4")
+        return {"g4_pass": True, "g4_issues": []}
     async def pass_s5(*args, **kwargs):
-        calls.append("S5"); return {"converged": True}
+        calls.append("S5")
+        return {"converged": True}
     async def pass_s5a(*args, **kwargs):
-        calls.append("S5a"); return {"pass": True}
+        calls.append("S5a")
+        return {"pass": True}
     async def pass_s5b(*args, **kwargs):
-        calls.append("S5b"); return {"pass": True, "beauty_baseline_pages": 10}
+        calls.append("S5b")
+        return {"pass": True, "beauty_baseline_pages": 10}
     async def pass_g5(*args, **kwargs):
-        calls.append("G5"); return {"pass": True, "issues": []}
+        calls.append("G5")
+        return {"pass": True, "issues": []}
     async def pass_s6(*args, **kwargs):
-        calls.append("S6"); return {"pass": True, "issues": []}
+        calls.append("S6")
+        return {"pass": True, "issues": []}
 
     monkeypatch.setattr(engine_mod, "run_s0", should_not_run)
     monkeypatch.setattr(engine_mod, "run_s1", should_not_run)
@@ -176,7 +194,7 @@ async def test_stage_failure_marks_run_failed(monkeypatch, tmp_path: Path) -> No
         return {"g0_pass": False, "g0_issues": ["bad contract"]}
 
     monkeypatch.setattr(engine_mod, "run_s0", s0)
-    with pytest.raises(Exception):
+    with pytest.raises(PipelineStageError):
         await eng.run()
 
     row = handle.workspace.db.query_one("SELECT status FROM runs WHERE id = ?", (run_id,))
