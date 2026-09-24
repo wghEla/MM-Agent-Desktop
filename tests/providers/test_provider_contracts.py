@@ -13,7 +13,7 @@ import pytest
 from mmagent.agent.errors import ProviderError, RateLimitError
 from mmagent.providers.anthropic_messages import AnthropicMessagesProvider
 from mmagent.providers.gemini import GeminiProvider
-from mmagent.providers.normalized import NormalizedMessage, NormalizedTool, TextPart
+from mmagent.providers.normalized import ImagePart, NormalizedMessage, NormalizedTool, TextPart
 from mmagent.providers.openai_chat import OpenAIChatProvider
 from mmagent.providers.openai_compatible import OpenAICompatibleProvider
 from mmagent.providers.openai_responses import OpenAIResponsesProvider
@@ -297,15 +297,15 @@ def test_role_routing_defaults_and_override():
 
 # ==================== Round-1 外审修复的负向测试 ====================
 def test_r1_capabilities_image_input_honest():
-    """image_input 已如实降为 False（图片输入未实现，v0.4 随图片腿落地）。"""
+    """Native multimodal protocols advertise image input; generic compatible stays conservative."""
     for maker in (
         lambda: OpenAIChatProvider("u", lambda: "k"),
         lambda: OpenAIResponsesProvider("u", lambda: "k"),
         lambda: AnthropicMessagesProvider("u", lambda: "k"),
         lambda: GeminiProvider("u", lambda: "k"),
-        lambda: OpenAICompatibleProvider("u", lambda: "k"),
     ):
-        assert maker().capabilities().image_input is False
+        assert maker().capabilities().image_input is True
+    assert OpenAICompatibleProvider("u", lambda: "k").capabilities().image_input is False
 
 
 def test_r1_anthropic_reasoning_honest():
@@ -447,3 +447,44 @@ def test_r2_p2_choices_missing_protocol_error():
     with pytest.raises(ProviderError) as ei:
         parse_chat_response({"id": "x", "choices": []})
     assert ei.value.kind == ErrorKind.PROVIDER_PROTOCOL
+
+
+
+def test_native_multimodal_payload_shapes():
+    from mmagent.providers.anthropic_messages import build_messages_payload
+    from mmagent.providers.gemini import build_gemini_payload
+    from mmagent.providers.openai_chat import build_chat_payload
+    from mmagent.providers.openai_responses import build_responses_payload
+
+    msg = NormalizedMessage(
+        role="user",
+        content=[
+            TextPart(text="inspect"),
+            ImagePart(b64="YWJj", media_type="image/png"),
+        ],
+    )
+
+    chat = build_chat_payload(
+        [msg], [], model="m", reasoning=None, max_output_tokens=None, stream=False
+    )
+    assert chat["messages"][0]["content"][1]["type"] == "image_url"
+    assert chat["messages"][0]["content"][1]["image_url"]["url"].endswith("YWJj")
+
+    responses = build_responses_payload(
+        [msg], [], model="m", reasoning=None, max_output_tokens=None
+    )
+    assert responses["input"][0]["content"][1]["type"] == "input_image"
+
+    anthropic = build_messages_payload(
+        [msg], [], model="m", max_output_tokens=100, reasoning=None
+    )
+    image = anthropic["messages"][0]["content"][1]
+    assert image["type"] == "image"
+    assert image["source"]["data"] == "YWJj"
+
+    gemini = build_gemini_payload(
+        [msg], [], model="m", reasoning=None, max_output_tokens=None
+    )
+    inline = gemini["contents"][0]["parts"][1]["inlineData"]
+    assert inline["mimeType"] == "image/png"
+    assert inline["data"] == "YWJj"
