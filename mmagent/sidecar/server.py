@@ -200,7 +200,10 @@ def create_app(
         provider = build_provider(
             handle.workspace.db, state.credentials, model_profile_id
         )
-        return await provider.test_connection()
+        try:
+            return await provider.test_connection()
+        finally:
+            await provider.aclose()
 
     @app.post("/projects/{project_id}/runs", dependencies=auth)
     async def run_start(
