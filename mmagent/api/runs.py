@@ -185,3 +185,5 @@ class RunController:
             if active is not None:
                 active.last_error = repr(exc)
             raise
+        finally:
+            await engine.provider.aclose()
