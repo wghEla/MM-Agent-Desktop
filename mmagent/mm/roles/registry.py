@@ -187,7 +187,12 @@ _ROLES: tuple[RoleSpec, ...] = (
             "台账/**",
             "资产/**",
         ),
-        write_scopes=("论文/*.tex", "审稿/回执_*.json"),
+        write_scopes=(
+            "论文/*.tex",
+            "交接/叙事底稿.md",
+            "交接/论点脊柱.json",
+            "审稿/回执_*.json",
+        ),
         allowed_tools=_FS_RW,
         notes="不能擅改算出的事实；最小修订（P4）；体量纪律：源码引用=路径+SHA+片段≤60行",
     ),
@@ -205,7 +210,7 @@ _ROLES: tuple[RoleSpec, ...] = (
         display_name="读者",
         stage="S4/S5a",
         read_scopes=("论文/**",),  # 闭卷：不给工程上下文
-        write_scopes=("审稿/读者R*.json", "审稿/摘要复述.json"),
+        write_scopes=("审稿/读者R*.json", "审稿/摘要复述*.json"),
         allowed_tools=_FS_RW,
         notes="能否理解/卡住/自造词；摘要复述门四要素",
     ),
