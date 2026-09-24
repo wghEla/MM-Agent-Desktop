@@ -238,6 +238,7 @@ class PaperFoundryEngine:
             async def s1():
                 result = await run_s1(
                     self.db, self.provider, self.registry, self.policy, self.run_id,
+                    profile=self._run_row()["profile"],
                     cancel=self.cancel,
                 )
                 self._record_gate("G1", result["g1_pass"], result["g1_issues"])
@@ -395,7 +396,9 @@ class PaperFoundryEngine:
             )
 
         except PipelinePaused:
-            # External pause request already moved RUNNING -> PAUSED.
+            # PAUSED is durable state; release the process-owner lock so the
+            # desktop controller can reacquire it on a later resume.
+            self.workspace.release_run_lock()
             raise
         except TaskCancelled as exc:
             row = self._run_row()
