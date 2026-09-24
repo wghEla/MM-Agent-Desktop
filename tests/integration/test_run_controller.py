@@ -94,3 +94,32 @@ async def test_controller_cancel_live_run(monkeypatch, tmp_path) -> None:
     assert active.engine.cancelled is True
     handle.workspace.release_run_lock()
     handle.workspace.db.close()
+
+
+
+@pytest.mark.asyncio
+async def test_controller_shutdown_preserves_run_as_paused(monkeypatch, tmp_path) -> None:
+    handle = create_project(tmp_path / "proj", name="controller-shutdown", profile="标准")
+    monkeypatch.setattr(runs_mod, "PaperFoundryEngine", FakeEngine)
+    controller = RunController()
+
+    run_id = await controller.start(
+        handle,
+        provider=MockProvider(MockScript([])),
+        registry=ToolRegistry(),
+        profile="标准",
+    )
+    active = controller._active[run_id]
+    await active.engine.started.wait()
+
+    await controller.shutdown()
+
+    status = controller.status(handle, run_id)
+    assert status["status"] == RunStatus.PAUSED.value
+    assert status["active_in_sidecar"] is False
+
+    # The shutdown path must release the durable single-run lock so a restarted
+    # sidecar can acquire it and resume from checkpoints.
+    handle.workspace.acquire_run_lock(run_id)
+    handle.workspace.release_run_lock()
+    handle.workspace.db.close()
