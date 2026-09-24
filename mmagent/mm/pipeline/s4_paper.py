@@ -56,6 +56,49 @@ def _abstract_verdict(path: Path) -> tuple[bool, float]:
     return passed, score
 
 
+
+def _apply_requirement_coverage(root: Path) -> tuple[bool, list[str]]:
+    matrix_path = root / "交接" / "需求追踪矩阵.json"
+    coverage_path = root / "交接" / "需求覆盖.json"
+    try:
+        matrix = json.loads(matrix_path.read_text(encoding="utf-8"))
+        coverage = json.loads(coverage_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return False, [f"需求覆盖证据缺失或不可解析: {exc}"]
+    if not isinstance(matrix, list) or not isinstance(coverage, list):
+        return False, ["需求追踪矩阵/需求覆盖 顶层必须是数组"]
+    by_id = {
+        str(x.get("需求号")): x
+        for x in coverage
+        if isinstance(x, dict) and x.get("需求号")
+    }
+    issues: list[str] = []
+    for row in matrix:
+        if not isinstance(row, dict):
+            issues.append("需求追踪矩阵存在非对象条目")
+            continue
+        rid = str(row.get("需求号", ""))
+        evidence = by_id.get(rid)
+        if not evidence:
+            issues.append(f"需求 {rid or '?'} 缺论文覆盖证据")
+            continue
+        chapter = str(evidence.get("章节", "")).strip()
+        proof = str(evidence.get("证据", "")).strip()
+        if not chapter or not proof:
+            issues.append(f"需求 {rid} 覆盖证据缺章节或证据说明")
+            continue
+        row["状态"] = "已销号"
+        row["章节"] = chapter
+        row["图表"] = str(evidence.get("图表", ""))
+        row["关键数字"] = str(evidence.get("关键数字", ""))
+    if issues:
+        return False, issues
+    matrix_path.write_text(
+        json.dumps(matrix, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return True, []
+
+
 async def _leg(
     db: Database, provider: BaseProvider, registry: ToolRegistry, policy: PathPolicy,
     run_id: str, *, role_id: str, node_key: str, instructions: str,
@@ -120,11 +163,21 @@ async def run_s4(
     draft_status = await _leg(
         db, provider, registry, policy, run_id,
         role_id="writer", node_key="S4:正文初稿",
-        instructions="依据论点脊柱、结果声明、图证与实验记录写 论文/论文.tex；不得自行改变冻结事实。",
-        expected=[ExpectedArtifact(rel_path="论文/论文.tex", kind="text")], cancel=cancel,
+        instructions=(
+            "依据论点脊柱、结果声明、图证与实验记录写 论文/论文.tex；不得自行改变冻结事实。"
+            "同时写 交接/需求覆盖.json，数组中逐个需求号给出 章节、证据、图表、关键数字；"
+            "只声明论文中真实存在的覆盖证据。"
+        ),
+        expected=[
+            ExpectedArtifact(rel_path="论文/论文.tex", kind="text"),
+            ExpectedArtifact(rel_path="交接/需求覆盖.json"),
+        ], cancel=cancel,
     )
     if draft_status != "SUCCEEDED":
         return {"g4_pass": False, "g4_issues": ["正文初稿腿失败"], "reviews": review_history}
+    coverage_ok, coverage_issues = _apply_requirement_coverage(policy.root)
+    if not coverage_ok:
+        return {"g4_pass": False, "g4_issues": coverage_issues, "reviews": review_history}
 
     for round_num in range(1, cfg.章评轮数 + 1):
         chapter_rel = f"审稿/章评R{round_num}.json"
