@@ -159,6 +159,7 @@ _ROLES: tuple[RoleSpec, ...] = (
             "求解/问题{question}/绘图_*.py",
             "求解/成图*.sh",
             "求解/问题{question}/图片/*.png",
+            "交接/图注素材_问题{question}.json",
             "审稿/回执_*.json",
         ),
         allowed_tools=_FS_RW,
