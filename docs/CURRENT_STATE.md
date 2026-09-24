@@ -1,45 +1,70 @@
-# CURRENT_STATE — v1.0.0 已 tag
+# CURRENT_STATE — fidelity rebuild in progress
 
-- **当前版本**: **v1.0.0 已 tag** — MM-Final-Skill 客户端化复现完成
-- **测试**: 197 passed, ruff clean
-- **Git**: 8 tags (v0.1.0-v0.6.0, v0.8.0, v1.0.0)
+- **Historical tag**: `v1.0.0` remains preserved at its original commit.
+- **Development branch**: `gpt/fidelity-rebuild`.
+- **Reason for rebuild**: the historical completion claim is not supported by the source tree or the fidelity matrix.
+- **Audit baseline**: `docs/reviews/2026-09-24-fidelity-audit.md`.
 
-## 最终交付
+## Verified implementation state
 
-| 版本 | 内容 | 测试 |
-|---|---|---|
-| v0.1.0 | Agent Kernel（SQLite/状态机/AgentLoop/权限/路径/工作区） | 74 |
-| v0.2.0 | Job Object/EnvironmentManager/17角色/Python工具Job | 107 |
-| v0.3.0 | 五协议适配器/错误归一/能力诚实/密钥边界 | 129 |
-| v0.4.0 | S0读题/G0门检/S1规划/三档profiles/Dashboard | 150 |
-| v0.5.0 | S2建模+红队隔离/G2门检/DAG/升格蜂群 | 170 |
-| v0.6.0 | XeLaTeX/MATLAB工具链 | 175 |
-| v0.8.0 | S5审稿场/Issue Ledger/守卫三件套 | 193 |
-| v0.9.0 | Tauri 2 Desktop skeleton | 193 |
-| **v1.0.0** | **Hardening + E2E + Ledger CAS + Final Review** | **197** |
+### Implemented foundations
 
-## 核心能力清单
+- SQLite authoritative state + append-only events
+- AgentLoop / tool-calling runtime
+- workspace / path / permission controls
+- provider abstraction
+- Windows process/cancellation foundation
+- 17-role metadata registry and red-team permission isolation
+- DAG utilities
+- S0/S1 implementation
+- partial S2 implementation
+- partial S5 review arena / Issue Ledger / guards
+- XeLaTeX / MATLAB tools
+- Python project/dashboard APIs
+- Tauri 2 + React **skeleton**
 
-- SQLite 状态真相（19表 + append-only event outbox + 状态迁移表 + 租约CAS）
-- Agent Runtime（tool-calling loop + 权限检查点 + 产物封存 + 成功=Runtime判定）
-- 五协议 Provider（openai_chat/responses/anthropic/gemini/compatible）
-- Job Object 进程树管理（CREATE_SUSPENDED 原子启动 + compare-and-remove）
-- 17 角色（scopes/tools/reasoning分档/host_code/红队权限层隔离）
-- S0-S6 流水线（读题→规划→建模→图证→撰稿→审稿场→出版→复盘）
-- G0-G5 门检（机械判据，答案门教训：核心指标空不放行）
-- Issue Ledger（待改→待复核→已消解/未消解/搁置 + generation CAS + receipt_id 幂等）
-- 三守卫（变化/结构/页数）+ 换版清单 contract
-- XeLaTeX/MATLAB 工具链（真机发现验证通过）
+### Not yet product-complete
 
-## 已知限制（诚实声明）
+The following must not be described as implemented until source + tests prove them:
 
-- real-provider-tested: unverified（无真实 API key）
-- streaming: 未实现（能力声明如实 False）
-- image_input: 未实现（v0.4 随图片腿落地）
-- HANDLE_LIST attr-list: v0.3 实现（当前 _CREATE_LOCK 弱保证）
-- Desktop UI: skeleton（完整页面后填）
-- 某些 Ledger edge case（同轮 reopen + stale gen）仍可能有理论漏洞
+- complete authoritative S0→S6 orchestrator
+- S3
+- G3
+- S4
+- G4
+- S5a
+- S5b
+- G5
+- S6
+- complete 17-role clean-room prompts/contracts
+- desktop ↔ Python sidecar/API bridge
+- Provider Settings UI
+- Run Dashboard UI
+- Artifact/PDF viewer
+- packaged Windows application
+- real full-chain E2E producing the final PDF
 
-## 恢复
+## Current engineering target
 
-git log / git tag / docs/CURRENT_STATE.md / docs/spec/FIDELITY_MATRIX.md
+1. Freeze canonical pipeline topology in code.
+2. Add missing contract/gate boundaries.
+3. Complete 17 role behaviors.
+4. Fill S3/S4/S5a/S5b/G5/S6.
+5. Add a single authoritative orchestrator with checkpoint/resume semantics.
+6. Only then complete the desktop product layer.
+7. Final acceptance requires a synthetic end-to-end project that reaches final PDF plus failure-injection recovery.
+
+## Historical test count
+
+The historical branch reported **197 passed + ruff clean**. This demonstrates stability of covered components only; the existing `tests/e2e/test_full_pipeline.py` covers S0→G0→S1→G1 rather than the complete product chain.
+
+## Source of truth
+
+Read in this order:
+
+1. `00_MM_AGENT_MASTER_PLAN.md`
+2. `docs/reviews/2026-09-24-fidelity-audit.md`
+3. `docs/spec/SOURCE_SNAPSHOT.md`
+4. `docs/spec/SOURCE_MAP.md`
+5. `docs/spec/FIDELITY_MATRIX.md`
+6. `docs/spec/KNOWN_DEVIATIONS.md`
