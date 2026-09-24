@@ -25,6 +25,7 @@ from mmagent.providers._http_util import parse_retry_after
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
 from mmagent.providers.normalized import (
+    ImagePart,
     NormalizedMessage,
     NormalizedResponse,
     NormalizedTool,
@@ -74,7 +75,22 @@ def _msg_to_chat(m: NormalizedMessage) -> dict[str, Any]:
     text = "".join(p.text for p in m.content if isinstance(p, TextPart))
     if m.role == "tool":
         return {"role": "tool", "tool_call_id": m.tool_call_id, "content": text}
-    out: dict[str, Any] = {"role": m.role, "content": text}
+
+    images = [p for p in m.content if isinstance(p, ImagePart)]
+    if images:
+        content: str | list[dict[str, Any]] = []
+        if text:
+            content.append({"type": "text", "text": text})
+        for image in images:
+            content.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{image.media_type};base64,{image.b64}",
+                },
+            })
+    else:
+        content = text
+    out: dict[str, Any] = {"role": m.role, "content": content}
     if m.tool_calls:
         out["tool_calls"] = [
             {
@@ -153,7 +169,7 @@ class OpenAIChatProvider(BaseProvider):
         return CapabilitySet(
             protocol=self.protocol,
             tool_calling=True,
-            image_input=False,  # 图片输入未实现（诚实声明，v0.4 随图片腿落地）
+            image_input=True
             streaming=False,  # v0.3.x：SSE 流式解析落地后启用
             reasoning_levels=frozenset({"low", "medium", "high"}),
             max_output_tokens_limit=None,
