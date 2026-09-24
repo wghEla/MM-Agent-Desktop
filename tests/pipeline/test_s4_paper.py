@@ -40,7 +40,15 @@ def _script() -> MockScript:
         ]),
         MockTurn(text="叙事完成"),
     ]
-    turns += _turn_write("d1", "论文/论文.tex", "正文以问题为主线组织，方法与结论逐段对应。")
+    turns += [
+        MockTurn(tool_calls=[
+            ("d1", "fs.write", {"path": "论文/论文.tex", "content": "正文以问题为主线组织，方法与结论逐段对应。"}),
+            ("d2", "fs.write", {"path": "交接/需求覆盖.json", "content": json.dumps([{
+                "需求号": "一", "章节": "问题一", "证据": "正文对应段", "图表": "", "关键数字": ""
+            }], ensure_ascii=False)}),
+        ]),
+        MockTurn(text="正文与覆盖表完成"),
+    ]
     turns += _turn_write("c1", "审稿/章评R1.json", '{"总分":8.3,"问题":[]}')
     turns += _turn_write("b1", "审稿/读者R1.json", '{"读者分":8.1,"卡住":[]}')
     turns += _turn_write("i1", "审稿/统稿回执.json", '{"修改":"仅语言层"}')
