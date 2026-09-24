@@ -87,9 +87,15 @@ class TestS1Prototype:
             ],
             "叙事主线": "test",
         }
+        (root / "交接" / "路线侦察.json").write_text(
+            json.dumps({"问题清单": [{"编号": 1, "路线": [{"路线名": "最小二乘", "方法": "最小二乘"}]}]}),
+            encoding="utf-8",
+        )
+        (root / "交接" / "原型结果.json").write_text(
+            json.dumps({"条目": [{"问题编号": 1, "路线名": "最小二乘", "脚本": "求解/问题1/原型_1.py", "rc": 0}]}),
+            encoding="utf-8",
+        )
         (root / "交接" / "计划.json").write_text(json.dumps(plan), encoding="utf-8")
-        # 原型脚本存在
-        (root / "求解" / "问题1" / "原型_最小二乘.py").write_text("print(1)", encoding="utf-8")
         ok, issues = check_g1(root)
         assert ok, issues
 
