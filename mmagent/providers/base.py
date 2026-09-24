@@ -24,6 +24,10 @@ class BaseProvider(abc.ABC):
 
     protocol: str
 
+    def resolve_model(self, requested: str) -> str:
+        """Resolve a task-level model placeholder to the provider's effective model."""
+        return requested
+
     @abc.abstractmethod
     async def generate(
         self,
@@ -42,3 +46,48 @@ class BaseProvider(abc.ABC):
 
     @abc.abstractmethod
     def capabilities(self) -> CapabilitySet: ...
+
+
+class ModelBoundProvider(BaseProvider):
+    """Bind a concrete model to an existing protocol adapter.
+
+    Pipeline roles may use the historical "mock" placeholder.  The bound
+    provider converts that placeholder to the user's configured model while
+    preserving explicit non-placeholder model requests.
+    """
+
+    def __init__(self, inner: BaseProvider, model: str):
+        if not model.strip():
+            raise ValueError("bound model must be non-empty")
+        self.inner = inner
+        self.model = model.strip()
+        self.protocol = inner.protocol
+
+    def resolve_model(self, requested: str) -> str:
+        value = (requested or "").strip()
+        return self.model if value in ("", "mock") else value
+
+    async def generate(
+        self,
+        messages: list[NormalizedMessage],
+        tools: list[NormalizedTool],
+        *,
+        model: str,
+        reasoning: str | None = None,
+        max_output_tokens: int | None = None,
+        timeout_s: float = 300.0,
+    ) -> NormalizedResponse:
+        return await self.inner.generate(
+            messages,
+            tools,
+            model=self.resolve_model(model),
+            reasoning=reasoning,
+            max_output_tokens=max_output_tokens,
+            timeout_s=timeout_s,
+        )
+
+    async def test_connection(self) -> dict:
+        return await self.inner.test_connection()
+
+    def capabilities(self) -> CapabilitySet:
+        return self.inner.capabilities()
