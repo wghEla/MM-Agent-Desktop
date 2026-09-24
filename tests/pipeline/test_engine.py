@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 import mmagent.orchestration.engine as engine_mod
+from mmagent.agent.errors import TaskCancelled
 from mmagent.api.projects import create_project
 from mmagent.orchestration.engine import (
     PaperFoundryEngine,
@@ -181,4 +182,28 @@ async def test_stage_failure_marks_run_failed(monkeypatch, tmp_path: Path) -> No
     row = handle.workspace.db.query_one("SELECT status FROM runs WHERE id = ?", (run_id,))
     assert row["status"] == RunStatus.FAILED.value
     assert events.query_events(handle.workspace.db, run_id=run_id, type="pipeline.failed")
+    handle.workspace.db.close()
+
+
+@pytest.mark.asyncio
+async def test_cancel_marks_run_cancelled_not_failed(monkeypatch, tmp_path: Path) -> None:
+    handle, run_id, eng = _engine(tmp_path)
+
+    async def s0(*args, **kwargs):
+        eng.cancel_run("user stop")
+        eng.cancel.check()
+        return {"g0_pass": True, "g0_issues": []}
+
+    monkeypatch.setattr(engine_mod, "run_s0", s0)
+    with pytest.raises(TaskCancelled):
+        await eng.run()
+
+    row = handle.workspace.db.query_one("SELECT status FROM runs WHERE id = ?", (run_id,))
+    assert row["status"] == RunStatus.CANCELLED.value
+    assert events.query_events(
+        handle.workspace.db, run_id=run_id, type="pipeline.cancelled"
+    )
+    assert not events.query_events(
+        handle.workspace.db, run_id=run_id, type="pipeline.failed"
+    )
     handle.workspace.db.close()
