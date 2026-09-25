@@ -13,13 +13,20 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 use tauri::{Manager, State};
+use tauri_plugin_shell::process::CommandChild;
+use tauri_plugin_shell::ShellExt;
 
 const TOKEN_ENV: &str = "MMAGENT_SIDECAR_TOKEN";
+
+enum SidecarProcess {
+    DevelopmentPython(Child),
+    Bundled(CommandChild),
+}
 
 struct SidecarBridge {
     endpoint: String,
     token: String,
-    child: Mutex<Option<Child>>,
+    child: Mutex<Option<SidecarProcess>>,
 }
 
 #[derive(Serialize)]
@@ -29,29 +36,19 @@ struct BackendResponse {
 }
 
 impl SidecarBridge {
-    fn launch() -> Result<Self, String> {
+    fn launch(app: &tauri::AppHandle) -> Result<Self, String> {
         let port = allocate_port().map_err(|e| format!("分配 sidecar 端口失败: {e}"))?;
         let token = random_token();
         let endpoint = format!("http://127.0.0.1:{port}");
-        let python = env::var("MMAGENT_PYTHON").unwrap_or_else(|_| "python".to_string());
 
-        let child = Command::new(&python)
-            .args([
-                "-m",
-                "mmagent.sidecar.server",
-                "--port",
-                &port.to_string(),
-            ])
-            .env(TOKEN_ENV, &token)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| {
-                format!(
-                    "启动 Python sidecar 失败 ({python}): {e}.                      开发态可用 MMAGENT_PYTHON 指向受管 Python；正式包将改为内置 sidecar。"
-                )
-            })?;
+        // Debug builds intentionally retain the Python-module path for fast
+        // iteration. Release builds must be self-contained and use the bundled
+        // PyInstaller externalBin.
+        let child = if cfg!(debug_assertions) {
+            SidecarProcess::DevelopmentPython(spawn_development_python(port, &token)?)
+        } else {
+            SidecarProcess::Bundled(spawn_bundled_sidecar(app, port, &token)?)
+        };
 
         let bridge = Self {
             endpoint,
@@ -69,24 +66,20 @@ impl SidecarBridge {
             .map_err(|e| format!("构造 sidecar 健康检查客户端失败: {e}"))?;
         let health = format!("{}/health", self.endpoint);
 
-        for _ in 0..50 {
+        for _ in 0..80 {
             {
                 let mut guard = self
                     .child
                     .lock()
                     .map_err(|_| "sidecar child lock poisoned".to_string())?;
-                if let Some(child) = guard.as_mut() {
+                if let Some(SidecarProcess::DevelopmentPython(child)) = guard.as_mut() {
                     if let Ok(Some(status)) = child.try_wait() {
                         return Err(format!("Python sidecar 提前退出: {status}"));
                     }
                 }
             }
 
-            if let Ok(response) = client
-                .get(&health)
-                .bearer_auth(&self.token)
-                .send()
-            {
+            if let Ok(response) = client.get(&health).bearer_auth(&self.token).send() {
                 if response.status().is_success() {
                     return Ok(());
                 }
@@ -101,35 +94,52 @@ impl SidecarBridge {
     fn shutdown(&self) {
         // Normal desktop exit is not a crash: ask FastAPI/Uvicorn to exit so its
         // lifespan can pause unfinished runs and close project DBs cleanly.
-        if let Ok(client) = reqwest::blocking::Client::builder()
+        let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_millis(800))
             .build()
-        {
+            .ok();
+
+        if let Some(client) = client.as_ref() {
             let _ = client
                 .post(format!("{}/shutdown", self.endpoint))
                 .bearer_auth(&self.token)
                 .send();
+
+            // Give the server a bounded grace period. A failed health request is
+            // sufficient evidence that the loopback listener has gone away.
+            for _ in 0..30 {
+                let alive = client
+                    .get(format!("{}/health", self.endpoint))
+                    .bearer_auth(&self.token)
+                    .send()
+                    .is_ok();
+                if !alive {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
         }
 
         let Ok(mut guard) = self.child.lock() else {
             return;
         };
-        let Some(child) = guard.as_mut() else {
+        let Some(process) = guard.take() else {
             return;
         };
 
-        for _ in 0..30 {
-            if matches!(child.try_wait(), Ok(Some(_))) {
-                *guard = None;
-                return;
+        match process {
+            SidecarProcess::DevelopmentPython(mut child) => {
+                if !matches!(child.try_wait(), Ok(Some(_))) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
             }
-            thread::sleep(Duration::from_millis(100));
+            SidecarProcess::Bundled(child) => {
+                // kill() is a last-resort fallback. If graceful shutdown already
+                // ended the process, the error is harmless and intentionally ignored.
+                let _ = child.kill();
+            }
         }
-
-        // Last resort only: genuine hung sidecar.
-        let _ = child.kill();
-        let _ = child.wait();
-        *guard = None;
     }
 }
 
@@ -137,6 +147,51 @@ impl Drop for SidecarBridge {
     fn drop(&mut self) {
         self.shutdown();
     }
+}
+
+fn spawn_development_python(port: u16, token: &str) -> Result<Child, String> {
+    let python = env::var("MMAGENT_PYTHON").unwrap_or_else(|_| "python".to_string());
+    Command::new(&python)
+        .args([
+            "-m",
+            "mmagent.sidecar.server",
+            "--port",
+            &port.to_string(),
+        ])
+        .env(TOKEN_ENV, token)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| {
+            format!(
+                "启动开发态 Python sidecar 失败 ({python}): {e}. 可用 MMAGENT_PYTHON 指向项目 Python 3.11。"
+            )
+        })
+}
+
+fn spawn_bundled_sidecar(
+    app: &tauri::AppHandle,
+    port: u16,
+    token: &str,
+) -> Result<CommandChild, String> {
+    let command = app
+        .shell()
+        .sidecar("mmagent-sidecar")
+        .map_err(|e| format!("解析内置 sidecar 失败: {e}"))?
+        .args(["--port", &port.to_string()])
+        .env(TOKEN_ENV, token);
+
+    let (mut events, child) = command
+        .spawn()
+        .map_err(|e| format!("启动内置 Python sidecar 失败: {e}"))?;
+
+    // Drain stdout/stderr/termination events so the plugin's event channel never
+    // becomes the lifecycle bottleneck. Runtime state remains in SQLite/API.
+    tauri::async_runtime::spawn(async move {
+        while events.recv().await.is_some() {}
+    });
+    Ok(child)
 }
 
 fn allocate_port() -> io::Result<u16> {
@@ -194,24 +249,21 @@ async fn backend_request(
         .bytes()
         .await
         .map_err(|e| format!("读取 sidecar 响应失败: {e}"))?;
-    let body = serde_json::from_slice::<Value>(&bytes).unwrap_or_else(|_| {
-        Value::String(String::from_utf8_lossy(&bytes).into_owned())
-    });
+    let body = serde_json::from_slice::<Value>(&bytes)
+        .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()));
 
     Ok(BackendResponse { status, body })
 }
 
 fn main() {
-    let sidecar = match SidecarBridge::launch() {
-        Ok(value) => value,
-        Err(error) => {
-            eprintln!("{error}");
-            std::process::exit(1);
-        }
-    };
-
     tauri::Builder::default()
-        .manage(sidecar)
+        .plugin(tauri_plugin_shell::init())
+        .setup(|app| {
+            let sidecar =
+                SidecarBridge::launch(app.handle()).map_err(io::Error::other)?;
+            app.manage(sidecar);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![backend_request])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
