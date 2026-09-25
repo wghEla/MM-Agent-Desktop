@@ -279,12 +279,25 @@ async fn backend_request(
 }
 
 fn main() {
+    let startup_smoke = env::args().any(|arg| arg == "--startup-smoke");
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .setup(|app| {
+        .setup(move |app| {
             let sidecar =
                 SidecarBridge::launch(app.handle()).map_err(io::Error::other)?;
             app.manage(sidecar);
+
+            if startup_smoke {
+                // Prove the installed release can resolve bundled resources,
+                // start the authenticated sidecar, and pass its health check.
+                // Exit shortly after setup so CI does not need an interactive desktop.
+                let handle = app.handle().clone();
+                thread::spawn(move || {
+                    thread::sleep(Duration::from_millis(150));
+                    handle.exit(0);
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![backend_request])
