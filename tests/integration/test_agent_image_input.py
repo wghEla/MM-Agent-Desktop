@@ -78,8 +78,7 @@ async def test_agent_image_input_respects_scope_and_redacts_sqlite(tmp_path) -> 
         rows = handle.workspace.db.query(
             "SELECT content_json FROM messages ORDER BY seq"
         )
-        persisted = "
-".join(row["content_json"] for row in rows)
+        persisted = "\\n".join(row["content_json"] for row in rows)
         assert "ZmFrZS1wbmctYnl0ZXM=" not in persisted
         assert "<omitted>" in persisted
     finally:
