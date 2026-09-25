@@ -193,7 +193,21 @@ def create_app(
 
     @app.get("/health", dependencies=auth)
     async def health() -> dict[str, Any]:
-        return {"ok": True, "service": "mmagent-sidecar", "pid": os.getpid()}
+        runtime = managed_python()
+        if not runtime.ok or not runtime.path:
+            raise HTTPException(
+                status_code=503,
+                detail=f"managed Python unavailable: {runtime.detail}",
+            )
+        return {
+            "ok": True,
+            "service": "mmagent-sidecar",
+            "pid": os.getpid(),
+            "managed_python": {
+                "ok": True,
+                "version": runtime.version,
+            },
+        }
 
     @app.post("/shutdown", dependencies=auth)
     async def shutdown() -> dict[str, Any]:
