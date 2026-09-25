@@ -220,3 +220,63 @@ async def test_real_role_leg_429_requeues_reduces_and_retries_same_node(
         assert len(rate_events) == 1
     finally:
         handle.workspace.db.close()
+
+
+
+@pytest.mark.asyncio
+async def test_direct_role_leg_429_uses_single_job_adaptive_wave(
+    tmp_path: Path,
+) -> None:
+    handle, run_id = _run_ctx(tmp_path)
+    provider = MockProvider(MockScript([
+        MockTurn(tool_calls=[(
+            "write-direct",
+            "fs.write",
+            {"path": "交接/读题体检.md", "content": "direct retry recovered"},
+        )]),
+        MockTurn(text="完成"),
+    ]))
+    provider.queue_error(RateLimitError("429", retry_after_s=0))
+
+    registry = ToolRegistry()
+    registry.register(FsReadTool())
+    registry.register(FsWriteTool())
+    policy = PathPolicy(handle.workspace.root)
+
+    try:
+        status = await run_role_leg(
+            handle.workspace.db,
+            provider,
+            registry,
+            policy,
+            run_id,
+            stage_key="S0",
+            role_id="reader",
+            node_key="S0:direct-429",
+            instructions="写 交接/读题体检.md。",
+            expected_artifacts=[
+                ExpectedArtifact(rel_path="交接/读题体检.md", kind="text")
+            ],
+        )
+
+        assert status == "SUCCEEDED"
+        assert current_wave_concurrency(handle.workspace.db, run_id) == 3
+        assert (policy.root / "交接" / "读题体检.md").read_text(
+            encoding="utf-8"
+        ) == "direct retry recovered"
+
+        tasks = repositories.list_tasks(handle.workspace.db, run_id)
+        task = next(x for x in tasks if x.node_key == "S0:direct-429")
+        assert task.attempt == 2
+        assert task.status.value == "SUCCEEDED"
+
+        reductions = events.query_events(
+            handle.workspace.db,
+            run_id=run_id,
+            type="wave.concurrency_reduced",
+        )
+        assert len(reductions) == 1
+        assert reductions[0].payload["from"] == 4
+        assert reductions[0].payload["to"] == 3
+    finally:
+        handle.workspace.db.close()
