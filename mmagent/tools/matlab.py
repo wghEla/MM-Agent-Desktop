@@ -1,12 +1,12 @@
 """MATLAB 工具：发现 + batch 执行。"""
 from __future__ import annotations
 
-import os
 import subprocess
 import uuid
 from pathlib import Path
 
 from mmagent.runtime.environment import discover_matlab
+from mmagent.runtime.tool_env import matlab_env
 
 
 class MatlabTool:
@@ -40,9 +40,9 @@ class MatlabTool:
                     name,
                     argv,
                     cwd=str(self.root),
-                    env=dict(os.environ),
+                    env=matlab_env(),
                 )
-            except OSError as exc:
+            except (OSError, RuntimeError) as exc:
                 return {"rc": -1, "stdout": "", "stderr": str(exc)}
             try:
                 try:
@@ -71,6 +71,7 @@ class MatlabTool:
                 capture_output=True,
                 timeout=timeout_s,
                 stdin=subprocess.DEVNULL,
+                env=matlab_env(),
             )
             return {
                 "rc": proc.returncode,
