@@ -123,3 +123,40 @@ async def test_controller_shutdown_preserves_run_as_paused(monkeypatch, tmp_path
     handle.workspace.acquire_run_lock(run_id)
     handle.workspace.release_run_lock()
     handle.workspace.db.close()
+
+
+@pytest.mark.asyncio
+async def test_controller_can_cancel_persisted_paused_run_after_restart(tmp_path) -> None:
+    handle = create_project(tmp_path / "proj", name="persisted-cancel", profile="标准")
+    controller = RunController()
+    run_id = repositories.create_run(
+        handle.workspace.db, project_id=handle.project_id, profile="标准"
+    )
+    handle.workspace.acquire_run_lock(run_id)
+    repositories.set_run_status(handle.workspace.db, run_id, RunStatus.RUNNING)
+    repositories.set_run_status(handle.workspace.db, run_id, RunStatus.PAUSED)
+    handle.workspace.release_run_lock()
+
+    await controller.cancel(run_id, "stop after restart", handle=handle)
+
+    status = controller.status(handle, run_id)
+    assert status["status"] == RunStatus.CANCELLED.value
+    assert status["active_in_sidecar"] is False
+    handle.workspace.db.close()
+
+
+def test_controller_lists_persisted_runs_newest_first(tmp_path) -> None:
+    handle = create_project(tmp_path / "proj", name="run-history", profile="标准")
+    controller = RunController()
+    first = repositories.create_run(
+        handle.workspace.db, project_id=handle.project_id, profile="快速"
+    )
+    second = repositories.create_run(
+        handle.workspace.db, project_id=handle.project_id, profile="标准"
+    )
+
+    listed = controller.list_status(handle)
+
+    assert [item["id"] for item in listed] == [second, first]
+    assert all(item["active_in_sidecar"] is False for item in listed)
+    handle.workspace.db.close()
