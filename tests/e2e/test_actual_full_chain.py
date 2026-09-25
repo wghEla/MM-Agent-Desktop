@@ -6,14 +6,18 @@ from pathlib import Path
 import pytest
 
 from mmagent.api.projects import create_project
+from mmagent.mm.pipeline.s0_s1 import run_s0
 from mmagent.mm.pipeline.topology import PIPELINE_SEQUENCE
 from mmagent.orchestration.engine import PaperFoundryEngine, PipelineHooks
+from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.mock import MockProvider, MockScript, MockTurn
 from mmagent.state import events, repositories
-from mmagent.state.models import RunStatus
+from mmagent.state.models import RunStatus, TaskStatus
 from mmagent.tools.filesystem import FsReadTool, FsWriteTool
 from mmagent.tools.python import PythonRunTool
 from mmagent.tools.registry import ToolRegistry
+from mmagent.workspace.artifacts import ExpectedArtifact
+from mmagent.workspace.path_policy import PathPolicy
 
 
 def _write(call_id: str, path: str, payload) -> list[MockTurn]:
@@ -272,4 +276,158 @@ async def test_actual_engine_full_chain_to_delivery_pdf(tmp_path: Path) -> None:
         }
         assert checkpoints == set(PIPELINE_SEQUENCE)
     finally:
+        handle.workspace.db.close()
+
+
+
+@pytest.mark.asyncio
+async def test_actual_engine_recovers_mid_s1_and_finishes_delivery(tmp_path: Path) -> None:
+    """Crash in a real S1 node, then reuse sealed nodes and finish S0→S6.
+
+    This is intentionally stronger than the controller fake-engine tests:
+    S0 and the first S1 legs are real AgentLoop executions, an invocation is
+    left RUNNING to model a hard process loss, and a fresh engine/provider
+    instance resumes the same durable run.
+    """
+    handle = create_project(tmp_path / "proj-resume", name="resume-chain", profile="快速")
+    try:
+        root = handle.workspace.root
+        (root / "输入" / "题目" / "题.pdf").write_bytes(b"%PDF-synthetic")
+        run_id = repositories.create_run(
+            handle.workspace.db, project_id=handle.project_id, profile="快速"
+        )
+        handle.workspace.acquire_run_lock(run_id)
+        repositories.set_run_status(handle.workspace.db, run_id, RunStatus.RUNNING)
+
+        full_script = _provider_script()
+        partial_provider = MockProvider(MockScript(full_script.turns[:8]))
+        registry = _registry()
+        policy = PathPolicy(root)
+
+        s0 = await run_s0(
+            handle.workspace.db,
+            partial_provider,
+            registry,
+            policy,
+            run_id,
+        )
+        assert s0["g0_pass"] is True
+
+        scout_status = await run_role_leg(
+            handle.workspace.db,
+            partial_provider,
+            registry,
+            policy,
+            run_id,
+            stage_key="S1",
+            role_id="planner",
+            node_key="S1:路线侦察",
+            instructions="写 交接/路线侦察.json。",
+            expected_artifacts=[ExpectedArtifact(rel_path="交接/路线侦察.json")],
+        )
+        assert scout_status == "SUCCEEDED"
+
+        prototype_one = await run_role_leg(
+            handle.workspace.db,
+            partial_provider,
+            registry,
+            policy,
+            run_id,
+            stage_key="S1",
+            role_id="modeler",
+            node_key="S1:问1:原型1",
+            question_num=1,
+            instructions="写 求解/问题1/原型_1.py。",
+            expected_artifacts=[
+                ExpectedArtifact(rel_path="求解/问题1/原型_1.py", kind="text")
+            ],
+        )
+        assert prototype_one == "SUCCEEDED"
+        assert partial_provider.script.cursor == 8
+
+        # Leave prototype 2 in a genuinely active invocation, as if the process
+        # disappeared after acquiring the execution lease.
+        interrupted = repositories.create_task(
+            handle.workspace.db,
+            run_id=run_id,
+            stage_key="S1",
+            node_key="S1:问1:原型2",
+            role_id="modeler",
+            expected_artifacts=[
+                {"rel_path": "求解/问题1/原型_2.py", "kind": "text"}
+            ],
+            max_attempts=2,
+        )
+        repositories.transition_task(
+            handle.workspace.db, interrupted.id, TaskStatus.READY
+        )
+        repositories.transition_task(
+            handle.workspace.db, interrupted.id, TaskStatus.QUEUED
+        )
+        owner = repositories.new_owner_token()
+        assert repositories.acquire_task_lease(
+            handle.workspace.db, interrupted.id, owner
+        )
+        _, orphan_invocation = repositories.begin_task_attempt(
+            handle.workspace.db,
+            interrupted.id,
+            owner,
+            role_id="modeler",
+            provider_profile="default",
+            model="mock",
+            reasoning="xhigh",
+        )
+
+        # Fresh engine + fresh provider instance.  The remaining scripted turns
+        # begin exactly where the interrupted S1 node would have continued.
+        resumed = PaperFoundryEngine(
+            handle.workspace,
+            MockProvider(MockScript(full_script.turns[8:])),
+            registry,
+            run_id,
+            hooks=PipelineHooks(compile_paper=_compile, render_pages=_render),
+        )
+        result = await resumed.run(resume=True)
+
+        status = handle.workspace.db.query_one(
+            "SELECT status FROM runs WHERE id = ?", (run_id,)
+        )
+        assert status["status"] == RunStatus.SUCCEEDED.value
+        assert result.degraded_questions == ()
+        assert (root / "交付" / "论文.pdf").is_file()
+
+        orphan = handle.workspace.db.query_one(
+            "SELECT status, ended_at FROM agent_invocations WHERE id = ?",
+            (orphan_invocation,),
+        )
+        assert orphan["status"] == "FAILED"
+        assert orphan["ended_at"] is not None
+
+        recovered = events.query_events(
+            handle.workspace.db, run_id=run_id, type="pipeline.recovered"
+        )
+        assert recovered
+        assert recovered[-1].payload["interrupted_tasks"] == 1
+
+        reused_nodes = {
+            event.payload.get("node")
+            for event in events.query_events(
+                handle.workspace.db,
+                run_id=run_id,
+                type="pipeline.node_reused",
+                limit=1000,
+            )
+        }
+        assert {
+            "S0.2:读题",
+            "S0.3:预测",
+            "S1:路线侦察",
+            "S1:问1:原型1",
+        }.issubset(reused_nodes)
+
+        retried = repositories.get_task(handle.workspace.db, interrupted.id)
+        assert retried.status is TaskStatus.SUCCEEDED
+        assert retried.attempt == 2
+    finally:
+        handle.workspace.release_run_lock()
         handle.workspace.db.close()
