@@ -23,6 +23,7 @@ from mmagent.mm.pipeline.s4_paper import run_s4
 from mmagent.mm.pipeline.s5_finalize import run_g5, run_s5a, run_s5b
 from mmagent.mm.pipeline.s5_review import run_s5
 from mmagent.mm.pipeline.s6_finalize import run_s6
+from mmagent.orchestration.budget import check_run_budget
 from mmagent.providers.base import BaseProvider
 from mmagent.runtime.cancellation import CancellationToken
 from mmagent.state import events, repositories
@@ -123,6 +124,7 @@ class PaperFoundryEngine:
                 self.db, "pipeline.paused_at_boundary", {}, run_id=self.run_id
             )
             raise PipelinePaused("run 已暂停；将在当前阶段边界停止")
+        check_run_budget(self.db, self.run_id)
 
     def cancel_run(self, reason: str = "user cancelled") -> None:
         """Request cooperative cancellation for this live engine instance."""
