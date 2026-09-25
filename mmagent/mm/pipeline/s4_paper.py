@@ -174,23 +174,27 @@ async def run_s4(
     for round_num in range(1, cfg.章评轮数 + 1):
         chapter_rel = f"审稿/章评R{round_num}.json"
         reader_rel = f"审稿/读者R{round_num}.json"
-        async def chapter_review() -> str:
+        async def chapter_review(
+            *, review_round=round_num, review_path=chapter_rel
+        ) -> str:
             return await _leg(
                 db, provider, registry, policy, run_id,
-                role_id="chapter_reviewer", node_key=f"S4:章评R{round_num}",
-                instructions=f"评审论文各章并写 {chapter_rel}，顶层给出数值字段 总分。",
-                expected=[ExpectedArtifact(rel_path=chapter_rel)], cancel=cancel,
+                role_id="chapter_reviewer", node_key=f"S4:章评R{review_round}",
+                instructions=f"评审论文各章并写 {review_path}，顶层给出数值字段 总分。",
+                expected=[ExpectedArtifact(rel_path=review_path)], cancel=cancel,
             )
 
-        async def blind_review() -> str:
+        async def blind_review(
+            *, review_round=round_num, review_path=reader_rel
+        ) -> str:
             return await _leg(
                 db, provider, registry, policy, run_id,
-                role_id="blind_reader", node_key=f"S4:闭卷R{round_num}",
+                role_id="blind_reader", node_key=f"S4:闭卷R{review_round}",
                 instructions=(
-                    f"只读论文内容做闭卷理解测试并写 {reader_rel}，"
+                    f"只读论文内容做闭卷理解测试并写 {review_path}，"
                     "顶层给出数值字段 读者分。"
                 ),
-                expected=[ExpectedArtifact(rel_path=reader_rel)], cancel=cancel,
+                expected=[ExpectedArtifact(rel_path=review_path)], cancel=cancel,
             )
 
         review_wave = await run_status_wave(
