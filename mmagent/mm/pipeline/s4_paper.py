@@ -11,9 +11,15 @@ from mmagent.mm.audit import audit_paper
 from mmagent.mm.config.profiles import get_profile
 from mmagent.mm.config.thresholds import DEFAULT_THRESHOLDS
 from mmagent.mm.gates.g4 import check_g4, check_narrative
+from mmagent.mm.retention import (
+    ensure_paper_snapshot,
+    restore_paper_snapshot,
+    retention_decision,
+)
 from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.orchestration.wave import WaveJob, run_status_wave
 from mmagent.providers.base import BaseProvider
+from mmagent.state import events
 from mmagent.state.db import Database
 from mmagent.tools.latex import LatexTool
 from mmagent.tools.registry import ToolRegistry
@@ -34,6 +40,23 @@ def _score(path: Path) -> float:
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 return float(value)
     return 0.0
+
+
+def _relative_judgment(path: Path) -> str | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    raw = str(data.get("相对判断", "")).strip()
+    if raw.startswith(("更差", "差")):
+        return "更差"
+    if raw.startswith(("更好", "好")):
+        return "更好"
+    if raw:
+        return "持平"
+    return None
 
 
 def _abstract_verdict(path: Path) -> tuple[bool, float]:
@@ -172,6 +195,15 @@ async def run_s4(
         return {"g4_pass": False, "g4_issues": coverage_issues, "reviews": review_history}
 
     for round_num in range(1, cfg.章评轮数 + 1):
+        snapshot_files = ensure_paper_snapshot(policy, "s4", round_num)
+        visible_snapshot = (
+            policy.root / "审稿" / "章快照" / f"R{round_num}" / "论文.tex"
+        )
+        visible_snapshot.parent.mkdir(parents=True, exist_ok=True)
+        current_paper = policy.root / "论文" / "论文.tex"
+        if current_paper.is_file() and not visible_snapshot.is_file():
+            shutil.copy2(current_paper, visible_snapshot)
+
         chapter_rel = f"审稿/章评R{round_num}.json"
         reader_rel = f"审稿/读者R{round_num}.json"
         async def chapter_review(
@@ -180,7 +212,15 @@ async def run_s4(
             return await _leg(
                 db, provider, registry, policy, run_id,
                 role_id="chapter_reviewer", node_key=f"S4:章评R{review_round}",
-                instructions=f"评审论文各章并写 {review_path}，顶层给出数值字段 总分。",
+                instructions=(
+                    f"评审论文各章并写 {review_path}，顶层给出数值字段 总分。"
+                    + (
+                        f" 同时对比 审稿/章快照/R{review_round - 1}/论文.tex "
+                        "与当前 论文/论文.tex，顶层给 相对判断=更好|持平|更差。"
+                        if review_round > 1
+                        else ""
+                    )
+                ),
                 expected=[ExpectedArtifact(rel_path=review_path)], cancel=cancel,
             )
 
@@ -212,22 +252,83 @@ async def run_s4(
         reader_status = review_wave.results.get("闭卷", "FAILED")
         chapter_score = _score(policy.root / chapter_rel)
         reader_score = _score(policy.root / reader_rel)
+        relative = (
+            _relative_judgment(policy.root / chapter_rel)
+            if chapter_status == "SUCCEEDED"
+            else None
+        )
+        previous = review_history[-1] if review_history else None
+        previous_chapter = (
+            float(previous["effective_chapter_score"])
+            if previous is not None
+            else None
+        )
+        previous_reader = (
+            float(previous["effective_reader_score"])
+            if previous is not None
+            else None
+        )
+        retention_action, retention_reason = retention_decision(
+            relative,
+            previous_chapter,
+            chapter_score if chapter_status == "SUCCEEDED" else None,
+        )
+        restored_files = 0
+        effective_chapter_score = chapter_score
+        effective_reader_score = reader_score
+        if round_num > 1 and retention_action == "回退":
+            restored_files = restore_paper_snapshot(policy, "s4", round_num - 1)
+            if restored_files:
+                effective_chapter_score = (
+                    previous_chapter if previous_chapter is not None else chapter_score
+                )
+                effective_reader_score = (
+                    previous_reader if previous_reader is not None else reader_score
+                )
+                events.append_event(
+                    db,
+                    "s4.rollback",
+                    {
+                        "round": round_num,
+                        "to_round": round_num - 1,
+                        "reason": retention_reason,
+                        "restored_files": restored_files,
+                    },
+                    run_id=run_id,
+                )
+            else:
+                retention_action = "无法回退"
+                retention_reason += "；缺少上一轮持久快照"
+
         review_history.append({
-            "round": round_num, "chapter_score": chapter_score, "reader_score": reader_score
+            "round": round_num,
+            "chapter_score": chapter_score,
+            "reader_score": reader_score,
+            "effective_chapter_score": effective_chapter_score,
+            "effective_reader_score": effective_reader_score,
+            "relative_judgment": relative,
+            "retention_action": retention_action,
+            "retention_reason": retention_reason,
+            "snapshot_files": snapshot_files,
+            "restored_files": restored_files,
         })
         if (
             chapter_status == "SUCCEEDED" and reader_status == "SUCCEEDED"
-            and chapter_score >= chapter_threshold and reader_score >= chapter_threshold
+            and effective_chapter_score >= chapter_threshold
+            and effective_reader_score >= chapter_threshold
         ):
             break
         if round_num >= cfg.章评轮数:
             break
+        source_round = round_num - 1 if restored_files else round_num
+        source_chapter_rel = f"审稿/章评R{source_round}.json"
+        source_reader_rel = f"审稿/读者R{source_round}.json"
         revision = await _leg(
             db, provider, registry, policy, run_id,
             role_id="writer", node_key=f"S4:定向修订R{round_num}",
             instructions=(
-                f"只根据 {chapter_rel} 与 {reader_rel} 做定向修订；保持数字/公式事实不变，"
-                "修改 论文/论文.tex。"
+                f"只根据 {source_chapter_rel} 与 {source_reader_rel} 做定向修订；"
+                "保持数字/公式事实不变，修改 论文/论文.tex。"
             ),
             expected=[ExpectedArtifact(rel_path="论文/论文.tex", kind="text")], cancel=cancel,
         )
@@ -236,12 +337,16 @@ async def run_s4(
 
     if review_history:
         last = review_history[-1]
-        if last["chapter_score"] < chapter_threshold or last["reader_score"] < chapter_threshold:
+        if (
+            last["effective_chapter_score"] < chapter_threshold
+            or last["effective_reader_score"] < chapter_threshold
+        ):
             return {
                 "g4_pass": False,
                 "g4_issues": [
                     f"章评/闭卷末轮未达 {chapter_threshold:.1f}: "
-                    f"{last['chapter_score']:.2f}/{last['reader_score']:.2f}"
+                    f"{last['effective_chapter_score']:.2f}/"
+                    f"{last['effective_reader_score']:.2f}"
                 ],
                 "reviews": review_history,
             }
