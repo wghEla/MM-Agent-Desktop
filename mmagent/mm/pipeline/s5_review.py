@@ -8,20 +8,18 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from mmagent.agent.loop import AgentLoop, AgentTask
 from mmagent.mm.audit import audit_paper
 from mmagent.mm.gates.g4 import check_g4
 from mmagent.mm.ledger.issue_ledger import Issue, IssueLedger
-from mmagent.mm.roles.prompts import get_system_prompt
 from mmagent.mm.roles.registry import get_role
+from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.base import BaseProvider
-from mmagent.state import events, repositories
+from mmagent.state import events
 from mmagent.state.db import Database
 from mmagent.tools.latex import LatexTool, render_pdf_pages
 from mmagent.tools.registry import ToolRegistry
 from mmagent.workspace.artifacts import ExpectedArtifact
 from mmagent.workspace.path_policy import PathPolicy
-from mmagent.workspace.permissions import PermissionChecker
 
 CompileFn = Callable[[Path], dict[str, Any]]
 RenderFn = Callable[[Path], list[Path]]
@@ -136,12 +134,7 @@ async def _run_review_legs(
     for role_id, suffix in legs:
         role = get_role(role_id)
         artifact = _artifact_for_review(role_id, round_num, suffix)
-        checker = PermissionChecker(role.permissions(), policy)
-        loop = AgentLoop(db, provider, registry, checker, policy, cancel=cancel)
         node = f"S5:R{round_num}:{role_id}{suffix}"
-        task = repositories.create_task(
-            db, run_id=run_id, stage_key="S5", node_key=node, role_id=role_id
-        )
         visual_paths: list[str] = []
         instructions = (
             f"执行第{round_num}轮独立审稿并写 {artifact}。"
@@ -154,18 +147,17 @@ async def _run_review_legs(
                 " 你是页图评委，只依据随任务附带的当前 PDF 代表页判断第一印象与版式；"
                 "看不到的内容必须弃权，不得推测。"
             )
-        outcome = await loop.run(AgentTask(
-            task_id=task.id,
-            node_key=node,
+        status = await run_role_leg(
+            db, provider, registry, policy, run_id,
+            stage_key="S5",
             role_id=role_id,
-            system_prompt=get_system_prompt(role_id),
+            node_key=node,
             instructions=instructions,
-            model="mock",
-            reasoning=role.reasoning,
             expected_artifacts=[ExpectedArtifact(rel_path=artifact)],
             image_paths=visual_paths,
-        ))
-        if outcome.status.value != "SUCCEEDED":
+            cancel=cancel,
+        )
+        if status != "SUCCEEDED":
             continue
         op, ve = _extract_review_payload(policy.root / artifact)
         for item in op:
@@ -218,31 +210,24 @@ async def _run_rework_leg(
     cancel=None,
 ) -> list[dict]:
     role_id = {"算": "modeler", "图": "plotter", "文": "writer"}[target]
-    role = get_role(role_id)
-    vars = {"question": str(question_num)} if question_num is not None else {}
-    checker = PermissionChecker(role.permissions(**vars), policy)
-    loop = AgentLoop(db, provider, registry, checker, policy, cancel=cancel)
     suffix = f"问{question_num}" if question_num is not None else ""
     receipt_rel = f"审稿/回执_R{round_num}_{target}{suffix}.json"
     node = f"S5:R{round_num}:回炉{target}{suffix}"
-    task = repositories.create_task(
-        db, run_id=run_id, stage_key="S5", node_key=node, role_id=role_id
-    )
-    outcome = await loop.run(AgentTask(
-        task_id=task.id,
-        node_key=node,
+    status = await run_role_leg(
+        db, provider, registry, policy, run_id,
+        stage_key="S5",
         role_id=role_id,
-        system_prompt=get_system_prompt(role_id),
+        node_key=node,
+        question_num=question_num,
         instructions=(
             "只处理下面点名的台账条目，不扩大修改范围。"
             f"条目={_items_json(items)}。修改完成后写 {receipt_rel}，"
             "每条回执包含 id、generation、改动、证据。"
         ),
-        model="mock",
-        reasoning=role.reasoning,
         expected_artifacts=[ExpectedArtifact(rel_path=receipt_rel)],
-    ))
-    if outcome.status.value != "SUCCEEDED":
+        cancel=cancel,
+    )
+    if status != "SUCCEEDED":
         return []
     try:
         data = json.loads((policy.root / receipt_rel).read_text(encoding="utf-8"))
@@ -294,6 +279,43 @@ async def _run_rework(
     return stats
 
 
+def _restore_round_checkpoint(
+    db: Database, run_id: str
+) -> tuple[IssueLedger, list[dict[str, Any]], int, bool, list[str]]:
+    """Restore S5 only from post-rework round-complete checkpoints."""
+    checkpoints = events.query_events(
+        db, run_id=run_id, type="checkpoint.s5_round_complete", limit=100
+    )
+    if not checkpoints:
+        return IssueLedger(前缀="审"), [], 1, False, []
+
+    ordered = sorted(
+        (
+            event for event in checkpoints
+            if isinstance(event.payload.get("round"), int)
+        ),
+        key=lambda event: (int(event.payload["round"]), event.id),
+    )
+    if not ordered:
+        return IssueLedger(前缀="审"), [], 1, False, []
+
+    latest = ordered[-1]
+    ledger = IssueLedger.从快照(
+        latest.payload.get("ledger") or [], 前缀="审"
+    )
+    rounds = [
+        event.payload.get("round_info")
+        for event in ordered
+        if isinstance(event.payload.get("round_info"), dict)
+    ]
+    converged = bool(latest.payload.get("converged", False))
+    escalations = [
+        str(value)
+        for value in (latest.payload.get("needs_escalation") or [])
+    ]
+    return ledger, rounds, int(latest.payload["round"]) + 1, converged, escalations
+
+
 async def run_s5(
     db: Database,
     provider: BaseProvider,
@@ -307,14 +329,23 @@ async def run_s5(
     cancel=None,
 ) -> dict[str, Any]:
     """Run review rounds. The last round is review-only when still unconverged."""
-    ledger = IssueLedger(前缀="审")
-    rounds: list[dict[str, Any]] = []
-    converged = False
-    needs_escalation: list[str] = []
+    ledger, rounds, start_round, converged, needs_escalation = _restore_round_checkpoint(
+        db, run_id
+    )
     compiler = compile_paper or _default_compile
     renderer = render_pages or _default_render
+    _write_ledger_view(policy, ledger)
 
-    for round_num in range(1, max_rounds + 1):
+    if converged or start_round > max_rounds:
+        return {
+            "rounds": rounds,
+            "converged": converged,
+            "ledger_summary": ledger.摘要(),
+            "needs_escalation": needs_escalation,
+            "ledger": _ledger_view(ledger),
+        }
+
+    for round_num in range(start_round, max_rounds + 1):
         compile_result = compiler(policy.root)
         render_issue: str | None = None
         rendered_pages: list[Path] = []
@@ -367,14 +398,24 @@ async def run_s5(
         rounds.append(round_info)
         _write_ledger_view(policy, ledger)
         events.append_event(
-            db, "checkpoint.s5_round",
+            db, "s5.round_reviewed",
             {"round": round_num, "converged": converged, "ledger": ledger.摘要()},
             run_id=run_id,
         )
 
-        if converged:
-            break
-        if round_num >= max_rounds:
+        if converged or round_num >= max_rounds:
+            events.append_event(
+                db,
+                "checkpoint.s5_round_complete",
+                {
+                    "round": round_num,
+                    "converged": converged,
+                    "ledger": ledger.快照(),
+                    "round_info": round_info,
+                    "needs_escalation": needs_escalation,
+                },
+                run_id=run_id,
+            )
             break
 
         for item in ledger.熔断候选(阈值=2):
@@ -388,6 +429,18 @@ async def run_s5(
             db, provider, registry, policy, run_id, round_num, ledger, cancel=cancel
         )
         _write_ledger_view(policy, ledger)
+        events.append_event(
+            db,
+            "checkpoint.s5_round_complete",
+            {
+                "round": round_num,
+                "converged": False,
+                "ledger": ledger.快照(),
+                "round_info": round_info,
+                "needs_escalation": needs_escalation,
+            },
+            run_id=run_id,
+        )
 
     return {
         "rounds": rounds,
