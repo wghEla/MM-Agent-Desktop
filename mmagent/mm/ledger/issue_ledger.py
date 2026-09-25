@@ -54,6 +54,73 @@ def _位置键(定位: str) -> str:
     return ((文件.group(1) if 文件 else "") + ":" + (数.group(1) if 数 else "")).strip(":")
 
 
+_ABSTAIN_RE = re.compile(
+    r"未核实|不能核实|无法核实|未能核[实验]|"
+    r"未获.{0,8}(?:实物|材料|范围)|不能证明|本通道|未提供|未展示|"
+    r"无法验证|回执代验|不能销号"
+)
+
+
+def _is_abstention(channel: str, verdict: dict) -> bool:
+    """Only the page-limited judge may abstain on evidence it cannot inspect."""
+    if channel != "judge_simulator":
+        return False
+    decision = str(verdict.get("裁定", "")).strip()
+    reason = str(verdict.get("理由", ""))
+    return decision != "已消解" and bool(_ABSTAIN_RE.search(reason))
+
+
+def merge_channel_verdicts(
+    channel_verdicts: list[tuple[str, list[dict]]],
+) -> tuple[list[dict], int]:
+    """Merge paired-review verdicts while preserving R45 abstention semantics.
+
+    Per issue generation: any substantive unresolved vote wins; otherwise any
+    resolved vote resolves it.  Judge-simulator abstentions do not vote.  If all
+    votes for an issue are abstentions, no verdict is emitted so the ledger's
+    missed-verdict path returns the issue to 待改.
+    """
+    grouped: dict[tuple[str, int | None], list[tuple[str, dict]]] = {}
+    abstentions = 0
+    for channel, verdicts in channel_verdicts:
+        for raw in verdicts or []:
+            if not isinstance(raw, dict):
+                continue
+            issue_id = str(raw.get("id", "")).strip()
+            if not issue_id:
+                continue
+            generation = raw.get("generation")
+            key = (issue_id, int(generation) if generation is not None else None)
+            if _is_abstention(channel, raw):
+                abstentions += 1
+                continue
+            grouped.setdefault(key, []).append((channel, raw))
+
+    merged: list[dict] = []
+    for (issue_id, generation), votes in grouped.items():
+        unresolved = [
+            (channel, vote)
+            for channel, vote in votes
+            if str(vote.get("裁定", "")).strip() != "已消解"
+        ]
+        chosen_channel, chosen = unresolved[0] if unresolved else votes[0]
+        decision = "未消解" if unresolved else "已消解"
+        reasons = [
+            f"{channel}:{str(vote.get('理由', '')).strip()}"
+            for channel, vote in votes
+            if str(vote.get("理由", "")).strip()
+        ]
+        item = {
+            "id": issue_id,
+            "generation": generation,
+            "裁定": decision,
+            "理由": "｜".join(reasons)[:600],
+            "来源通道": chosen_channel,
+        }
+        merged.append(item)
+    return merged, abstentions
+
+
 class IssueLedger:
     """意见台账：状态机 + 身份合并 + 回执/裁定 + 熔断。"""
 
@@ -155,7 +222,9 @@ class IssueLedger:
                 best = (score, x)
         return best[1] if best else None
 
-    def 收回执(self, 回执们: list[dict], 腿名: str = "") -> dict[str, int]:
+    def 收回执(
+        self, 回执们: list[dict], 腿名: str = "", 轮次: int | None = None
+    ) -> dict[str, int]:
         """修改腿回执：→ 待复核。未知 id 忽略。"""
         stats = {"受理": 0, "未知id": 0}
         for r in 回执们 or []:
@@ -169,9 +238,13 @@ class IssueLedger:
             # 幂等（外审 round15 P1-2）：按 receipt_id 去重（非内容匹配）
             if any(rc.get("receipt_id") == receipt_id for rc in x.回执):
                 continue
-            x.回执.append({"腿": 腿名, "改动": new_change,
-                           "证据": str(r.get("证据", ""))[:200],
-                           "receipt_id": receipt_id})
+            x.回执.append({
+                "腿": 腿名,
+                "轮次": int(轮次) if 轮次 is not None else None,
+                "改动": new_change,
+                "证据": str(r.get("证据", ""))[:200],
+                "receipt_id": receipt_id,
+            })
             # generation CAS for receipt（round16 P1-2）
             receipt_gen = r.get("generation")
             if receipt_gen is not None and int(receipt_gen) != x.generation:
@@ -227,6 +300,24 @@ class IssueLedger:
                 x.历史.append({"轮次": self.轮次, "裁定": "评审未裁"})
                 n += 1
         return n
+
+    def 回退轮修订(self, 轮次: int, 理由: str) -> int:
+        """Invalidate verdicts for receipts produced by a rolled-back round."""
+        marker = int(轮次)
+        changed = 0
+        for issue in self.条目:
+            touched = any(
+                int(receipt.get("轮次", -1)) == marker
+                for receipt in issue.回执
+                if isinstance(receipt, dict)
+            )
+            if touched and issue.状态 in (待复核, 已消解):
+                issue.状态 = 未消解
+                issue.历史.append(
+                    {"轮次": self.轮次, "裁定": "回退", "理由": str(理由)[:300]}
+                )
+                changed += 1
+        return changed
 
     def 待改条目(self, 级别们: list[str] | None = None, 目标们: list[str] | None = None) -> list[Issue]:
         out = [x for x in self.条目 if x.状态 in (待改, 未消解)]
