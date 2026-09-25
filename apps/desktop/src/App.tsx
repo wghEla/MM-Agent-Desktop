@@ -7,6 +7,7 @@ import {
   type ProviderProfile,
   type RunStatus,
 } from "./api";
+import { ArtifactViewer, ImportPanel } from "./WorkspacePanels";
 
 const protocolDefaults: Record<string, string> = {
   openai_chat: "https://api.openai.com/v1",
@@ -136,6 +137,8 @@ function App() {
             onSubmit={createOrOpen}
           />
 
+          {project && <ImportPanel project={project} />}
+
           {project && (
             <ProviderPanel
               project={project}
@@ -169,12 +172,17 @@ function App() {
         <main className="main">
           {!project ? (
             <div className="empty">创建或打开一个 MM-Agent 工作区后开始。</div>
-          ) : !run ? (
-            <div className="empty">
-              已打开 <span className="mono">{project.root_path}</span>。配置 Provider 后启动一炉。
-            </div>
           ) : (
-            <DashboardView run={run} dashboard={dashboard} onRefresh={() => void refreshRun()} />
+            <>
+              {!run ? (
+                <div className="empty">
+                  已打开 <span className="mono">{project.root_path}</span>。导入题目、配置 Provider 后启动一炉。
+                </div>
+              ) : (
+                <DashboardView run={run} dashboard={dashboard} onRefresh={() => void refreshRun()} />
+              )}
+              <ArtifactViewer project={project} />
+            </>
           )}
         </main>
       </div>
