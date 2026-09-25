@@ -304,8 +304,9 @@ def test_pipeline_compile_hook_uses_shared_process_manager(
             seen["root"] = root
             seen["process_manager"] = process_manager
 
-        def compile(self, tex_file):
+        def compile(self, tex_file, *, cancel=None):
             seen["tex_file"] = tex_file
+            seen["cancel"] = cancel
             return {"rc": 0, "errors": [], "pages": 7}
 
     monkeypatch.setattr(sidecar_server, "LatexTool", FakeLatexTool)
@@ -318,3 +319,4 @@ def test_pipeline_compile_hook_uses_shared_process_manager(
     assert seen["root"] == tmp_path
     assert seen["process_manager"] is marker
     assert seen["tex_file"] == "论文/论文.tex"
+    assert seen["cancel"] is None
