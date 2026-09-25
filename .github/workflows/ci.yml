@@ -56,6 +56,15 @@ jobs:
           python -m pip install -e ".[package]"
       - name: Build bundled Python sidecar
         run: python scripts/build_sidecar.py
+      - name: Build managed scientific Python runtime
+        run: python scripts/build_managed_runtime.py
+      - name: Smoke managed scientific runtime
+        shell: pwsh
+        run: |
+          $python = "apps/desktop/src-tauri/resources/runtime/python.exe"
+          if (!(Test-Path $python)) { throw "managed Python missing: $python" }
+          & $python -X utf8 -c "import numpy,pandas,scipy,matplotlib,sklearn,sympy,statsmodels,openpyxl,xlrd,docx,pypdf,fitz,PIL,networkx,pydantic; print('managed-runtime-ok')"
+          if ($LASTEXITCODE -ne 0) { throw "managed runtime smoke failed: $LASTEXITCODE" }
       - name: Smoke bundled sidecar executable
         shell: pwsh
         run: |
