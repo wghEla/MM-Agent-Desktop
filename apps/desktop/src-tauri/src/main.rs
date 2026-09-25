@@ -42,12 +42,18 @@ impl SidecarBridge {
         let endpoint = format!("http://127.0.0.1:{port}");
 
         // Debug builds intentionally retain the Python-module path for fast
-        // iteration. Release builds must be self-contained and use the bundled
-        // PyInstaller externalBin.
+        // iteration. Release builds use both the frozen API sidecar and a
+        // separately bundled managed Python runtime for model-authored scripts.
         let child = if cfg!(debug_assertions) {
             SidecarProcess::DevelopmentPython(spawn_development_python(port, &token)?)
         } else {
-            SidecarProcess::Bundled(spawn_bundled_sidecar(app, port, &token)?)
+            let managed_python = managed_python_path(app)?;
+            SidecarProcess::Bundled(spawn_bundled_sidecar(
+                app,
+                port,
+                &token,
+                &managed_python,
+            )?)
         };
 
         let bridge = Self {
@@ -170,17 +176,34 @@ fn spawn_development_python(port: u16, token: &str) -> Result<Child, String> {
         })
 }
 
+fn managed_python_path(app: &tauri::AppHandle) -> Result<String, String> {
+    let path = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("解析应用资源目录失败: {e}"))?
+        .join("runtime")
+        .join("python.exe");
+    if !path.is_file() {
+        return Err(format!("内置受管 Python 缺失: {}", path.display()));
+    }
+    path.into_os_string()
+        .into_string()
+        .map_err(|_| "内置受管 Python 路径不是合法 Unicode".to_string())
+}
+
 fn spawn_bundled_sidecar(
     app: &tauri::AppHandle,
     port: u16,
     token: &str,
+    managed_python: &str,
 ) -> Result<CommandChild, String> {
     let command = app
         .shell()
         .sidecar("mmagent-sidecar")
         .map_err(|e| format!("解析内置 sidecar 失败: {e}"))?
         .args(["--port", &port.to_string()])
-        .env(TOKEN_ENV, token);
+        .env(TOKEN_ENV, token)
+        .env("MMAGENT_PYTHON", managed_python);
 
     let (mut events, child) = command
         .spawn()
