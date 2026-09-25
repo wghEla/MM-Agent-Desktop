@@ -7,21 +7,17 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from mmagent.agent.loop import AgentLoop, AgentTask
 from mmagent.mm.audit import audit_paper
 from mmagent.mm.config.profiles import get_profile
 from mmagent.mm.config.thresholds import DEFAULT_THRESHOLDS
 from mmagent.mm.gates.g4 import check_g4, check_narrative
-from mmagent.mm.roles.prompts import get_system_prompt
-from mmagent.mm.roles.registry import get_role
+from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.base import BaseProvider
-from mmagent.state import repositories
 from mmagent.state.db import Database
 from mmagent.tools.latex import LatexTool
 from mmagent.tools.registry import ToolRegistry
 from mmagent.workspace.artifacts import ExpectedArtifact
 from mmagent.workspace.path_policy import PathPolicy
-from mmagent.workspace.permissions import PermissionChecker
 
 CompileFn = Callable[[Path], dict[str, Any]]
 
@@ -104,20 +100,15 @@ async def _leg(
     run_id: str, *, role_id: str, node_key: str, instructions: str,
     expected: list[ExpectedArtifact], cancel=None
 ) -> str:
-    role = get_role(role_id)
-    loop = AgentLoop(
-        db, provider, registry, PermissionChecker(role.permissions(), policy), policy, cancel=cancel
+    return await run_role_leg(
+        db, provider, registry, policy, run_id,
+        stage_key="S4",
+        role_id=role_id,
+        node_key=node_key,
+        instructions=instructions,
+        expected_artifacts=expected,
+        cancel=cancel,
     )
-    task = repositories.create_task(
-        db, run_id=run_id, stage_key="S4", node_key=node_key, role_id=role_id
-    )
-    outcome = await loop.run(AgentTask(
-        task_id=task.id, node_key=node_key, role_id=role_id,
-        system_prompt=get_system_prompt(role_id), instructions=instructions,
-        model="mock", reasoning=role.reasoning, expected_artifacts=expected,
-    ))
-    return outcome.status.value
-
 
 def _default_compile(root: Path) -> dict[str, Any]:
     try:
