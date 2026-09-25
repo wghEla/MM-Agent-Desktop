@@ -404,9 +404,11 @@ async def run_s2(
 ) -> dict[str, Any]:
     """Execute S2 by topological question layers.
 
-    Current implementation executes questions within a layer sequentially; the
-    layer structure is preserved so a scheduler can parallelize it later without
-    changing correctness semantics.
+    Questions inside a layer are intentionally processed one at a time.  This
+    matches the pinned 5f507e0b driver's executable loop, despite a stale source
+    comment there describing same-layer modelling as parallel.  The barrier
+    still guarantees that every upstream layer is complete before a dependent
+    question starts.
     """
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     problem_list = plan.get("问题清单", [])
