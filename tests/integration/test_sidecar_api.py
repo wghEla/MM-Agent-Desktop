@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import sys
+
+import pytest
 from fastapi.testclient import TestClient
 
 from mmagent.runtime.credentials import MemoryCredentialStore
-from mmagent.sidecar.server import create_app
+from mmagent.sidecar.server import build_tool_registry, create_app
 from mmagent.state import repositories
 from mmagent.state.models import RunStatus
 
@@ -231,3 +234,20 @@ def test_sidecar_lists_and_cancels_persisted_run(tmp_path) -> None:
             f"/projects/{project_id}/runs/{run_id}", headers=_auth()
         )
         assert status.json()["status"] == "CANCELLED"
+
+
+
+def test_sidecar_registry_uses_managed_python(monkeypatch) -> None:
+    monkeypatch.setenv("MMAGENT_PYTHON", sys.executable)
+
+    registry = build_tool_registry()
+    python_tool = registry.get("python.run")
+
+    assert python_tool.interpreter == sys.executable
+
+
+def test_sidecar_registry_rejects_missing_managed_python(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("MMAGENT_PYTHON", str(tmp_path / "missing-python.exe"))
+
+    with pytest.raises(RuntimeError, match="受管 Python 不可用"):
+        build_tool_registry()
