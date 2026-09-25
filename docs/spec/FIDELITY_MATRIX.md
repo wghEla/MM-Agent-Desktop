@@ -30,7 +30,7 @@
 | A14 | G3 mechanical figure gate | MATCH | 16–22 figures, schematic/diversity/caption checks + `test_g3_gate.py` |
 | A15 | S4 narrative → paper → chapter/blind review → integrate → abstract swarm | PARTIAL | full source path exists with focused tests; exact upstream editorial-guard ordering/parity still under audit |
 | A16 | G4 paper gate | PARTIAL | compile/page/audit/src/trace checks exist + `test_g4_gate.py`; not all upstream mechanical clauses proven |
-| A17 | S5 18-step review-round semantics | PARTIAL | review/rework/ledger/checkpoint loop exists and is resumable; exact 18-step parity and scoring/plateau semantics remain incomplete |
+| A17 | S5 18-step review-round semantics | PARTIAL | review/rework/ledger/checkpoint loop, R45 channel-aware verdict merge and persistent best-version rollback exist; remaining gap is mainly upstream wave/timeout scheduling and some repair-lane details |
 | A18 | Reviewer A/B + defect hunter + judge simulator + mechanical lane | MATCH | four independent role legs, page-image judge input, mechanical lane; pipeline tests |
 | A19 | S5a abstract finalization / S5b beautification | PARTIAL | both implemented and tested; upstream cosmetic-loop parity still under audit |
 | A20 | G5 publication gate | PARTIAL | final compile, G4 reuse, ledger convergence, stale-value/page guards, defect review exist; all R49–R52 paths not yet proven |
@@ -44,7 +44,7 @@
 | B2 | Issue identity merge / reopen / severity only rises | MATCH | location + similarity thresholds and generation tracking tested |
 | B3 | Repair receipts / unknown-id ignore / attempt accounting | MATCH | receipt idempotency + generation CAS in ledger tests |
 | B4 | Reviewer-only paired verdict / missed verdict reopens | MATCH | verdict generation CAS + fail-closed missed verdict behavior |
-| B5 | R45 abstention-vote merge semantics | NOT IMPLEMENTED | judge prompt can abstain, but dedicated abstention merge semantics are not evidenced |
+| B5 | R45 abstention-vote merge semantics | MATCH | only judge-simulator unverifiable negatives abstain; substantive unresolved votes veto, resolved votes otherwise resolve, and all-abstention cases fall through to missed-verdict reopen; focused tests cover all three cases |
 | B6 | Convergence = no blocking active issues | MATCH | ledger convergence mechanically checks blocking severities |
 | B7 | Fuse after ≥2 attempts | PARTIAL | fuse candidate and shelving rules implemented; hard/correctness escalation parity remains under audit |
 | B8 | Change Guard 0.45 / 0.70 | MATCH | sentence units + named mask + min-ratio implementation and tests |
@@ -52,7 +52,7 @@
 | B10 | Page Guard | MATCH | +max(10%,2 pages) and sudden-drop guard implemented/tested |
 | B11 | Integrator/frozen-fact guard | PARTIAL | editorial/frozen-input protections exist, but complete per-file fingerprint parity not proven |
 | B12 | Version-change manifest / stale-value guard | PARTIAL | stale-value scan exists and is wired into G5; full calc→figure→text propagation proof pending |
-| B13 | Best-retention / rollback package / 0.5 noise band | NOT IMPLEMENTED | no sufficient source/test evidence |
+| B13 | Best-retention / rollback package / 0.5 noise band | PARTIAL | S5 now persists pre-review TeX snapshots, applies relative verdict first and 0.5 score noise band fallback, restores prior files and reopens rolled-back receipts; full S4 chapter-review parity remains |
 | B14 | Cascade recomputation / downstream invalidation | PARTIAL | DAG primitives exist; full durable invalidation-and-rerun behavior not yet proven |
 
 ## C. Roles and legs
@@ -71,7 +71,7 @@
 | D1 | Red-team relative tolerance | 0.01 | MATCH | `Thresholds.red_team_relative_tolerance` + G2 logic/tests |
 | D2 | Figure review rounds / threshold | 2 / 7.0 | MATCH | thresholds + S3 tests |
 | D3 | Chapter review rounds / threshold | 2 / 7.0 | MATCH | thresholds + S4 tests |
-| D4 | Review target / plateau | 8.6 / 0.15 | PARTIAL | values are present; complete S5 scoring/plateau decision semantics not yet matched |
+| D4 | Review target / plateau | 8.6 / 0.15 | MATCH | constants are retained, and the pinned 5f507e0b driver never reads them; current upstream S5 exits on blocking-ledger convergence / round cap / budget, with score diagnostic only |
 | D5 | Beauty threshold | 8.5 | PARTIAL | value present; full upstream use in convergence path not fully proven |
 | D6 | Change guard / escalated guard | 0.45 / 0.70 | MATCH | thresholds + guard implementation/tests |
 | D7 | Default concurrency / 429 floor | 4 / 2 | NOT IMPLEMENTED | constants exist, but dynamic wave concurrency reduction is not implemented |
@@ -103,14 +103,14 @@ These are product requirements introduced by the independent desktop reimplement
 |---|---|---|---|
 | P1 | Authenticated loopback Python sidecar | MATCH | bearer token, loopback bind, shutdown path, sidecar API tests |
 | P2 | Secret-safe Provider Settings | MATCH | Windows Credential Manager abstraction; SQLite stores credential reference only; secret-boundary tests |
-| P3 | Tauri starts/stops/proxies sidecar | PARTIAL | authenticated proxy/lifecycle source + valid Windows build + frozen sidecar executable smoke exist; installed-release launch is still unverified |
+| P3 | Tauri starts/stops/proxies sidecar | MATCH | authenticated proxy/lifecycle source plus CI #174 installed-release startup smoke proves bundled-sidecar launch and health readiness |
 | P4 | Project create/open/import | MATCH | sidecar endpoints + React panel + artifact API tests |
 | P5 | Run start/pause/resume/cancel | MATCH | controller/sidecar/UI + integration tests |
 | P6 | Restart recovery from persisted Run history | MATCH | persisted run listing, detached RUNNING/PAUSED resume controls and safe cancel tests |
 | P7 | Dashboard / gates / event view | MATCH | React Dashboard + sidecar dashboard endpoint |
 | P8 | Artifact/image/PDF viewer | MATCH | artifact API + React viewer |
 | P9 | Synthetic actual-stage S0→S6 to delivery PDF | MATCH | `tests/e2e/test_actual_full_chain.py`; mock LLM + real stage modules/filesystem/Python execution |
-| P10 | Windows packaged installer launches without dev Python | PARTIAL | PyInstaller externalBin build and direct frozen-sidecar smoke are proven; NSIS build is now a CI gate, but installed-app launch without dev Python remains unverified |
+| P10 | Windows packaged installer launches without dev Python | MATCH | CI #174 builds NSIS, silently installs it, verifies embedded managed Python, clears developer Python PATH/override state, and the installed app completes authenticated sidecar readiness via --startup-smoke |
 | P11 | Real-provider smoke test | NOT IMPLEMENTED | intentionally unverified until a real credential is supplied |
 
 ## Intentional deviations
@@ -126,8 +126,8 @@ These are product requirements introduced by the independent desktop reimplement
 Do **not** call the rebuild product-complete until all of the following are true:
 
 1. current-head Python Linux + Windows CI is green;
-2. current-head Windows frontend + Cargo check is green;
+2. Windows release build + managed runtime + NSIS install/startup smoke is green;
 3. hard-crash/restart E2E proves real-stage resume behavior;
-4. installer launches a bundled sidecar on a clean Windows machine;
+4. remaining fidelity deviations (notably wave/adaptive concurrency and S4 rollback) are either closed or explicitly accepted;
 5. failure-injection matrix is closed or explicitly documented as accepted deviation;
 6. real-provider smoke status is stated truthfully.
