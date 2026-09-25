@@ -85,10 +85,20 @@ def set_run_status(db: Database, run_id: str, status: RunStatus) -> None:
         current = RunStatus(row["status"])
         if not can_transition_run(current, status):
             raise StateTransitionError(f"非法 run 状态迁移: {current.value} -> {status.value}")
+        changed_at = now_iso()
         conn.execute(
-            "UPDATE runs SET status = ?, ended_at = CASE WHEN ? IN ('SUCCEEDED','FAILED','CANCELLED')"
-            " THEN ? ELSE ended_at END WHERE id = ?",
-            (status.value, status.value, now_iso(), run_id),
+            "UPDATE runs SET status = ?,"
+            " started_at = CASE WHEN ? = 'RUNNING' AND started_at IS NULL THEN ? ELSE started_at END,"
+            " ended_at = CASE WHEN ? IN ('SUCCEEDED','FAILED','CANCELLED') THEN ? ELSE ended_at END"
+            " WHERE id = ?",
+            (
+                status.value,
+                status.value,
+                changed_at,
+                status.value,
+                changed_at,
+                run_id,
+            ),
         )
         events.append_event_conn(conn, "run.status", {"from": current.value, "to": status.value}, run_id=run_id)
 
