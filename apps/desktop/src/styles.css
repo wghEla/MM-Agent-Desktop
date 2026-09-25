@@ -7,7 +7,7 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 960px; min-height: 100vh; }
-button, input, select { font: inherit; }
+button, input, select, textarea { font: inherit; }
 
 .app-shell {
   min-height: 100vh;
@@ -60,7 +60,7 @@ button, input, select { font: inherit; }
 
 .field { display: grid; gap: 6px; margin: 10px 0; }
 .field label { font-size: 12px; color: #9ba5b5; }
-.field input, .field select {
+.field input, .field select, .field textarea {
   width: 100%;
   border: 1px solid #343b48;
   background: #0f1217;
@@ -153,4 +153,84 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 
 @media (max-width: 1100px) {
   .dashboard-grid { grid-template-columns: 1fr; }
+}
+
+
+.field textarea {
+  resize: vertical;
+  min-height: 76px;
+  width: 100%;
+  border: 1px solid #343b48;
+  background: #0f1217;
+  color: #eef1f5;
+  border-radius: 8px;
+  padding: 9px 10px;
+  outline: none;
+}
+
+.artifact-card { margin-top: 16px; }
+.artifact-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, .7fr) minmax(0, 1.3fr);
+  gap: 12px;
+  min-height: 420px;
+}
+.artifact-list {
+  max-height: 620px;
+  overflow: auto;
+  border: 1px solid #282f39;
+  border-radius: 8px;
+  background: #11141a;
+}
+.artifact-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) 70px;
+  gap: 8px;
+  align-items: center;
+  border: 0;
+  border-bottom: 1px solid #242a33;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  font-size: 11px;
+}
+.artifact-row.selected { background: #263044; }
+.artifact-kind { color: #8fa8d8; text-transform: uppercase; font-size: 10px; }
+.artifact-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artifact-size { color: #798391; text-align: right; }
+.artifact-preview {
+  min-width: 0;
+  border: 1px solid #282f39;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0d1015;
+}
+.text-preview {
+  margin: 0;
+  padding: 14px;
+  max-height: 620px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #dce2eb;
+  font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.image-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 620px;
+  object-fit: contain;
+}
+.pdf-preview {
+  width: 100%;
+  height: 620px;
+  border: 0;
+  background: white;
+}
+
+@media (max-width: 1200px) {
+  .artifact-layout { grid-template-columns: 1fr; }
+  .artifact-list { max-height: 260px; }
 }
