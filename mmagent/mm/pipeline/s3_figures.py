@@ -5,20 +5,16 @@ import json
 from pathlib import Path
 from typing import Any
 
-from mmagent.agent.loop import AgentLoop, AgentTask
 from mmagent.mm.config.profiles import get_profile
 from mmagent.mm.config.thresholds import DEFAULT_THRESHOLDS
 from mmagent.mm.gates.g3 import check_g3
 from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
-from mmagent.mm.roles.prompts import get_system_prompt
-from mmagent.mm.roles.registry import get_role
+from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.base import BaseProvider
-from mmagent.state import repositories
 from mmagent.state.db import Database
 from mmagent.tools.registry import ToolRegistry
 from mmagent.workspace.artifacts import ExpectedArtifact
 from mmagent.workspace.path_policy import PathPolicy
-from mmagent.workspace.permissions import PermissionChecker
 
 
 def _review_score(path: Path) -> float:
@@ -49,27 +45,17 @@ async def _run_agent_leg(
     image_paths: list[str] | None = None,
     cancel=None,
 ) -> str:
-    role = get_role(role_id)
-    permission_vars = {"question": str(question_num)} if question_num is not None else {}
-    checker = PermissionChecker(role.permissions(**permission_vars), policy)
-    loop = AgentLoop(db, provider, registry, checker, policy, cancel=cancel)
-    task = repositories.create_task(
-        db, run_id=run_id, stage_key="S3", node_key=node_key, role_id=role_id
-    )
-    spec = AgentTask(
-        task_id=task.id,
-        node_key=node_key,
+    return await run_role_leg(
+        db, provider, registry, policy, run_id,
+        stage_key="S3",
         role_id=role_id,
-        system_prompt=get_system_prompt(role_id),
+        node_key=node_key,
         instructions=instructions,
-        model="mock",
-        reasoning=role.reasoning,
         expected_artifacts=expected,
-        image_paths=list(image_paths or []),
+        question_num=question_num,
+        image_paths=image_paths,
+        cancel=cancel,
     )
-    outcome = await loop.run(spec)
-    return outcome.status.value
-
 
 async def run_s3(
     db: Database,
