@@ -9,6 +9,7 @@ from mmagent.mm.config.thresholds import DEFAULT_THRESHOLDS
 from mmagent.mm.gates.g2 import check_g2, normalize_red_team_report
 from mmagent.orchestration.dag import build_dependency_graph, topological_layers
 from mmagent.orchestration.role_leg import run_role_leg
+from mmagent.orchestration.wave import WaveJob, run_status_wave
 from mmagent.providers.base import BaseProvider
 from mmagent.runtime.cancellation import CancellationToken
 from mmagent.state.db import Database
@@ -302,22 +303,39 @@ async def _run_escalation(
     cancel=None,
 ) -> tuple[bool, list[str]]:
     """Three independent alternative scripts -> adjudication -> red-team recheck."""
-    variants: list[str] = []
+    variant_specs: list[tuple[int, str]] = []
+    variant_jobs: list[WaveJob[str]] = []
     for idx in range(1, _ESCALATION_VARIANTS + 1):
         rel = f"求解/问题{q}/升格/变体{idx}/求解.py"
-        status = await _agent_leg(
-            db, provider, registry, policy, run_id,
-            role_id="modeler",
-            node_key=f"S2:问{q}:升格变体{idx}",
-            question_num=q,
-            instructions=(
-                f"使用与当前失败路线实质不同的方法，为问题{q}编写升格变体 {rel}；只写不跑。"
-                f"结果写到 求解/问题{q}/升格/变体{idx}/结果/。"
-            ),
-            expected=[ExpectedArtifact(rel_path=rel, kind="text")],
-            cancel=cancel,
-        )
-        if status != "SUCCEEDED":
+        variant_specs.append((idx, rel))
+
+        async def write_variant(*, variant_idx=idx, rel_path=rel) -> str:
+            return await _agent_leg(
+                db, provider, registry, policy, run_id,
+                role_id="modeler",
+                node_key=f"S2:问{q}:升格变体{variant_idx}",
+                question_num=q,
+                instructions=(
+                    f"使用与当前失败路线实质不同的方法，为问题{q}编写升格变体 "
+                    f"{rel_path}；只写不跑。"
+                    f"结果写到 求解/问题{q}/升格/变体{variant_idx}/结果/。"
+                ),
+                expected=[ExpectedArtifact(rel_path=rel_path, kind="text")],
+                cancel=cancel,
+            )
+
+        variant_jobs.append(WaveJob(f"变体{idx}", write_variant))
+
+    wave = await run_status_wave(
+        db,
+        run_id,
+        variant_jobs,
+        cancel=cancel,
+        wave_key=f"S2:问{q}:升格变体",
+    )
+    variants: list[str] = []
+    for idx, rel in variant_specs:
+        if wave.results.get(f"变体{idx}") != "SUCCEEDED":
             continue
         ran, _ = await _run_script(registry, policy, rel, cancel=cancel)
         if ran:
