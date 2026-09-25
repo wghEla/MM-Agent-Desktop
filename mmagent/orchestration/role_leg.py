@@ -71,7 +71,6 @@ async def _run_role_leg_once(
     return outcome.status.value
 
 
-
 async def run_role_leg(
     db: Database,
     provider: BaseProvider,
