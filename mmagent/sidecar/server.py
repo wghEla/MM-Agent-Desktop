@@ -165,12 +165,12 @@ def build_pipeline_hooks(process_manager=None) -> PipelineHooks:
     if process_manager is None:
         return PipelineHooks()
 
-    def compile_paper(root: Path) -> dict[str, Any]:
+    def compile_paper(root: Path, *, cancel=None) -> dict[str, Any]:
         try:
             return LatexTool(
                 root,
                 process_manager=process_manager,
-            ).compile("论文/论文.tex")
+            ).compile("论文/论文.tex", cancel=cancel)
         except RuntimeError as exc:
             return {"rc": -1, "errors": [str(exc)], "pages": 0}
 
