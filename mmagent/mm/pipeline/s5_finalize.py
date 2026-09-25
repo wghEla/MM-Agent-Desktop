@@ -9,6 +9,7 @@ from typing import Any
 
 from mmagent.mm.audit import audit_paper
 from mmagent.mm.config.profiles import get_profile
+from mmagent.mm.contracts.final_contracts import PageReviewArtifact, PublicationReviewVerdict
 from mmagent.mm.contracts.s4_contracts import AbstractRestatementVerdict
 from mmagent.mm.gates.g5 import check_g5
 from mmagent.mm.guards.guards import page_guard
@@ -217,7 +218,7 @@ async def run_s5b(
                     "每条页问题必须含 目标=图|文、页、严重度、问题、修改指令；"
                     "必须依据附带图片本身，不得根据文件名猜测。"
                 ),
-                expected=[ExpectedArtifact(rel_path=review_rel)],
+                expected=[ExpectedArtifact(rel_path=review_rel, schema_model=PageReviewArtifact)],
                 image_paths=rel_images,
                 cancel=cancel,
             )
@@ -278,7 +279,7 @@ async def run_g5(
             f"只基于刚刚编译的当前 PDF 做出版前硬伤复核，写 {review_rel}。"
             "顶层给出 通过(boolean)，并注明依据版本/页码。不得用旧 PDF 判断。"
         ),
-        expected=[ExpectedArtifact(rel_path=review_rel)], cancel=cancel,
+        expected=[ExpectedArtifact(rel_path=review_rel, schema_model=PublicationReviewVerdict)], cancel=cancel,
     )
     final_pass = False
     if status == "SUCCEEDED":
