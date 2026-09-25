@@ -169,7 +169,7 @@ class OpenAIChatProvider(BaseProvider):
         return CapabilitySet(
             protocol=self.protocol,
             tool_calling=True,
-            image_input=True
+            image_input=True,
             streaming=False,  # v0.3.x：SSE 流式解析落地后启用
             reasoning_levels=frozenset({"low", "medium", "high"}),
             max_output_tokens_limit=None,
