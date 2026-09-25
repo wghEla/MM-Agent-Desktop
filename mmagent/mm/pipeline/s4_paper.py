@@ -11,6 +11,7 @@ from mmagent.mm.audit import audit_paper
 from mmagent.mm.config.profiles import get_profile
 from mmagent.mm.config.thresholds import DEFAULT_THRESHOLDS
 from mmagent.mm.gates.g4 import check_g4, check_narrative
+from mmagent.mm.pipeline.compile_runtime import run_compile
 from mmagent.mm.retention import (
     ensure_paper_snapshot,
     restore_paper_snapshot,
@@ -439,7 +440,7 @@ async def run_s4(
 
     audit_paper(policy.root)
     compiler = compile_paper or _default_compile
-    compile_result = compiler(policy.root)
+    compile_result = await run_compile(compiler, policy.root, cancel=cancel)
     if compile_result.get("rc") not in (0, None) or compile_result.get("errors"):
         return {
             "g4_pass": False, "g4_issues": [f"论文编译失败: {compile_result.get('errors')}"],
