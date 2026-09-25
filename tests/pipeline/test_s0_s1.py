@@ -48,7 +48,7 @@ PREDICTION_MD = "# 典型答卷预测\n\n## 必然撞车的方法\n- 线性回�
 PLAN_JSON = json.dumps({
     "问题清单": [
         {"编号": 1, "主方法": "最小二乘拟合", "依赖问题": [], "标题": "问题一",
-         "锦标赛": {"参赛路线": ["路线A"], "优胜": "路线A", "依据": "原型 rc=0"}},
+         "锦标赛": {"参赛路线": ["路线A", "路线B"], "优胜": "路线A", "依据": "两条原型 rc=0"}},
     ],
     "叙事主线": "从数据到厚度",
 }, ensure_ascii=False)
@@ -110,11 +110,17 @@ async def test_g1_check(ws_full):
     """G1 门检：合法计划通过、缺叙事主线不通过。"""
     root = ws_full.workspace.root
     (root / "交接" / "路线侦察.json").write_text(
-        json.dumps({"问题清单": [{"编号": 1, "路线": [{"路线名": "路线A", "方法": "最小二乘拟合"}]}], "最难问题编号": 1}, ensure_ascii=False),
+        json.dumps({"问题清单": [{"编号": 1, "路线": [
+            {"路线名": "路线A", "方法": "最小二乘拟合"},
+            {"路线名": "路线B", "方法": "稳健拟合"},
+        ]}], "最难问题编号": 1}, ensure_ascii=False),
         encoding="utf-8",
     )
     (root / "交接" / "原型结果.json").write_text(
-        json.dumps({"条目": [{"问题编号": 1, "路线名": "路线A", "脚本": "求解/问题1/原型_1.py", "rc": 0}]}, ensure_ascii=False),
+        json.dumps({"条目": [
+            {"问题编号": 1, "路线名": "路线A", "脚本": "求解/问题1/原型_1.py", "rc": 0},
+            {"问题编号": 1, "路线名": "路线B", "脚本": "求解/问题1/原型_2.py", "rc": 0},
+        ]}, ensure_ascii=False),
         encoding="utf-8",
     )
     (root / "交接" / "计划.json").write_text(PLAN_JSON, encoding="utf-8")
