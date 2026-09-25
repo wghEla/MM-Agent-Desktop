@@ -149,6 +149,8 @@ async def run_s3(
 
                 async def review_batch(
                     *,
+                    question=q,
+                    review_round=round_num,
                     suffix_key=suffix,
                     review_path=review_rel,
                     images=tuple(rel_images),
@@ -156,14 +158,14 @@ async def run_s3(
                     return await _run_agent_leg(
                         db, provider, registry, policy, run_id,
                         role_id="figure_reviewer",
-                        node_key=f"S3:问{q}:图评R{round_num}{suffix_key}",
+                        node_key=f"S3:问{question}:图评R{review_round}{suffix_key}",
                         instructions=(
-                            f"视觉评审问题{q}这一批实际图片，写 {review_path}；"
+                            f"视觉评审问题{question}这一批实际图片，写 {review_path}；"
                             f"顶层给出数值字段 总分，固定通过阈值为 {threshold:.1f}。"
                             "必须依据随任务附带的图片本身，不得只读文件名推测。"
                         ),
                         expected=[ExpectedArtifact(rel_path=review_path)],
-                        question_num=q,
+                        question_num=question,
                         image_paths=list(images),
                         cancel=cancel,
                     )
