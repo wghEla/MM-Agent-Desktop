@@ -37,6 +37,11 @@ from mmagent.tools.latex import LatexTool
 from mmagent.tools.python import PythonRunTool
 from mmagent.tools.registry import ToolRegistry
 
+if os.name == "nt":
+    from mmagent.runtime.process import ProcessManager as WindowsProcessManager
+else:
+    WindowsProcessManager = None  # type: ignore[misc, assignment]
+
 _TOKEN_ENV = "MMAGENT_SIDECAR_TOKEN"
 
 
@@ -133,11 +138,9 @@ def _default_credentials() -> CredentialStore:
 
 
 def _default_process_manager():
-    if os.name != "nt":
+    if WindowsProcessManager is None:
         return None
-    from mmagent.runtime.process import ProcessManager
-
-    return ProcessManager()
+    return WindowsProcessManager()
 
 
 def build_tool_registry(process_manager=None) -> ToolRegistry:
