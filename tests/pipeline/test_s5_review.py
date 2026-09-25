@@ -64,7 +64,16 @@ def _fake_compile(root: Path) -> dict:
     (root / "论文" / "论文.log").write_text(
         "Output written on 论文.pdf (10 pages).", encoding="utf-8"
     )
+    (root / "论文" / "论文.pdf").write_bytes(b"%PDF-s5-test")
     return {"rc": 0, "errors": [], "pages": 10}
+
+
+def _fake_render(root: Path) -> list[Path]:
+    page_dir = root / "论文" / "页"
+    page_dir.mkdir(parents=True, exist_ok=True)
+    page = page_dir / "page-001.png"
+    page.write_bytes(b"PNG")
+    return [page]
 
 
 @pytest.mark.asyncio
@@ -92,6 +101,7 @@ async def test_s5_review_receipt_verdict_converges_without_broad_permissions(tmp
             run_id,
             max_rounds=2,
             compile_paper=_fake_compile,
+            render_pages=_fake_render,
         )
         assert result["converged"] is True
         assert result["ledger_summary"].get("正确性/已消解") == 1
