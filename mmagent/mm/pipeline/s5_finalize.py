@@ -9,6 +9,7 @@ from typing import Any
 
 from mmagent.mm.audit import audit_paper
 from mmagent.mm.config.profiles import get_profile
+from mmagent.mm.contracts.s4_contracts import AbstractRestatementVerdict
 from mmagent.mm.gates.g5 import check_g5
 from mmagent.mm.guards.guards import page_guard
 from mmagent.mm.pipeline.compile_runtime import run_compile
@@ -89,7 +90,7 @@ async def run_s5a(
                 f"只读 论文/0.摘要.tex，检查是否能复述研究对象、核心方法、各问主要结果、可信性/局限；"
                 f"写 {verdict}，顶层给出 通过(boolean)。"
             ),
-            expected=[ExpectedArtifact(rel_path=verdict)], cancel=cancel,
+            expected=[ExpectedArtifact(rel_path=verdict, schema_model=AbstractRestatementVerdict)], cancel=cancel,
         )
         passed = reader == "SUCCEEDED" and _abstract_pass(policy.root / verdict)
         history.append({"attempt": attempt, "pass": passed})
