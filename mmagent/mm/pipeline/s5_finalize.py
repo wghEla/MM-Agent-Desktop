@@ -7,22 +7,19 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from mmagent.agent.loop import AgentLoop, AgentTask
 from mmagent.mm.audit import audit_paper
 from mmagent.mm.config.profiles import get_profile
 from mmagent.mm.gates.g5 import check_g5
 from mmagent.mm.guards.guards import page_guard
 from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
-from mmagent.mm.roles.prompts import get_system_prompt
-from mmagent.mm.roles.registry import get_role
+from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.base import BaseProvider
-from mmagent.state import events, repositories
+from mmagent.state import events
 from mmagent.state.db import Database
 from mmagent.tools.latex import LatexTool, render_pdf_pages
 from mmagent.tools.registry import ToolRegistry
 from mmagent.workspace.artifacts import ExpectedArtifact
 from mmagent.workspace.path_policy import PathPolicy
-from mmagent.workspace.permissions import PermissionChecker
 
 CompileFn = Callable[[Path], dict[str, Any]]
 RenderFn = Callable[[Path], list[Path]]
@@ -45,23 +42,17 @@ async def _leg(
     expected: list[ExpectedArtifact], question_num: int | None = None,
     image_paths: list[str] | None = None, cancel=None,
 ) -> str:
-    role = get_role(role_id)
-    vars = {"question": str(question_num)} if question_num is not None else {}
-    loop = AgentLoop(
-        db, provider, registry,
-        PermissionChecker(role.permissions(**vars), policy), policy, cancel=cancel,
+    return await run_role_leg(
+        db, provider, registry, policy, run_id,
+        stage_key=stage,
+        role_id=role_id,
+        node_key=node,
+        instructions=instructions,
+        expected_artifacts=expected,
+        question_num=question_num,
+        image_paths=image_paths,
+        cancel=cancel,
     )
-    task = repositories.create_task(
-        db, run_id=run_id, stage_key=stage, node_key=node, role_id=role_id
-    )
-    result = await loop.run(AgentTask(
-        task_id=task.id, node_key=node, role_id=role_id,
-        system_prompt=get_system_prompt(role_id), instructions=instructions,
-        model="mock", reasoning=role.reasoning, expected_artifacts=expected,
-        image_paths=list(image_paths or []),
-    ))
-    return result.status.value
-
 
 def _abstract_pass(path: Path) -> bool:
     try:
