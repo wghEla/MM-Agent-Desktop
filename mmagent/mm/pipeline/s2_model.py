@@ -332,6 +332,7 @@ async def _run_escalation(
         variant_jobs,
         cancel=cancel,
         wave_key=f"S2:问{q}:升格变体",
+        serial=provider.protocol == "mock",
     )
     variants: list[str] = []
     for idx, rel in variant_specs:
