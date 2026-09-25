@@ -13,6 +13,11 @@ dependencies = [
     "pywin32>=306; sys_platform == 'win32'",
 ]
 
+[project.optional-dependencies]
+package = [
+    "pyinstaller>=6.10",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.2",
