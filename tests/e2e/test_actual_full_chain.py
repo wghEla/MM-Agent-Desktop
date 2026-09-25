@@ -145,7 +145,9 @@ def _provider_script() -> MockScript:
         "content": json.dumps({"问题": 1, "图": [{"图号": i + 1} for i in range(16)]}, ensure_ascii=False),
     }))
     turns += [MockTurn(tool_calls=plot_calls), MockTurn(text="图证脚本完成")]
-    turns += _write("s3rev", "审稿/图评R1_问题1.json", {"总分": 8.2, "问题": []})
+    # 16 figures are reviewed in two image batches (max 8 images per leg).
+    turns += _write("s3rev1", "审稿/图评R1_问题1_B1.json", {"总分": 8.2, "问题": []})
+    turns += _write("s3rev2", "审稿/图评R1_问题1_B2.json", {"总分": 8.4, "问题": []})
 
     # S4 narrative/draft + requirement coverage + reviews + 3 abstract candidates
     narrative = "## 问题1\n" + (
