@@ -14,6 +14,7 @@ Important semantics:
 from __future__ import annotations
 
 import asyncio
+import contextvars
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Generic, TypeVar
@@ -23,6 +24,15 @@ from mmagent.state import events
 from mmagent.state.db import Database
 
 T = TypeVar("T")
+
+_WAVE_ACTIVE: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "mmagent_wave_active", default=False
+)
+
+
+def wave_active() -> bool:
+    """Whether the current async context is already executing inside a wave."""
+    return _WAVE_ACTIVE.get()
 
 
 @dataclass(frozen=True)
@@ -148,7 +158,11 @@ async def run_status_wave(
                 if cancel is not None:
                     cancel.check()
                 attempts[job.name] += 1
-                status = await job.run()
+                token = _WAVE_ACTIVE.set(True)
+                try:
+                    status = await job.run()
+                finally:
+                    _WAVE_ACTIVE.reset(token)
                 return job.name, str(status)
 
         pairs = await asyncio.gather(*(invoke(job) for job in pending))
