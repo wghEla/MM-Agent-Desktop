@@ -89,7 +89,6 @@ async def test_s2_driver_executes_solver_and_red_scripts_then_g2_passes(tmp_path
         handle.workspace.db.close()
 
 
-
 @pytest.mark.asyncio
 async def test_s2_pinned_layer_execution_is_sequential_with_layer_barrier(
     tmp_path: Path,
@@ -170,8 +169,8 @@ async def test_s2_question_checkpoint_skips_completed_driver_work(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    from mmagent.api.projects import create_project
     import mmagent.mm.pipeline.s2_model as s2
+    from mmagent.api.projects import create_project
 
     handle = create_project(tmp_path / "proj-resume", name="s2-resume", profile="快速")
     try:
