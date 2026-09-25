@@ -413,9 +413,11 @@ def request_cancel(db: Database, task_id: str, *, owner_token: str | None = None
 
 
 def recover_interrupted_task(db: Database, task_id: str, reason: str) -> TaskRecord:
-    """崩溃恢复特权路径：无论租约归属（旧 owner 已死），RUNNING/WAITING_TOOL/CANCEL_REQUESTED → FAILED。
+    """Crash-recovery privilege path for an orphaned active task.
 
-    不走普通迁移的 owner 校验——这是唯一允许越过租约的收口函数（reset_interrupted_tasks 专用）。
+    The task and every still-RUNNING invocation owned by that task are closed in
+    the same transaction.  Recovery must never leave telemetry claiming an
+    invocation is live after its task has been failed closed.
     """
     with db.transaction() as conn:
         row = conn.execute(
@@ -424,16 +426,52 @@ def recover_interrupted_task(db: Database, task_id: str, reason: str) -> TaskRec
         if row is None:
             raise LookupError(task_id)
         current = TaskStatus(row["status"])
-        if current not in (TaskStatus.RUNNING, TaskStatus.WAITING_TOOL, TaskStatus.CANCEL_REQUESTED):
+        if current not in (
+            TaskStatus.RUNNING,
+            TaskStatus.WAITING_TOOL,
+            TaskStatus.CANCEL_REQUESTED,
+        ):
             raise StateTransitionError(f"{current.value} 不是可恢复的中断态")
+
+        ended_at = now_iso()
+        running_invocations = conn.execute(
+            "SELECT id FROM agent_invocations WHERE task_id = ? AND status = ?",
+            (task_id, InvocationStatus.RUNNING.value),
+        ).fetchall()
+        for invocation in running_invocations:
+            invocation_id = invocation["id"]
+            conn.execute(
+                "UPDATE agent_invocations SET status = ?, ended_at = ? WHERE id = ?",
+                (InvocationStatus.FAILED.value, ended_at, invocation_id),
+            )
+            events.append_event_conn(
+                conn,
+                "invocation.finished",
+                {
+                    "status": InvocationStatus.FAILED.value,
+                    "error": reason[:200],
+                    "recovered": True,
+                },
+                run_id=row["run_id"],
+                task_id=task_id,
+                invocation_id=invocation_id,
+            )
+
         conn.execute(
             "UPDATE tasks SET status = ?, owner_token = NULL, error = ?, updated_at = ? WHERE id = ?",
-            (TaskStatus.FAILED.value, reason, now_iso(), task_id),
+            (TaskStatus.FAILED.value, reason, ended_at, task_id),
         )
         events.append_event_conn(
-            conn, "task.recovered",
-            {"from": current.value, "to": "FAILED", "reason": reason[:200]},
-            run_id=row["run_id"], task_id=task_id,
+            conn,
+            "task.recovered",
+            {
+                "from": current.value,
+                "to": "FAILED",
+                "reason": reason[:200],
+                "closed_invocations": len(running_invocations),
+            },
+            run_id=row["run_id"],
+            task_id=task_id,
         )
     return get_task(db, task_id)
 
