@@ -7,7 +7,7 @@ import pytest
 
 from mmagent.mm.pipeline.s4_paper import run_s4
 from mmagent.providers.mock import MockProvider, MockScript, MockTurn
-from mmagent.state import repositories
+from mmagent.state import events, repositories
 from mmagent.tools.filesystem import FsReadTool, FsWriteTool
 from mmagent.tools.registry import ToolRegistry
 from mmagent.workspace.path_policy import PathPolicy
@@ -101,5 +101,89 @@ async def test_s4_multi_role_swarm_selects_best_abstract_and_passes_g4(tmp_path:
         assert (root / "论文" / "0.摘要.tex").read_text(encoding="utf-8").startswith("摘要候选乙")
         assert result["reviews"][0]["chapter_score"] == 8.3
         assert result["reviews"][0]["reader_score"] == 8.1
+    finally:
+        handle.workspace.db.close()
+
+
+
+def _rollback_script() -> MockScript:
+    narrative = "## 问题1\n" + (
+        "本问先说明题目给出的对象与目标，再解释主要困难和信息之间的联系，随后说明我们准备如何建立模型、"
+        "怎样利用已有结果检查合理性，以及最终需要交付哪些能够让评委直接核验的结论。"
+    ) * 5
+    turns: list[MockTurn] = []
+    turns += [
+        MockTurn(tool_calls=[
+            ("n1", "fs.write", {"path": "交接/叙事底稿.md", "content": narrative}),
+            ("n2", "fs.write", {"path": "交接/论点脊柱.json", "content": '{"主线":"证据驱动"}'}),
+        ]),
+        MockTurn(text="叙事完成"),
+    ]
+    turns += [
+        MockTurn(tool_calls=[
+            ("d1", "fs.write", {"path": "论文/论文.tex", "content": "BASE"}),
+            ("d2", "fs.write", {
+                "path": "交接/需求覆盖.json",
+                "content": json.dumps([{
+                    "需求号": "一",
+                    "章节": "问题一",
+                    "证据": "正文对应段",
+                    "图表": "",
+                    "关键数字": "",
+                }], ensure_ascii=False),
+            }),
+        ]),
+        MockTurn(text="正文完成"),
+    ]
+    turns += _turn_write("c1", "审稿/章评R1.json", '{"总分":6.8,"问题":[]}')
+    turns += _turn_write("b1", "审稿/读者R1.json", '{"读者分":6.9,"卡住":[]}')
+    turns += _turn_write("rev1", "论文/论文.tex", "WORSE")
+    turns += _turn_write(
+        "c2",
+        "审稿/章评R2.json",
+        '{"总分":6.0,"相对判断":"更差","问题":[]}',
+    )
+    turns += _turn_write("b2", "审稿/读者R2.json", '{"读者分":6.2,"卡住":[]}')
+    return MockScript(turns)
+
+
+@pytest.mark.asyncio
+async def test_s4_worse_second_round_restores_previous_paper(tmp_path: Path) -> None:
+    from mmagent.api.projects import create_project
+
+    handle = create_project(tmp_path / "proj-rollback", name="s4-rollback", profile="标准")
+    try:
+        root = handle.workspace.root
+        (root / "交接" / "需求追踪矩阵.json").write_text(
+            json.dumps([{"需求号": "一", "状态": "未落位"}], ensure_ascii=False),
+            encoding="utf-8",
+        )
+        run_id = repositories.create_run(
+            handle.workspace.db, project_id=handle.project_id, profile="标准"
+        )
+
+        result = await run_s4(
+            handle.workspace.db,
+            MockProvider(_rollback_script()),
+            _registry(),
+            PathPolicy(root),
+            run_id,
+            problem_numbers=[1],
+            profile="标准",
+            compile_paper=_fake_compile,
+        )
+
+        assert result["g4_pass"] is False
+        assert (root / "论文" / "论文.tex").read_text(encoding="utf-8") == "BASE"
+        assert result["reviews"][1]["retention_action"] == "回退"
+        assert result["reviews"][1]["restored_files"] >= 1
+        assert result["reviews"][1]["effective_chapter_score"] == 6.8
+        assert result["reviews"][1]["effective_reader_score"] == 6.9
+
+        rollback_events = events.query_events(
+            handle.workspace.db, run_id=run_id, type="s4.rollback"
+        )
+        assert len(rollback_events) == 1
+        assert rollback_events[0].payload["to_round"] == 1
     finally:
         handle.workspace.db.close()
