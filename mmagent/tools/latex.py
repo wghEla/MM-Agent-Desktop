@@ -29,7 +29,13 @@ class LatexTool:
                 raise RuntimeError(f"XeLaTeX 未发现: {cap.detail}")
             self.xelatex = cap.path
 
-    def compile(self, tex_file: str = "论文/论文.tex", *, timeout_s: float = 120.0) -> dict:
+    def compile(
+        self,
+        tex_file: str = "论文/论文.tex",
+        *,
+        timeout_s: float = 120.0,
+        cancel=None,
+    ) -> dict:
         """编译论文，返回 {"rc", "stdout_tail", "errors", "pages", "log_path"}。"""
         tex_path = self.root / tex_file
         if not tex_path.is_file():
@@ -64,6 +70,7 @@ class LatexTool:
                     rc, out_b, _err_b, timed_out = self.process_manager.communicate(
                         managed,
                         timeout_s,
+                        cancel,
                     )
                 except ToolTimeout as exc:
                     return {
