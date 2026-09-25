@@ -8,9 +8,11 @@ from pathlib import Path
 import pytest
 
 from mmagent.runtime.cancellation import CancellationToken
+from mmagent.runtime.environment import managed_python
 from mmagent.tools.filesystem import FsListTool, FsReadTool, FsWriteTool
 from mmagent.tools.latex import LatexTool, render_pdf_pages
 from mmagent.tools.matlab import MatlabTool
+from mmagent.tools.python import PythonRunTool
 from mmagent.tools.registry import ToolRegistry
 from mmagent.tools.tool_protocol import ToolContext
 
@@ -103,3 +105,27 @@ def test_corrupt_pdf_render_fails_with_runtime_error(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="PDF 页渲染失败"):
         render_pdf_pages(tmp_path)
+
+
+
+def test_python_tool_prefers_explicit_managed_runtime(monkeypatch, tmp_path: Path) -> None:
+    managed = tmp_path / ("python.exe" if __import__("os").name == "nt" else "python")
+    managed.write_bytes(b"placeholder")
+    monkeypatch.setenv("MMAGENT_PYTHON", str(managed))
+
+    tool = PythonRunTool()
+
+    assert tool.interpreter == str(managed)
+
+
+def test_environment_reports_missing_configured_managed_runtime(
+    monkeypatch, tmp_path: Path
+) -> None:
+    missing = tmp_path / "missing-python.exe"
+    monkeypatch.setenv("MMAGENT_PYTHON", str(missing))
+
+    capability = managed_python()
+
+    assert capability.ok is False
+    assert capability.path == str(missing)
+    assert "不存在" in capability.detail
