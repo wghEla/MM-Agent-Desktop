@@ -25,6 +25,7 @@ from mmagent.api.providers import (
     public_profile,
 )
 from mmagent.api.runs import RunController
+from mmagent.orchestration.engine import PipelineHooks
 from mmagent.runtime.credentials import (
     CredentialStore,
     MemoryCredentialStore,
@@ -32,6 +33,7 @@ from mmagent.runtime.credentials import (
 )
 from mmagent.runtime.environment import managed_python
 from mmagent.tools.filesystem import FsListTool, FsReadTool, FsWriteTool
+from mmagent.tools.latex import LatexTool
 from mmagent.tools.python import PythonRunTool
 from mmagent.tools.registry import ToolRegistry
 
@@ -89,6 +91,7 @@ class SidecarState:
     shutdown_callback: Callable[[], None] | None = None
     projects: dict[str, ProjectHandle] = field(default_factory=dict)
     runs: RunController = field(default_factory=RunController)
+    process_manager: Any | None = None
 
     def register(self, handle: ProjectHandle) -> ProjectHandle:
         existing = self.projects.get(handle.project_id)
@@ -107,12 +110,20 @@ class SidecarState:
             ) from exc
 
     def close(self) -> None:
+        runtime_error: BaseException | None = None
+        if self.process_manager is not None:
+            try:
+                self.process_manager.shutdown()
+            except BaseException as exc:
+                runtime_error = exc
         for handle in self.projects.values():
             try:
                 handle.workspace.db.close()
             except Exception:
                 pass
         self.projects.clear()
+        if runtime_error is not None:
+            raise runtime_error
 
 
 def _default_credentials() -> CredentialStore:
@@ -121,7 +132,15 @@ def _default_credentials() -> CredentialStore:
     return MemoryCredentialStore()
 
 
-def build_tool_registry() -> ToolRegistry:
+def _default_process_manager():
+    if os.name != "nt":
+        return None
+    from mmagent.runtime.process import ProcessManager
+
+    return ProcessManager()
+
+
+def build_tool_registry(process_manager=None) -> ToolRegistry:
     runtime = managed_python()
     if not runtime.ok or not runtime.path:
         raise RuntimeError(f"受管 Python 不可用: {runtime.detail}")
@@ -130,8 +149,29 @@ def build_tool_registry() -> ToolRegistry:
     registry.register(FsReadTool())
     registry.register(FsWriteTool())
     registry.register(FsListTool())
-    registry.register(PythonRunTool(interpreter=runtime.path))
+    registry.register(
+        PythonRunTool(
+            interpreter=runtime.path,
+            process_manager=process_manager,
+        )
+    )
     return registry
+
+
+def build_pipeline_hooks(process_manager=None) -> PipelineHooks:
+    if process_manager is None:
+        return PipelineHooks()
+
+    def compile_paper(root: Path) -> dict[str, Any]:
+        try:
+            return LatexTool(
+                root,
+                process_manager=process_manager,
+            ).compile("论文/论文.tex")
+        except RuntimeError as exc:
+            return {"rc": -1, "errors": [str(exc)], "pages": 0}
+
+    return PipelineHooks(compile_paper=compile_paper)
 
 
 def create_app(
@@ -147,6 +187,7 @@ def create_app(
         token=token,
         credentials=credentials or _default_credentials(),
         shutdown_callback=shutdown_callback,
+        process_manager=_default_process_manager(),
     )
 
     @asynccontextmanager
@@ -303,8 +344,9 @@ def create_app(
         run_id = await state.runs.start(
             handle,
             provider=provider,
-            registry=build_tool_registry(),
+            registry=build_tool_registry(state.process_manager),
             profile=req.profile,
+            hooks=build_pipeline_hooks(state.process_manager),
         )
         return {"run_id": run_id}
 
@@ -332,7 +374,8 @@ def create_app(
             handle,
             run_id,
             provider=provider,
-            registry=build_tool_registry(),
+            registry=build_tool_registry(state.process_manager),
+            hooks=build_pipeline_hooks(state.process_manager),
         )
         return {"ok": True}
 
