@@ -17,9 +17,11 @@ from mmagent.mm.ledger.issue_ledger import (
 )
 from mmagent.mm.retention import (
     ensure_paper_snapshot as _ensure_shared_snapshot,
-    restore_paper_snapshot as _restore_shared_snapshot,
-    retention_decision as _retention_decision,
 )
+from mmagent.mm.retention import (
+    restore_paper_snapshot as _restore_shared_snapshot,
+)
+from mmagent.mm.retention import retention_decision as _retention_decision
 from mmagent.mm.roles.registry import get_role
 from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.orchestration.wave import WaveJob, run_status_wave
