@@ -110,7 +110,7 @@ async def test_s5_review_receipt_verdict_converges_without_broad_permissions(tmp
         assert result["rounds"][1]["converged"] is True
         assert (root / "台账" / "审稿台账.json").is_file()
         checkpoints = events.query_events(
-            handle.workspace.db, run_id=run_id, type="checkpoint.s5_round"
+            handle.workspace.db, run_id=run_id, type="checkpoint.s5_round_complete"
         )
         assert [e.payload["round"] for e in checkpoints] == [1, 2]
     finally:
