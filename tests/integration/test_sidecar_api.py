@@ -5,7 +5,9 @@ import sys
 import pytest
 from fastapi.testclient import TestClient
 
+import mmagent.sidecar.server as sidecar_server
 from mmagent.runtime.credentials import MemoryCredentialStore
+from mmagent.runtime.environment import ToolCapability
 from mmagent.sidecar.server import build_tool_registry, create_app
 from mmagent.state import repositories
 from mmagent.state.models import RunStatus
@@ -27,6 +29,7 @@ def test_sidecar_requires_bearer_token() -> None:
         ok = client.get("/health", headers=_auth())
         assert ok.status_code == 200
         assert ok.json()["service"] == "mmagent-sidecar"
+        assert ok.json()["managed_python"]["ok"] is True
 
 
 def test_sidecar_project_and_provider_secret_boundary(tmp_path) -> None:
@@ -251,3 +254,25 @@ def test_sidecar_registry_rejects_missing_managed_python(monkeypatch, tmp_path) 
 
     with pytest.raises(RuntimeError, match="受管 Python 不可用"):
         build_tool_registry()
+
+
+
+def test_sidecar_health_fails_when_managed_python_is_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sidecar_server,
+        "managed_python",
+        lambda: ToolCapability(
+            "managed_python",
+            None,
+            None,
+            False,
+            "missing for test",
+        ),
+    )
+    app = create_app(token=TOKEN, credentials=MemoryCredentialStore())
+
+    with TestClient(app) as client:
+        response = client.get("/health", headers=_auth())
+
+    assert response.status_code == 503
+    assert "managed Python unavailable" in response.text
