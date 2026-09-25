@@ -108,6 +108,7 @@ def build_runtime() -> Path:
                 "--python",
                 str(source_python),
                 "--no-build",
+                "--break-system-packages",
                 "--link-mode",
                 "copy",
                 *SCIENTIFIC_PACKAGES,
