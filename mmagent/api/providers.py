@@ -8,8 +8,8 @@ from typing import Any
 from mmagent.providers.anthropic_messages import AnthropicMessagesProvider
 from mmagent.providers.base import BaseProvider, ModelBoundProvider
 from mmagent.providers.gemini import GeminiProvider
-from mmagent.providers.openai_chat import OpenAIChatProvider
 from mmagent.providers.openai_compatible import OpenAICompatibleProvider
+from mmagent.providers.openai_chat import OpenAIChatProvider
 from mmagent.providers.openai_responses import OpenAIResponsesProvider
 from mmagent.runtime.credentials import CredentialStore
 from mmagent.state import repositories
