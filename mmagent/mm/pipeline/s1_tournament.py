@@ -7,6 +7,7 @@ from mmagent.mm.config.profiles import get_profile
 from mmagent.mm.contracts.s1_contracts import PrototypeResults, RouteScout
 from mmagent.mm.gates.g1 import check_g1
 from mmagent.orchestration.role_leg import run_role_leg
+from mmagent.orchestration.wave import WaveJob, run_status_wave
 from mmagent.providers.base import BaseProvider
 from mmagent.runtime.cancellation import CancellationToken
 from mmagent.state.db import Database
@@ -104,39 +105,74 @@ async def run_s1(
     else:
         tournament_ids = {x.编号 for x in questions}
 
+    prototype_specs: list[dict[str, Any]] = []
+    prototype_jobs: list[WaveJob[str]] = []
     for question in questions:
         routes = question.路线[: cfg.每问路线数]
         if question.编号 not in tournament_ids:
             routes = routes[:1]
         for index, route in enumerate(routes, 1):
             rel = f"求解/问题{question.编号}/原型_{index}.py"
-            status = await _leg(
-                db, provider, registry, policy, run_id,
-                role_id="modeler",
-                node=f"S1:问{question.编号}:原型{index}",
-                question=question.编号,
-                instructions=(
-                    f"为候选路线 {route.路线名}（{route.方法}）只编写小样原型 {rel}，不自行执行。"
-                    "原型应快速验证方法可行性并打印关键诊断，不写最终大求解。"
-                ),
-                expected=[ExpectedArtifact(rel_path=rel, kind="text")],
-                cancel=cancel,
-            )
-            if status != "SUCCEEDED":
-                evidence.append({
-                    "问题编号": question.编号, "路线名": route.路线名,
-                    "脚本": rel, "rc": -1,
-                })
-                continue
-            result = await _execute(registry, policy, rel, cancel=cancel)
-            evidence.append({
-                "问题编号": question.编号,
-                "路线名": route.路线名,
-                "脚本": rel,
-                "rc": result["rc"],
-                "stdout_tail": result["stdout_tail"],
-                "stderr_tail": result["stderr_tail"],
+            name = f"问{question.编号}:原型{index}"
+            prototype_specs.append({
+                "name": name,
+                "question": question.编号,
+                "route_name": route.路线名,
+                "method": route.方法,
+                "rel": rel,
+                "index": index,
             })
+
+            async def write_prototype(
+                *,
+                question_num=question.编号,
+                route_name=route.路线名,
+                method=route.方法,
+                rel_path=rel,
+                prototype_index=index,
+            ) -> str:
+                return await _leg(
+                    db, provider, registry, policy, run_id,
+                    role_id="modeler",
+                    node=f"S1:问{question_num}:原型{prototype_index}",
+                    question=question_num,
+                    instructions=(
+                        f"为候选路线 {route_name}（{method}）只编写小样原型 "
+                        f"{rel_path}，不自行执行。"
+                        "原型应快速验证方法可行性并打印关键诊断，不写最终大求解。"
+                    ),
+                    expected=[ExpectedArtifact(rel_path=rel_path, kind="text")],
+                    cancel=cancel,
+                )
+
+            prototype_jobs.append(WaveJob(name, write_prototype))
+
+    prototype_wave = await run_status_wave(
+        db,
+        run_id,
+        prototype_jobs,
+        cancel=cancel,
+        wave_key="S1:原型编写",
+    )
+    for spec in prototype_specs:
+        status = prototype_wave.results.get(spec["name"], "FAILED")
+        if status != "SUCCEEDED":
+            evidence.append({
+                "问题编号": spec["question"],
+                "路线名": spec["route_name"],
+                "脚本": spec["rel"],
+                "rc": -1,
+            })
+            continue
+        result = await _execute(registry, policy, spec["rel"], cancel=cancel)
+        evidence.append({
+            "问题编号": spec["question"],
+            "路线名": spec["route_name"],
+            "脚本": spec["rel"],
+            "rc": result["rc"],
+            "stdout_tail": result["stdout_tail"],
+            "stderr_tail": result["stderr_tail"],
+        })
 
     proto = PrototypeResults.model_validate({"条目": evidence})
     (policy.root / "交接" / "原型结果.json").write_text(
