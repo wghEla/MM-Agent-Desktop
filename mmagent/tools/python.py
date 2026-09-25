@@ -170,6 +170,9 @@ class PythonRunTool(Tool):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             stdin=asyncio.subprocess.DEVNULL,
+            # POSIX tree termination uses killpg(proc.pid); create a dedicated
+            # session/process group so timeout/cancel cannot silently miss.
+            start_new_session=(os.name != "nt"),
         )
         ctx.cancel.on_cancel(lambda: _kill_tree(proc.pid))
 
