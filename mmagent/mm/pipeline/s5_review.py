@@ -18,6 +18,7 @@ from mmagent.mm.ledger.issue_ledger import (
 )
 from mmagent.mm.roles.registry import get_role
 from mmagent.orchestration.role_leg import run_role_leg
+from mmagent.orchestration.wave import WaveJob, run_status_wave
 from mmagent.providers.base import BaseProvider
 from mmagent.state import events
 from mmagent.state.db import Database
@@ -266,10 +267,14 @@ async def _run_review_legs(
         ("defect_hunter", ""),
         ("judge_simulator", ""),
     ]
+
+    jobs: list[WaveJob[str]] = []
+    artifacts: dict[str, tuple[str, str, str]] = {}
     for role_id, suffix in legs:
         role = get_role(role_id)
         artifact = _artifact_for_review(role_id, round_num, suffix)
         node = f"S5:R{round_num}:{role_id}{suffix}"
+        name = f"{role_id}{suffix}"
         visual_paths: list[str] = []
         instructions = (
             f"执行第{round_num}轮独立审稿并写 {artifact}。"
@@ -289,19 +294,49 @@ async def _run_review_legs(
                 " 你是页图评委，只依据随任务附带的当前 PDF 代表页判断第一印象与版式；"
                 "看不到的内容必须弃权，不得推测。"
             )
-        status = await run_role_leg(
-            db, provider, registry, policy, run_id,
-            stage_key="S5",
-            role_id=role_id,
+        artifacts[name] = (role_id, suffix, artifact)
+
+        async def run_review_leg(
+            *,
+            role_key=role_id,
             node_key=node,
-            instructions=instructions,
-            expected_artifacts=[ExpectedArtifact(rel_path=artifact)],
-            image_paths=visual_paths,
-            cancel=cancel,
-        )
-        if status != "SUCCEEDED":
+            prompt=instructions,
+            expected_artifact=artifact,
+            images=tuple(visual_paths),
+        ) -> str:
+            return await run_role_leg(
+                db,
+                provider,
+                registry,
+                policy,
+                run_id,
+                stage_key="S5",
+                role_id=role_key,
+                node_key=node_key,
+                instructions=prompt,
+                expected_artifacts=[ExpectedArtifact(rel_path=expected_artifact)],
+                image_paths=list(images),
+                cancel=cancel,
+            )
+
+        jobs.append(WaveJob(name, run_review_leg))
+
+    wave = await run_status_wave(
+        db,
+        run_id,
+        jobs,
+        cancel=cancel,
+        wave_key=f"S5:审稿R{round_num}",
+        serial=provider.protocol == "mock",
+    )
+
+    for role_id, suffix in legs:
+        name = f"{role_id}{suffix}"
+        if wave.results.get(name) != "SUCCEEDED":
             continue
+        _, _, artifact = artifacts[name]
         assessment = _parse_review_assessment(policy.root / artifact)
+        role = get_role(role_id)
         for item in assessment.opinions:
             item.setdefault("来源", role.display_name + suffix)
         opinions.extend(assessment.opinions)
@@ -331,7 +366,6 @@ async def _run_review_legs(
         relative_judgment=relative,
         score=score,
     )
-
 
 _CHINESE_NUM = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
 
