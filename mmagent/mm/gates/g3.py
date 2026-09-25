@@ -19,15 +19,15 @@ from pathlib import Path
 from mmagent.mm.config.thresholds import DEFAULT_THRESHOLDS
 
 _KIND_PATTERNS: dict[str, re.Pattern[str]] = {
-    "bar": re.compile(r"\\.(?:bar|barh)\\s*\\("),
-    "line": re.compile(r"\\.plot\\s*\\("),
-    "scatter": re.compile(r"\\.scatter\\s*\\("),
-    "heatmap": re.compile(r"\\.(?:imshow|pcolormesh)\\s*\\("),
-    "box": re.compile(r"\\.boxplot\\s*\\("),
-    "pie": re.compile(r"\\.pie\\s*\\("),
-    "area": re.compile(r"\\.(?:fill_between|stackplot)\\s*\\("),
-    "hist": re.compile(r"\\.hist\\s*\\("),
-    "schematic": re.compile(r"FancyArrowPatch|FancyBboxPatch|add_patch\\s*\\("),
+    "bar": re.compile(r"\.(?:bar|barh)\s*\("),
+    "line": re.compile(r"\.plot\s*\("),
+    "scatter": re.compile(r"\.scatter\s*\("),
+    "heatmap": re.compile(r"\.(?:imshow|pcolormesh)\s*\("),
+    "box": re.compile(r"\.boxplot\s*\("),
+    "pie": re.compile(r"\.pie\s*\("),
+    "area": re.compile(r"\.(?:fill_between|stackplot)\s*\("),
+    "hist": re.compile(r"\.hist\s*\("),
+    "schematic": re.compile(r"FancyArrowPatch|FancyBboxPatch|add_patch\s*\("),
 }
 
 
