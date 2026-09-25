@@ -18,7 +18,7 @@
 | A2 | G0 contract gate | MATCH | `gates/g0.py`, `test_g0_gate.py` |
 | A3 | S1 strategic tournament with real prototypes | PARTIAL | `s1_tournament.py`, adaptive bounded prototype-authoring wave + real prototype execution + `test_s1_tournament.py`; exact upstream route scoring/selection parity remains under audit |
 | A4 | G1 route/plan/prototype evidence gate | MATCH | G1 profile semantics + `test_g1_profile_semantics.py` |
-| A5 | S2 dependency DAG layered execution | PARTIAL | DAG + topological layers implemented; questions inside a layer remain sequential |
+| A5 | S2 dependency DAG layered execution | MATCH | `run_s2` follows the pinned 5f507e0b executable behavior: topological layer barriers with per-question sequential execution inside each layer despite the upstream stale “并行” source comment. Durable `checkpoint.s2_question` events skip fully completed questions on resume, mechanically revalidate PASS carriers, and fail closed when a degraded-release carrier is missing; focused pipeline tests cover ordering, reuse and invalidation. |
 | A6 | Red-team independent recomputation | PARTIAL | hard read isolation, independent `复算.py`, frozen hashed input packages and tests; exact upstream recompute protocol still under audit |
 | A7 | Distinguish terminology vs numeric disagreement | PARTIAL | compare/G2 logic exists; full pinned edge-case parity not yet proven |
 | A8 | Arbitration / interpretation responsibility assignment | PARTIAL | arbitration legs exist; depth and archive parity still under audit |
@@ -85,10 +85,10 @@
 | # | Mechanism | Status | Evidence / gap |
 |---|---|---|---|
 | E1 | One owner per workspace | MATCH | `run.lock` + PID liveness + tests |
-| E2 | Node/stage/S5-round resume; active residue fail-closed | MATCH | real mid-S1 orphan invocation recovery E2E proves fail-closed closure, sealed-node reuse, retry and completion to final PDF; S5 round-complete snapshots are separately tested |
+| E2 | Node/stage/S2-question/S5-round resume; active residue fail-closed | MATCH | real mid-S1 orphan invocation recovery E2E proves fail-closed closure, sealed-node reuse, retry and completion to final PDF; S2 per-question checkpoints skip completed driver work only after carrier revalidation and invalidate broken degraded carriers; S5 round-complete snapshots are separately tested. |
 | E3 | Pause / resume / cancel + process-tree cleanup | PARTIAL | controller + cancellation + Windows process controls exist; installed-app failure proof pending |
 | E4 | Layered timeout / recycle before reassignment | PARTIAL | tool/runtime cleanup exists; full wave timeout semantics incomplete |
-| E5 | 429 handling and concurrency reduction | PARTIAL | typed `RateLimitError` → durable QUEUED is wired through adaptive 4→2 waves with one retry and an end-to-end AgentLoop test; remaining direct single-leg paths still need the same automatic retry wrapper |
+| E5 | 429 handling and concurrency reduction | MATCH | typed `RateLimitError` → durable QUEUED is wired through adaptive 4→2 waves with one retry. Context-aware `run_role_leg` gives direct standalone legs the same one-job-wave retry semantics while an active outer wave owns retry/concurrency to prevent double retry; focused tests cover direct and nested/outer-wave paths. |
 | E6 | MAX_LEGS / MAX_HOURS emergency budget guard | MATCH | durable task count + accumulated RUNNING intervals are checked before executable role legs and at pipeline boundaries; pause time is excluded; unit tests cover both ceilings |
 | E7 | JSON repair loop | PARTIAL | tool-call malformed JSON recovery exists; full artifact-schema rewrite loop parity incomplete |
 | E8 | Compile repair loop | PARTIAL | compile failure is fail-closed and repair paths exist in later stages; bounded general compile-repair protocol not fully matched |
@@ -128,6 +128,6 @@ Do **not** call the rebuild product-complete until all of the following are true
 1. current-head Python Linux + Windows CI is green;
 2. Windows release build + managed runtime + NSIS install/startup smoke is green;
 3. hard-crash/restart E2E proves real-stage resume behavior;
-4. remaining fidelity deviations (notably S2 same-layer whole-question parallelism and full timeout/dead-process recycle parity) are either closed or explicitly accepted;
+4. remaining fidelity deviations (notably full timeout/dead-process recycle parity and narrower repair-lane/gate parity) are either closed or explicitly accepted;
 5. failure-injection matrix is closed or explicitly documented as accepted deviation;
 6. real-provider smoke status is stated truthfully.

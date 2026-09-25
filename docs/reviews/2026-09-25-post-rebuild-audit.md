@@ -14,7 +14,7 @@ The rebuild now contains an authoritative S0→S6 engine, G0→G5 gates, executa
 stages, a desktop control plane, crash-safe durable state, and a self-contained Windows
 distribution path.
 
-CI #174 is the first end-to-end release proof. Follow-up source hardening is additionally green in CI #195 at the Python layer (Linux 268 passed / 31 skipped; Windows 298 passed / 1 skipped; Ruff clean):
+CI #174 is the first end-to-end release proof. Follow-up source hardening is additionally green in CI #208 at the Python layer (Linux 272 passed / 31 skipped; Windows 302 passed / 1 skipped; Ruff clean):
 
 - Linux: **262 passed / 31 skipped**, Ruff clean.
 - Windows: **292 passed / 1 skipped**, Ruff clean.
@@ -125,18 +125,21 @@ inventing an inactive threshold exit.
 
 ## Remaining P1 fidelity / release-confidence work
 
-### 1. Remaining concurrency / timeout parity
+### 1. Remaining timeout / recycle parity
 
-The adaptive wave mechanism itself is now implemented and mechanically tested:
+Adaptive concurrency and retry semantics are now mechanically closed:
 
 - default wave concurrency = 4;
 - provider 429 returns the task to durable QUEUED state;
 - the next retry/wave reduces concurrency by 1 down to floor 2;
 - failed/rate-limited jobs get one retry;
 - concurrency reduction is persisted as events and survives resume;
-- S1 prototype authoring, S2 escalation variants, S3 plot/review batches, S4 review/abstract waves and S5 review lanes use it.
+- S1 prototype authoring, S2 escalation variants, S3 plot/review batches, S4 review/abstract waves and S5 review lanes use it;
+- direct standalone role legs use the same one-job-wave wrapper, while an active outer-wave context suppresses nested retry.
 
-Two important gaps remain: S2 questions within one dependency layer are still executed as whole-question pipelines sequentially, and direct non-wave single legs do not yet all receive the same automatic retry wrapper. Full upstream timeout/dead-process recycle semantics are also still PARTIAL.
+The pinned 5f507e0b S2 driver contains a stale source comment saying same-layer modeling is parallel, but its executable loop is sequential per question. The rebuild now matches that mechanical behavior and adds durable per-question S2 checkpoints: a completed PASS is reused only after G2 carrier revalidation, while a missing degraded-release carrier invalidates the checkpoint and reruns the question.
+
+The remaining resilience gap is full timeout/dead-process recycle parity, especially whole-process-tree timeout handling for external XeLaTeX/MATLAB executions, plus narrower repair-lane details.
 
 ### 2. Failure injection
 
@@ -171,7 +174,7 @@ runtime skeleton. It is suitable for continued beta/hardening work.
 
 It should remain a draft PR until:
 
-1. the remaining high-value fidelity deviations (especially S2 same-layer whole-question parallelism and timeout/recycle parity) are closed or explicitly accepted;
+1. the remaining high-value fidelity deviations (especially timeout/dead-process recycle parity and narrower repair/gate parity) are closed or explicitly accepted;
 2. installed scientific-runtime relocation smoke is green on the final head;
 3. failure-injection coverage is considered sufficient for release;
 4. producer/consumer contracts are mechanically audited or explicitly accepted;

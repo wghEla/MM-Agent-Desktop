@@ -9,16 +9,16 @@
 |---|---|---|
 | `流水线/蜂群驾驶.py` 主流程（S0–S6 编排、31 节点） | `mmagent/mm/pipeline/s0..s6*.py` + `mmagent/orchestration/engine.py` | 计划 v0.4–v0.8 |
 | `调度器.状态机`（状态.json：已完成节点/问题门/门失败计数/级联/降级放行） | SQLite `stages/tasks/issues/checkpoints` + `mmagent/state/`（JSON 导出仅为可读 carrier） | v0.1.0 起（schema） |
-| `调度器.构建依赖图/拓扑分层/全部下游`（问题 DAG） | `mmagent/orchestration/dag.py` | 计划 v0.5 |
+| `调度器.构建依赖图/拓扑分层/全部下游`（问题 DAG） | `mmagent/orchestration/dag.py` + `mmagent/mm/pipeline/s2_model.py`（固定快照的层 barrier / 逐问串行 + `checkpoint.s2_question`） | 已实现 + focused tests |
 | `调度器.门`（检查→返工≤2→升格→降级放行） | `mmagent/orchestration/gate.py` | 计划 v0.4（框架）/ v0.5（G2） |
 | `调度器.合并修订单`（级别 硬伤>正确性>叙述>版式；目标 算>图>文） | `mmagent/mm/ledger/order_merge.py` | 计划 v0.7 |
-| `wave()`（异步腿 + done 轮询 + kill -0 判死 + 并发闸 4→2 + 429 降并发 + 重试一次 + 腿上限<波次超时防双写） | `mmagent/agent/session.py` + `mmagent/runtime/concurrency.py` + `runtime/process.py` | 计划 v0.2（进程）/ v0.3+（agent 层） |
+| `wave()`（异步腿 + done 轮询 + kill -0 判死 + 并发闸 4→2 + 429 降并发 + 重试一次 + 腿上限<波次超时防双写） | `mmagent/orchestration/wave.py` + `mmagent/orchestration/role_leg.py` + `mmagent/runtime/process.py` | adaptive 4→2 + direct/batched one-retry 已实现并测试；完整 wave timeout/dead-process recycle 仍审计 |
 | `本地蜂巢.LocalHive`（工作根 + env 口径 + setsid 进程组） | `mmagent/workspace/root.py` + `mmagent/runtime/process.py`（Windows Job Object 替代 setsid） | 计划 v0.2 |
 | `get_json()`（JSON 校验失败带反馈派修复腿重写一次） | `mmagent/agent/loop.py` 的 artifact 修复回路 | 计划 v0.5 |
 | `run_script()`（脚本失败派修复腿再跑一次） | `mmagent/tools/python.py` + `mmagent/orchestration/retry.py` | 计划 v0.5 |
 | 预算护栏（MAX_LEGS / MAX_HOURS，S2 逐问检查） | `mmagent/agent/budget.py` | 计划 v0.5 |
-| `节点()`（节点级断点：已完成节点跳过） | SQLite tasks + `orchestration/resume.py` | v0.1.0 起 |
-| S5 轮级断点（`S5已完成轮`） | `orchestration/checkpoints.py`（round checkpoint） | 计划 v0.7 |
+| `节点()`（节点级断点：已完成节点跳过） | SQLite tasks + `orchestration/resume.py`；S2 另有 durable `checkpoint.s2_question` + carrier 复验 | 已实现并测试 |
+| S5 轮级断点（`S5已完成轮`） | `mmagent/mm/pipeline/s5_review.py` 的 append-only `checkpoint.s5_round_complete` 事件 | 已实现并测试 |
 | `启动.sh` 双驱动拒绝 / `停跑.sh` 停净 / `看守.sh` / `状态.sh` | Run API 单运行锁（SQLite + run.lock）+ UI Dashboard | 计划 v0.9 |
 | `切换.sh`（边界钩子切换） | checkpoint-bound config migration（v1.0 前暂以"停→改→续"语义覆盖，见 KNOWN_DEVIATIONS） | 计划 v0.9 评估 |
 | `体检.sh` / `环境就绪.sh` | `mmagent/runtime/environment.py`（诊断 + 工具发现） | 计划 v0.2 |
