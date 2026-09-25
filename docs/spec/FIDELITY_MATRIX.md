@@ -30,7 +30,7 @@
 | A14 | G3 mechanical figure gate | MATCH | 16–22 figures, schematic/diversity/caption checks + `test_g3_gate.py` |
 | A15 | S4 narrative → paper → chapter/blind review → integrate → abstract swarm | PARTIAL | full source path exists; chapter/blind and abstract candidates use bounded waves, and chapter review has persistent best-version rollback; exact upstream editorial-guard ordering/parity remains under audit |
 | A16 | G4 paper gate | PARTIAL | compile/page/audit/src/trace checks exist + `test_g4_gate.py`; not all upstream mechanical clauses proven |
-| A17 | S5 18-step review-round semantics | PARTIAL | review/rework/ledger/checkpoint loop, R45 merge, persistent rollback and four-lane adaptive review waves exist; remaining gap is mainly full timeout/dead-process recycle parity and some repair-lane details |
+| A17 | S5 18-step review-round semantics | PARTIAL | review/rework/ledger/checkpoint loop, R45 merge, persistent rollback and four-lane adaptive review waves exist. Source now also has per-leg wave deadlines with awaited cancellation before retry and peer cleanup; remaining fidelity work is narrower repair-lane/order parity, and the newest timeout changes still await executable current-head CI evidence. |
 | A18 | Reviewer A/B + defect hunter + judge simulator + mechanical lane | MATCH | four independent role legs, page-image judge input, mechanical lane; pipeline tests |
 | A19 | S5a abstract finalization / S5b beautification | PARTIAL | both implemented and tested; upstream cosmetic-loop parity still under audit |
 | A20 | G5 publication gate | PARTIAL | final compile, G4 reuse, ledger convergence, stale-value/page guards, defect review exist; all R49–R52 paths not yet proven |
@@ -86,14 +86,14 @@
 |---|---|---|---|
 | E1 | One owner per workspace | MATCH | `run.lock` + PID liveness + tests |
 | E2 | Node/stage/S2-question/S5-round resume; active residue fail-closed | MATCH | real mid-S1 orphan invocation recovery E2E proves fail-closed closure, sealed-node reuse, retry and completion to final PDF; S2 per-question checkpoints skip completed driver work only after carrier revalidation and invalidate broken degraded carriers; S5 round-complete snapshots are separately tested. |
-| E3 | Pause / resume / cancel + process-tree cleanup | PARTIAL | controller + cancellation + Windows process controls exist; installed-app failure proof pending |
-| E4 | Layered timeout / recycle before reassignment | PARTIAL | tool/runtime cleanup exists; full wave timeout semantics incomplete |
+| E3 | Pause / resume / cancel + process-tree cleanup | PARTIAL | controller cancellation reaches AgentLoop and the desktop compile hook; blocking compile is moved off the sidecar event loop; Windows shared ProcessManager owns Python/XeLaTeX process trees and sidecar shutdown cleanup. Installed-app cancellation-during-live-tool proof is still pending. |
+| E4 | Layered timeout / recycle before reassignment | PARTIAL | Source now implements the pinned R60 invariant in the new runtime: each wave leg starts its deadline only after acquiring a concurrency slot; timeout cancellation is awaited before retry, preventing old/new double writers; programming exceptions cancel+await peer legs; default wave deadline is 1300s and S4/S5 review waves retain 3600s. Python/XeLaTeX share the Windows Job Object ProcessManager, MATLAB helper uses the same backend, and external-tool envs are allowlisted. Focused timeout/recycle tests exist, but latest-head CI has not executed because GitHub Actions jobs are currently failing before runner startup. |
 | E5 | 429 handling and concurrency reduction | MATCH | typed `RateLimitError` → durable QUEUED is wired through adaptive 4→2 waves with one retry. Context-aware `run_role_leg` gives direct standalone legs the same one-job-wave retry semantics while an active outer wave owns retry/concurrency to prevent double retry; focused tests cover direct and nested/outer-wave paths. |
 | E6 | MAX_LEGS / MAX_HOURS emergency budget guard | MATCH | durable task count + accumulated RUNNING intervals are checked before executable role legs and at pipeline boundaries; pause time is excluded; unit tests cover both ceilings |
 | E7 | JSON repair loop | PARTIAL | tool-call malformed JSON recovery exists; full artifact-schema rewrite loop parity incomplete |
 | E8 | Compile repair loop | PARTIAL | compile failure is fail-closed and repair paths exist in later stages; bounded general compile-repair protocol not fully matched |
 | E9 | Run feedback ledger / metrics | MATCH | S6 event/task metrics → `审稿/回流账.json` + tests |
-| E10 | Producer/consumer contract enforcement | PARTIAL | Pydantic/artifact schema boundary exists; exhaustive consumer⊆producer contract audit not complete |
+| E10 | Producer/consumer contract enforcement | PARTIAL | Cross-stage carrier ownership is now mechanically registered and rejects orphan/backward/self-feed mistakes. High-risk S3/S4/S5/S5b/G5/S6 JSON carriers are wired to `ExpectedArtifact.schema_model` so malformed figure reviews, requirement coverage, chapter/blind/abstract verdicts, S5 review envelopes, page-review routing and G5 publication verdicts fail before sealing. Exhaustive field-level schemas for every remaining carrier/receipt are still incomplete, and the newest additions await executable current-head CI evidence. |
 
 ## F. Desktop/product delivery (new client layer)
 
@@ -128,6 +128,6 @@ Do **not** call the rebuild product-complete until all of the following are true
 1. current-head Python Linux + Windows CI is green;
 2. Windows release build + managed runtime + NSIS install/startup smoke is green;
 3. hard-crash/restart E2E proves real-stage resume behavior;
-4. remaining fidelity deviations (notably full timeout/dead-process recycle parity and narrower repair-lane/gate parity) are either closed or explicitly accepted;
-5. failure-injection matrix is closed or explicitly documented as accepted deviation;
+4. remaining fidelity deviations (notably narrower repair-lane/gate parity and residual low-risk carrier schemas) are either closed or explicitly accepted;
+5. timeout/cancel/failure-injection changes on the current head have executable CI evidence, not source-presence evidence only;
 6. real-provider smoke status is stated truthfully.
