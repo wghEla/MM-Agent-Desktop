@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from mmagent.mm.audit import audit_paper
+from mmagent.mm.contracts.s5_contracts import ReviewArtifact
 from mmagent.mm.gates.g4 import check_g4
 from mmagent.mm.ledger.issue_ledger import (
     Issue,
@@ -16,7 +17,6 @@ from mmagent.mm.ledger.issue_ledger import (
     merge_channel_verdicts,
 )
 from mmagent.mm.pipeline.compile_runtime import run_compile
-from mmagent.mm.contracts.s5_contracts import ReviewArtifact
 from mmagent.mm.retention import (
     ensure_paper_snapshot as _ensure_shared_snapshot,
 )
