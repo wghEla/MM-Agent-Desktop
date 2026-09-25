@@ -280,3 +280,114 @@ async def test_direct_role_leg_429_uses_single_job_adaptive_wave(
         assert reductions[0].payload["to"] == 3
     finally:
         handle.workspace.db.close()
+
+
+
+@pytest.mark.asyncio
+async def test_wave_timeout_retries_only_after_old_job_is_cancelled(
+    tmp_path: Path,
+) -> None:
+    handle, run_id = _run_ctx(tmp_path)
+    active = 0
+    peak = 0
+    calls = 0
+    cleanups = 0
+
+    async def slow() -> str:
+        nonlocal active, peak, calls, cleanups
+        calls += 1
+        active += 1
+        peak = max(peak, active)
+        try:
+            await asyncio.sleep(0.2)
+            return "SUCCEEDED"
+        finally:
+            active -= 1
+            cleanups += 1
+
+    try:
+        outcome = await run_status_wave(
+            handle.workspace.db,
+            run_id,
+            [WaveJob("slow", slow)],
+            wave_key="timeout-retry",
+            timeout_s=0.03,
+        )
+
+        assert outcome.results == {"slow": "FAILED"}
+        assert outcome.attempts == {"slow": 2}
+        assert outcome.timed_out_jobs == ("slow",)
+        assert calls == 2
+        assert cleanups == 2
+        assert peak == 1, "retry must not overlap the cancelled old copy"
+
+        timeout_events = events.query_events(
+            handle.workspace.db,
+            run_id=run_id,
+            type="wave.job_timed_out",
+        )
+        assert len(timeout_events) == 2
+    finally:
+        handle.workspace.db.close()
+
+
+@pytest.mark.asyncio
+async def test_wave_timeout_starts_when_job_acquires_concurrency_slot(
+    tmp_path: Path,
+) -> None:
+    handle, run_id = _run_ctx(tmp_path)
+
+    async def short() -> str:
+        await asyncio.sleep(0.035)
+        return "SUCCEEDED"
+
+    try:
+        outcome = await run_status_wave(
+            handle.workspace.db,
+            run_id,
+            [WaveJob("a", short), WaveJob("b", short)],
+            wave_key="queued-deadline",
+            default_concurrency=1,
+            min_concurrency=1,
+            timeout_s=0.06,
+        )
+
+        assert outcome.results == {"a": "SUCCEEDED", "b": "SUCCEEDED"}
+        assert outcome.timed_out_jobs == ()
+    finally:
+        handle.workspace.db.close()
+
+
+@pytest.mark.asyncio
+async def test_wave_programming_error_cancels_and_awaits_peers(
+    tmp_path: Path,
+) -> None:
+    handle, run_id = _run_ctx(tmp_path)
+    peer_started = asyncio.Event()
+    peer_closed = asyncio.Event()
+
+    async def boom() -> str:
+        await peer_started.wait()
+        raise RuntimeError("injected wave bug")
+
+    async def peer() -> str:
+        peer_started.set()
+        try:
+            await asyncio.sleep(30)
+            return "SUCCEEDED"
+        finally:
+            peer_closed.set()
+
+    try:
+        with pytest.raises(RuntimeError, match="injected wave bug"):
+            await run_status_wave(
+                handle.workspace.db,
+                run_id,
+                [WaveJob("boom", boom), WaveJob("peer", peer)],
+                wave_key="peer-cleanup",
+                timeout_s=2,
+            )
+
+        assert peer_closed.is_set()
+    finally:
+        handle.workspace.db.close()
