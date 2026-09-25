@@ -141,7 +141,7 @@ fn validate_backend_path(path: &str) -> Result<(), String> {
     if !path.starts_with('/')
         || path.starts_with("//")
         || path.contains("://")
-        || path.contains('\')
+        || path.contains('\\')
         || path.contains("..")
     {
         return Err("非法 backend path".to_string());
