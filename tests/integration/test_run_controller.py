@@ -160,3 +160,35 @@ def test_controller_lists_persisted_runs_newest_first(tmp_path) -> None:
     assert [item["id"] for item in listed] == [second, first]
     assert all(item["active_in_sidecar"] is False for item in listed)
     handle.workspace.db.close()
+
+
+@pytest.mark.asyncio
+async def test_controller_reacquires_lock_when_cancelling_finished_paused_task(
+    monkeypatch, tmp_path
+) -> None:
+    handle = create_project(tmp_path / "proj-finished", name="finished-pause", profile="标准")
+    monkeypatch.setattr(runs_mod, "PaperFoundryEngine", FakeEngine)
+    controller = RunController()
+
+    run_id = await controller.start(
+        handle,
+        provider=MockProvider(MockScript([])),
+        registry=ToolRegistry(),
+        profile="标准",
+    )
+    active = controller._active[run_id]
+    await active.engine.started.wait()
+    await controller.pause(run_id)
+
+    # FakeEngine does not own the real engine's pause-boundary cleanup, so
+    # simulate the production Engine releasing run.lock at PipelinePaused.
+    active.engine.release.set()
+    await controller.wait(run_id)
+    handle.workspace.release_run_lock()
+    assert active.task.done()
+
+    await controller.cancel(run_id, "cancel paused run", handle=handle)
+
+    status = controller.status(handle, run_id)
+    assert status["status"] == RunStatus.CANCELLED.value
+    handle.workspace.db.close()
