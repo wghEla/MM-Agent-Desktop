@@ -93,6 +93,32 @@ jobs:
           $installers = Get-ChildItem "apps/desktop/src-tauri/target/release/bundle/nsis/*.exe"
           if ($installers.Count -lt 1) { throw "NSIS installer missing" }
           $installers | ForEach-Object { Write-Host $_.FullName }
+      - name: Install and smoke release app
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "apps/desktop/src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
+          $installDir = Join-Path $env:RUNNER_TEMP "mmagent-installed"
+          New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList @("/S", "/D=$installDir") -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "NSIS silent install failed: $($install.ExitCode)" }
+
+          $app = Get-ChildItem $installDir -Recurse -Filter "mmagent-desktop.exe" | Select-Object -First 1
+          if (!$app) { throw "installed mmagent-desktop.exe not found under $installDir" }
+          $runtime = Join-Path $app.Directory.FullName "runtime/python.exe"
+          if (!(Test-Path $runtime)) { throw "installed managed runtime missing: $runtime" }
+
+          # Prove release startup does not depend on the build runner's Python.
+          $oldPath = $env:PATH
+          $oldManaged = $env:MMAGENT_PYTHON
+          try {
+            $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+            Remove-Item Env:MMAGENT_PYTHON -ErrorAction SilentlyContinue
+            $smoke = Start-Process -FilePath $app.FullName -ArgumentList "--startup-smoke" -Wait -PassThru
+            if ($smoke.ExitCode -ne 0) { throw "installed app startup smoke failed: $($smoke.ExitCode)" }
+          } finally {
+            $env:PATH = $oldPath
+            if ($null -ne $oldManaged) { $env:MMAGENT_PYTHON = $oldManaged }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: mmagent-desktop-windows-nsis
