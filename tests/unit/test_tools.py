@@ -3,9 +3,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
+
+import pytest
 
 from mmagent.runtime.cancellation import CancellationToken
 from mmagent.tools.filesystem import FsListTool, FsReadTool, FsWriteTool
+from mmagent.tools.latex import LatexTool, render_pdf_pages
+from mmagent.tools.matlab import MatlabTool
 from mmagent.tools.registry import ToolRegistry
 from mmagent.tools.tool_protocol import ToolContext
 
@@ -54,8 +59,6 @@ def test_unknown_tool_denied(policy):
 
 def test_duplicate_registration_rejected(policy):
     reg = _registry()
-    import pytest
-
     with pytest.raises(ValueError):
         reg.register(FsReadTool())
 
@@ -67,3 +70,36 @@ def test_fs_write_then_read_roundtrip(policy):
     assert w.ok
     r = asyncio.run(reg.invoke("fs.read", {"path": "交接/a.json"}, _ctx(policy, checker)))
     assert r.ok and json.loads(r.content) == {"k": 1}
+
+
+
+def test_latex_missing_executable_returns_structured_failure(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    paper = root / "论文"
+    paper.mkdir(parents=True)
+    (paper / "论文.tex").write_text("\\documentclass{article}", encoding="utf-8")
+
+    result = LatexTool(root, xelatex_path=str(root / "missing-xelatex")).compile()
+
+    assert result["rc"] == -1
+    assert result["pages"] == 0
+    assert any("启动失败" in item for item in result["errors"])
+
+
+def test_matlab_missing_executable_returns_structured_failure(tmp_path: Path) -> None:
+    result = MatlabTool(
+        tmp_path, matlab_path=str(tmp_path / "missing-matlab")
+    ).run_batch("disp(1)")
+
+    assert result["rc"] == -1
+    assert result["stdout"] == ""
+    assert result["stderr"]
+
+
+def test_corrupt_pdf_render_fails_with_runtime_error(tmp_path: Path) -> None:
+    paper = tmp_path / "论文"
+    paper.mkdir(parents=True)
+    (paper / "论文.pdf").write_bytes(b"not-a-pdf")
+
+    with pytest.raises(RuntimeError, match="PDF 页渲染失败"):
+        render_pdf_pages(tmp_path)
