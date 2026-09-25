@@ -1,7 +1,7 @@
 """Issue Ledger 状态机 + 身份合并 + 配对裁定 + 熔断 单测。"""
 from __future__ import annotations
 
-from mmagent.mm.ledger.issue_ledger import IssueLedger
+from mmagent.mm.ledger.issue_ledger import IssueLedger, merge_channel_verdicts
 
 
 class TestLedger:
@@ -108,3 +108,55 @@ class TestLedger:
         t.并入([{"问题": "问题", "级别": "叙述"}], 轮次=1)
         t.并入([{"问题": "问题", "级别": "硬伤", "对应": "意-1-01"}], 轮次=2)
         assert t.条目[0].级别 == "硬伤"  # 只升不降
+
+
+
+def test_judge_abstention_does_not_override_substantive_resolved_vote() -> None:
+    merged, abstentions = merge_channel_verdicts([
+        (
+            "reviewer",
+            [{"id": "审-1-01", "generation": 0, "裁定": "已消解", "理由": "实物已核对"}],
+        ),
+        (
+            "judge_simulator",
+            [{"id": "审-1-01", "generation": 0, "裁定": "未消解", "理由": "未提供完整材料，无法核实"}],
+        ),
+    ])
+
+    assert abstentions == 1
+    assert merged == [{
+        "id": "审-1-01",
+        "generation": 0,
+        "裁定": "已消解",
+        "理由": "reviewer:实物已核对",
+        "来源通道": "reviewer",
+    }]
+
+
+def test_substantive_unresolved_vote_still_vetoes_resolution() -> None:
+    merged, abstentions = merge_channel_verdicts([
+        (
+            "reviewer",
+            [{"id": "审-1-01", "generation": 0, "裁定": "已消解", "理由": "A认为已修"}],
+        ),
+        (
+            "judge_simulator",
+            [{"id": "审-1-01", "generation": 0, "裁定": "未消解", "理由": "当前页仍能直接看到错位"}],
+        ),
+    ])
+
+    assert abstentions == 0
+    assert merged[0]["裁定"] == "未消解"
+    assert merged[0]["来源通道"] == "judge_simulator"
+
+
+def test_only_abstentions_emit_no_verdict() -> None:
+    merged, abstentions = merge_channel_verdicts([
+        (
+            "judge_simulator",
+            [{"id": "审-1-01", "generation": 0, "裁定": "未消解", "理由": "本通道无法验证全文事实"}],
+        )
+    ])
+
+    assert merged == []
+    assert abstentions == 1
