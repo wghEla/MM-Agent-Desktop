@@ -105,9 +105,9 @@ async def _generate_requirement_matrix(
 
 
 # ---------------------------------------------------------------- G1 compatibility wrappers
-def check_g1(workspace_root: Path) -> tuple[bool, list[str]]:
+def check_g1(workspace_root: Path, *, profile: str = "标准") -> tuple[bool, list[str]]:
     from mmagent.mm.gates.g1 import check_g1 as _check
-    return _check(workspace_root)
+    return _check(workspace_root, profile=profile)
 
 
 async def run_s1(
