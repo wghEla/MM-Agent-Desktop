@@ -37,6 +37,7 @@ EXTERNAL_SOURCES = frozenset({
 class StageCarrierContract:
     stage: str
     consumes: tuple[str, ...] = ()
+    self_consumes: tuple[str, ...] = ()
     produces: tuple[str, ...] = ()
 
 
@@ -69,8 +70,8 @@ STAGE_CARRIER_CONTRACTS: tuple[StageCarrierContract, ...] = (
         consumes=(
             "交接/计划.json",
             "输入/数据/**",
-            "交接/结果声明_问题{dep}.json",
         ),
+        self_consumes=("交接/结果声明_问题{dep}.json",),
         produces=(
             "求解/问题{q}/求解_问题{q}.py",
             "求解/问题{q}/结果/**",
@@ -196,6 +197,9 @@ def validate_stage_carrier_contracts(
             continue
         seen_stages.add(stage)
 
+        own_produces = {
+            canonical_carrier(raw) for raw in contract.produces
+        }
         for raw in contract.consumes:
             carrier = canonical_carrier(raw)
             if carrier in {canonical_carrier(x) for x in EXTERNAL_SOURCES}:
@@ -208,6 +212,13 @@ def validate_stage_carrier_contracts(
             if _STAGE_INDEX[latest] >= _STAGE_INDEX[stage]:
                 issues.append(
                     f"{stage} consumes non-upstream carrier {raw} from {latest}"
+                )
+
+        for raw in contract.self_consumes:
+            carrier = canonical_carrier(raw)
+            if carrier not in own_produces:
+                issues.append(
+                    f"{stage} self-consumes unproduced carrier: {raw}"
                 )
 
         for raw in contract.produces:
