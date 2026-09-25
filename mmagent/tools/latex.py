@@ -38,6 +38,13 @@ class LatexTool:
             stdout = proc.stdout.decode("utf-8", errors="replace")[-5000:]
         except subprocess.TimeoutExpired:
             return {"rc": -2, "stdout_tail": "编译超时", "errors": ["超时"], "pages": 0}
+        except OSError as exc:
+            return {
+                "rc": -1,
+                "stdout_tail": "",
+                "errors": [f"XeLaTeX 启动失败: {exc}"],
+                "pages": 0,
+            }
 
         log_path = workdir / (tex_path.stem + ".log")
         errors, pages = [], 0
@@ -106,10 +113,16 @@ def render_pdf_pages(
     rendered: list[Path] = []
     scale = dpi / 72.0
     matrix = fitz.Matrix(scale, scale)
-    with fitz.open(pdf_path) as doc:
-        for index, page in enumerate(doc, 1):
-            pix = page.get_pixmap(matrix=matrix, alpha=False)
-            path = out / f"page_{index:03d}.png"
-            pix.save(path)
-            rendered.append(path)
+    try:
+        with fitz.open(pdf_path) as doc:
+            for index, page in enumerate(doc, 1):
+                pix = page.get_pixmap(matrix=matrix, alpha=False)
+                path = out / f"page_{index:03d}.png"
+                pix.save(path)
+                rendered.append(path)
+    except Exception as exc:
+        # PyMuPDF exposes several backend-specific exception classes across
+        # versions. Normalize them at the runtime boundary so callers can
+        # handle corrupt/unreadable PDF carriers deterministically.
+        raise RuntimeError(f"PDF 页渲染失败: {exc}") from exc
     return rendered
