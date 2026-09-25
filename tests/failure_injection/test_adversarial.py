@@ -344,6 +344,7 @@ def test_r2_gate5_json_garbage_without_schema_rejected(policy):
         )
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r2_gate6_sealing_junction_blocked(policy, tmp_path):
     """预置 .mmagent/artifacts junction → sealing 必须拒绝（不走裸 mkdir/write）。"""
     import subprocess as sp
@@ -661,6 +662,7 @@ def test_r7_p1_ownerless_active_via_generic_rejected(db, run_id):
 
 
 # ==================== v0.2.0 Job Object / Environment ====================
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_v02_job_object_timeout_and_cancel(policy, ws):
     """ProcessManager 路径：python.run 超时杀树 + 取消立即杀树。"""
     import asyncio as aio
@@ -729,6 +731,7 @@ def _json_check(p):
 
 
 # ==================== v0.2.0 Round-2 故障注入（ProcessManager 重写后） ====================
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r2v02_old_unconfirmable_new_never_runs(policy, ws, monkeypatch):
     """旧进程无法确认终止：新挂起进程被终止（从未运行）、old 保持注册+quarantined。"""
     import sys as _sys
@@ -751,6 +754,7 @@ def test_r2v02_old_unconfirmable_new_never_runs(policy, ws, monkeypatch):
     pm.shutdown()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r2v02_job_zero_confirmation(policy, ws):
     """终止确认基于 Job 活跃数归零 + root 退出（不只 root signal）。"""
     import sys as _sys
@@ -773,6 +777,7 @@ def test_r2v02_job_zero_confirmation(policy, ws):
     pm.shutdown()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r2v02_cancel_race_natural_exit_keeps_rc(policy, ws):
     """进程已自然退出后取消才到达：保留真实 rc，不改写 -99。"""
     import asyncio as aio
@@ -807,6 +812,7 @@ def test_r2v02_cancel_race_natural_exit_keeps_rc(policy, ws):
     pm.shutdown()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r2v02_output_quota_terminates(policy, ws):
     """输出超预算：立即终止 Job + ToolTimeout('输出超限')，尾部捕获内存有界。"""
     import asyncio as aio
@@ -837,6 +843,7 @@ def test_r2v02_output_quota_terminates(policy, ws):
     pm.shutdown()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r2v02_shutdown_reports_failures(policy, ws, monkeypatch):
     """shutdown 存在未确认收口的进程 → 显式 RuntimeError（注册/文件保留）。"""
     import sys as _sys
@@ -858,6 +865,7 @@ def test_r2v02_shutdown_reports_failures(policy, ws, monkeypatch):
 
 
 # ==================== Round-3 P1 修复的负向测试 ====================
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r3_p1_1_root_exit_tree_alive_still_tracked(policy, ws):
     """区分度测试：root 立即退出、child 长眠 → communicate 不能因 root 退出而返回；
     超时终止必须等 Job 归零。旧实现（只看 root）会在此提前返回成功。"""
@@ -884,6 +892,7 @@ def test_r3_p1_1_root_exit_tree_alive_still_tracked(policy, ws):
     pm.shutdown()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r3_p1_3_handles_not_inheritable(policy, ws):
     """CreateProcess 返回的 process/thread 句柄不可继承（句柄继承面最小化）。"""
     import sys as _sys
@@ -907,6 +916,7 @@ def test_r3_p1_3_handles_not_inheritable(policy, ws):
     pm.shutdown()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r3_p1_2_registry_compare_remove(db, run_id, policy):
     """remove-by-name 的 compare-and-delete：换代后旧引用不得删除新对象。"""
     from mmagent.runtime.process import ManagedProcess, ProcessRegistry
@@ -923,6 +933,7 @@ def test_r3_p1_2_registry_compare_remove(db, run_id, policy):
     assert removed is new
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r3_p1_2b_spawn_rejected_after_shutdown(policy, ws):
     """shutdown 后拒绝新 spawn（防 shutdown 期间新进程逃逸）。"""
     import sys as _sys
@@ -939,6 +950,7 @@ def test_r3_p1_2b_spawn_rejected_after_shutdown(policy, ws):
 
 
 # ==================== Round-5 P1 修复的负向测试 ====================
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r5_p1_2_createprocess_failure_single_close(tmp_path, monkeypatch):
     """CreateProcess 失败：每个 std 句柄严格关闭一次、tmpdir 清理、原始异常保持。"""
     import win32file
@@ -984,6 +996,7 @@ def test_r5_p1_2_createprocess_failure_single_close(tmp_path, monkeypatch):
     assert before_leftovers <= set(leftovers), f"新增残留: {set(leftovers) - before_leftovers}"
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r5_p1_3_lifecycle_gate_serializes(policy, ws):
     """kill 与 shutdown 都经 lifecycle gate：shutdown 期间 kill 不会并发终止。"""
     import sys as _sys
@@ -1015,6 +1028,7 @@ def test_r5_p1_3_lifecycle_gate_serializes(policy, ws):
 
 
 # ==================== Round-6 P1 修复的负向测试 ====================
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r6_p1_1_job_setup_unconfirmed_quarantined(policy, ws, monkeypatch):
     """Job 绑定失败且终止未确认：proc 入 quarantine、句柄保留、绝不静默关闭。"""
     import win32event
@@ -1040,6 +1054,7 @@ def test_r6_p1_1_job_setup_unconfirmed_quarantined(policy, ws, monkeypatch):
     assert q.alive is not True or True  # suspended：root 未退出
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r6_p1_1b_job_setup_confirmed_cleans(policy, ws, monkeypatch):
     """Job 绑定失败但终止已确认：清理干净后抛 OSError，不留 quarantine。"""
     import win32job
@@ -1057,6 +1072,7 @@ def test_r6_p1_1b_job_setup_confirmed_cleans(policy, ws, monkeypatch):
     assert pm.registry.get("q2") is None
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r6_p1_2_cancel_after_natural_exit_keeps_real_rc(policy, ws):
     """取消终止未确认（进程恰好自然结束）→ 显式失败，rc 不得被改成 -99。"""
     import asyncio as aio
@@ -1091,6 +1107,7 @@ def test_r6_p1_2_cancel_after_natural_exit_keeps_real_rc(policy, ws):
 
 
 # ==================== Round-7 因果性区分测试 ====================
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r7_p1_1_terminate_request_fail_natural_exit_keeps_rc(policy, ws, monkeypatch):
     """区分度场景（外审 round7 P1-1）：
     cancel 到达 → TerminateJobObject 注入失败 → 进程随后自然结束 → 树归零。
@@ -1143,6 +1160,7 @@ def test_r7_p1_1_terminate_request_fail_natural_exit_keeps_rc(policy, ws, monkey
     pm.shutdown()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r7_p1_1b_terminate_fail_still_alive_raises(policy, ws, monkeypatch):
     """终止请求失败且树仍活 → quarantine + 显式失败（不得静默）。"""
     import asyncio as aio
@@ -1191,6 +1209,7 @@ def test_r7_p1_1b_terminate_fail_still_alive_raises(policy, ws, monkeypatch):
 
 # ==================== Round-8：std 句柄回滚三阶段区分测试 ====================
 @pytest.mark.parametrize("fail_at", [1, 2, 3])
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r8_std_handle_rollback_each_stage(tmp_path, policy, ws, monkeypatch, fail_at):
     """第 1/2/3 次 CreateFile 分别失败：已创建句柄各恰好关闭一次、无新增 tmpdir。"""
     import glob
@@ -1234,6 +1253,7 @@ def test_r8_std_handle_rollback_each_stage(tmp_path, policy, ws, monkeypatch, fa
 
 
 # ==================== Round-9 P1 修复的负向测试 ====================
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r9_p1_2_resume_failure_rollback(policy, ws, monkeypatch):
     """resume 失败：确认终止+清理+移出注册（或 quarantine），不留半提交对象。"""
     import sys as _sys
@@ -1256,6 +1276,7 @@ def test_r9_p1_2_resume_failure_rollback(policy, ws, monkeypatch):
     assert total <= 1
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r9_p1_3_shutdown_handles_quarantined_suspended(policy, ws, monkeypatch):
     """shutdown 收口 quarantined 的无 Job 挂起进程：确认终止（不谎报成功）。"""
 
@@ -1292,6 +1313,7 @@ def test_r9_p1_3_shutdown_handles_quarantined_suspended(policy, ws, monkeypatch)
 
 
 # ==================== Round-11 P1 修复的负向测试 ====================
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r11_p1_2_cancel_failed_not_swallowed_by_timeout(policy, ws, monkeypatch):
     """cancel 终止请求失败且树仍活 → 后续超时终止成功也必须报取消失败，不得吞成 timeout。"""
     import asyncio as aio
@@ -1346,6 +1368,7 @@ def test_r11_p1_2_cancel_failed_not_swallowed_by_timeout(policy, ws, monkeypatch
     pm.shutdown()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r11_p1_3_fast_exit_quota_bypass_blocked(policy, ws):
     """快速写出超配额后立即退出 → 仍必须报告输出超限（不得因 tree 死而跳过检查）。"""
     import asyncio as aio
@@ -1378,6 +1401,7 @@ def test_r11_p1_3_fast_exit_quota_bypass_blocked(policy, ws):
 
 
 # ==================== Round-13 P1 修复的负向测试 ====================
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r13_p1_2_ctor_failure_rolls_back_raw_handles(policy, ws, monkeypatch):
     """ManagedProcess 构造注入失败 → 回滚 raw handles（挂起进程被终止）+ tmpdir 清理。"""
     import os as _os
@@ -1407,6 +1431,7 @@ def test_r13_p1_2_ctor_failure_rolls_back_raw_handles(policy, ws, monkeypatch):
     assert not (after_dirs - before_dirs), after_dirs - before_dirs
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r13_p1_1_registered_quarantined_natural_death_resolved(policy, ws, monkeypatch):
     """registered+quarantined；第二轮前自然退出 → shutdown 正常收口并清空隔离。"""
     import sys as _sys
@@ -1437,6 +1462,7 @@ def test_r13_p1_1_registered_quarantined_natural_death_resolved(policy, ws, monk
 
 
 # ==================== Round-17 P1 修复的负向测试 ====================
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process/runtime semantics")
 def test_r17_p1_same_shutdown_recovery(policy, ws, monkeypatch):
     """区分度测试（外审 round17）：第一次 _terminate_tree_state 失败注入，
     同一次 shutdown 的 quarantine retry 成功 → 无 RuntimeError、_procs 与
