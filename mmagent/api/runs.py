@@ -157,7 +157,7 @@ class RunController:
     def list_status(self, handle: ProjectHandle) -> list[dict[str, Any]]:
         """Return project runs newest-first, including process-local activity."""
         rows = handle.workspace.db.query(
-            "SELECT id FROM runs WHERE project_id = ? ORDER BY created_at DESC",
+            "SELECT id FROM runs WHERE project_id = ? ORDER BY created_at DESC, rowid DESC",
             (handle.project_id,),
         )
         return [self.status(handle, row["id"]) for row in rows]
