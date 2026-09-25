@@ -69,6 +69,7 @@ def _ensure_paper_snapshot(policy: PathPolicy, round_num: int) -> int:
 def _restore_paper_snapshot(policy: PathPolicy, round_num: int) -> int:
     return _restore_shared_snapshot(policy, "s5", round_num)
 
+
 def _default_compile(root: Path) -> dict[str, Any]:
     try:
         return LatexTool(root).compile("论文/论文.tex")
