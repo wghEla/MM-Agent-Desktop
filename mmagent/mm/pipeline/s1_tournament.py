@@ -6,6 +6,7 @@ from typing import Any
 from mmagent.mm.config.profiles import get_profile
 from mmagent.mm.contracts.s1_contracts import PrototypeResults, RouteScout
 from mmagent.mm.gates.g1 import check_g1
+from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.base import BaseProvider
 from mmagent.runtime.cancellation import CancellationToken
 from mmagent.state.db import Database
@@ -14,7 +15,6 @@ from mmagent.tools.tool_protocol import ToolContext
 from mmagent.workspace.artifacts import ExpectedArtifact
 from mmagent.workspace.path_policy import PathPolicy
 from mmagent.workspace.permissions import PermissionChecker, RolePermissions
-from mmagent.orchestration.role_leg import run_role_leg
 
 
 async def _leg(
@@ -31,6 +31,7 @@ async def _leg(
         question_num=question,
         cancel=cancel,
     )
+
 
 async def _execute(registry: ToolRegistry, policy: PathPolicy, rel: str, *, cancel=None):
     if not registry.has("python.run"):
