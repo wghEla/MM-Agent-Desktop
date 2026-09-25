@@ -73,7 +73,6 @@ def freeze_question_inputs(
 
     entries: list[FrozenInputEntry] = []
     try:
-        raw_root = temp_dir / "raw"
         for source in sorted(data_root.rglob("*")):
             if not source.is_file():
                 continue
