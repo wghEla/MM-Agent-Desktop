@@ -3,14 +3,19 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from mmagent.mm.audit import audit_paper
 from mmagent.mm.gates.g4 import check_g4
-from mmagent.mm.ledger.issue_ledger import Issue, IssueLedger
+from mmagent.mm.ledger.issue_ledger import (
+    Issue,
+    IssueLedger,
+    merge_channel_verdicts,
+)
 from mmagent.mm.roles.registry import get_role
 from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.base import BaseProvider
@@ -23,6 +28,113 @@ from mmagent.workspace.path_policy import PathPolicy
 
 CompileFn = Callable[[Path], dict[str, Any]]
 RenderFn = Callable[[Path], list[Path]]
+
+
+@dataclass(frozen=True)
+class ReviewAssessment:
+    opinions: list[dict]
+    verdicts: list[dict]
+    relative_judgment: str | None = None
+    score: float | None = None
+
+
+@dataclass(frozen=True)
+class ReviewBatch:
+    opinions: list[dict]
+    channel_verdicts: list[tuple[str, list[dict]]]
+    relative_judgment: str | None
+    score: float | None
+
+
+def _normalize_relative(value: Any) -> str | None:
+    raw = str(value or "").strip()
+    if raw.startswith(("更差", "差")):
+        return "更差"
+    if raw.startswith(("更好", "好")):
+        return "更好"
+    if raw:
+        return "持平"
+    return None
+
+
+def _retention_decision(
+    relative_judgment: str | None,
+    old_score: float | None,
+    new_score: float | None,
+    *,
+    noise_band: float = 0.5,
+) -> tuple[str, str]:
+    """Return 接受/回退 using the pinned paper-foundry paired-review rule."""
+    if relative_judgment == "更差":
+        return "回退", "配对评审判定更差"
+    if relative_judgment == "更好":
+        return "接受", "配对评审判定更好"
+    if (
+        old_score is not None
+        and new_score is not None
+        and new_score < old_score - noise_band
+    ):
+        return (
+            "回退",
+            f"评分 {old_score:.2f}->{new_score:.2f} 跌破 {noise_band:.2f} 噪声带",
+        )
+    return "接受", "持平/无相对判断，且评分未跌破噪声带"
+
+
+def _snapshot_dir(policy: PathPolicy, round_num: int) -> Path:
+    return (
+        policy.root
+        / ".mmagent"
+        / "checkpoints"
+        / "s5"
+        / f"round_{round_num:03d}"
+    )
+
+
+def _ensure_paper_snapshot(policy: PathPolicy, round_num: int) -> int:
+    """Persist the pre-review TeX snapshot once; never overwrite it on resume."""
+    final = _snapshot_dir(policy, round_num)
+    marker = final / ".complete"
+    if marker.is_file():
+        return len(list((final / "paper").rglob("*.tex")))
+
+    base = final.parent
+    base.mkdir(parents=True, exist_ok=True)
+    temp = base / f".round_{round_num:03d}.tmp"
+    shutil.rmtree(temp, ignore_errors=True)
+    paper_snapshot = temp / "paper"
+    paper_snapshot.mkdir(parents=True, exist_ok=True)
+
+    source = policy.root / "论文"
+    count = 0
+    if source.is_dir():
+        for src in sorted(source.rglob("*.tex")):
+            rel = src.relative_to(source)
+            dest = paper_snapshot / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
+            count += 1
+
+    (temp / ".complete").write_text(str(count), encoding="utf-8")
+    shutil.rmtree(final, ignore_errors=True)
+    temp.replace(final)
+    return count
+
+
+def _restore_paper_snapshot(policy: PathPolicy, round_num: int) -> int:
+    snapshot = _snapshot_dir(policy, round_num)
+    if not (snapshot / ".complete").is_file():
+        return 0
+    paper_snapshot = snapshot / "paper"
+    target = policy.root / "论文"
+    restored = 0
+    for src in sorted(paper_snapshot.rglob("*.tex")):
+        rel = src.relative_to(paper_snapshot)
+        dest = target / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        restored += 1
+    return restored
 
 
 def _default_compile(root: Path) -> dict[str, Any]:
@@ -79,25 +191,46 @@ def _artifact_for_review(role_id: str, round_num: int, suffix: str) -> str:
     raise KeyError(role_id)
 
 
-def _extract_review_payload(path: Path) -> tuple[list[dict], list[dict]]:
+def _parse_review_assessment(path: Path) -> ReviewAssessment:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return [], []
+        return ReviewAssessment([], [])
     if isinstance(data, list):
-        return [x for x in data if isinstance(x, dict)], []
+        return ReviewAssessment([x for x in data if isinstance(x, dict)], [])
     if not isinstance(data, dict):
-        return [], []
+        return ReviewAssessment([], [])
+
     opinions = data.get("意见", data.get("最高优先级修改", [])) or []
-    verdicts = data.get("裁定", data.get("逐条裁定", [])) or []
+    verdicts = (
+        data.get("裁定", data.get("逐条裁定", data.get("逐项", []))) or []
+    )
     if isinstance(opinions, dict):
         opinions = [opinions]
     if isinstance(verdicts, dict):
         verdicts = [verdicts]
-    return (
-        [x for x in opinions if isinstance(x, dict)],
-        [x for x in verdicts if isinstance(x, dict)],
+
+    score: float | None = None
+    for key in ("总分", "分数"):
+        value = data.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            score = float(value)
+            break
+
+    return ReviewAssessment(
+        opinions=[x for x in opinions if isinstance(x, dict)],
+        verdicts=[x for x in verdicts if isinstance(x, dict)],
+        relative_judgment=_normalize_relative(
+            data.get("相对判断", data.get("相对"))
+        ),
+        score=score,
     )
+
+
+def _extract_review_payload(path: Path) -> tuple[list[dict], list[dict]]:
+    """Backward-compatible focused parser used by older tests/helpers."""
+    assessment = _parse_review_assessment(path)
+    return assessment.opinions, assessment.verdicts
 
 
 def _sample_representative_pages(pages: list[Path], limit: int = 8) -> list[Path]:
@@ -122,9 +255,11 @@ async def _run_review_legs(
     *,
     page_images: list[Path] | None = None,
     cancel=None,
-) -> tuple[list[dict], list[dict]]:
+) -> ReviewBatch:
     opinions: list[dict] = []
-    verdicts: list[dict] = []
+    channel_verdicts: list[tuple[str, list[dict]]] = []
+    relative_judgments: list[str] = []
+    reviewer_scores: list[float] = []
     legs = [
         ("reviewer", "A"),
         ("reviewer", "B"),
@@ -138,7 +273,14 @@ async def _run_review_legs(
         visual_paths: list[str] = []
         instructions = (
             f"执行第{round_num}轮独立审稿并写 {artifact}。"
-            "新意见写入 意见；若审稿台账视图中存在待复核条目，逐条给出 id、generation、裁定。"
+            "新意见写入 意见；若审稿台账视图中存在待复核条目，逐条给出 "
+            "id、generation、裁定、理由。"
+            + (
+                " 同时对比上一版给顶层 相对判断=更好|持平|更差。"
+                if round_num > 1
+                else ""
+            )
+            + (" 审稿员顶层给 1-10 总分。" if role_id == "reviewer" else "")
         )
         if role_id == "judge_simulator":
             selected = _sample_representative_pages(list(page_images or []))
@@ -159,12 +301,36 @@ async def _run_review_legs(
         )
         if status != "SUCCEEDED":
             continue
-        op, ve = _extract_review_payload(policy.root / artifact)
-        for item in op:
+        assessment = _parse_review_assessment(policy.root / artifact)
+        for item in assessment.opinions:
             item.setdefault("来源", role.display_name + suffix)
-        opinions.extend(op)
-        verdicts.extend(ve)
-    return opinions, verdicts
+        opinions.extend(assessment.opinions)
+        channel_verdicts.append((role_id, assessment.verdicts))
+        if assessment.relative_judgment:
+            relative_judgments.append(assessment.relative_judgment)
+        if role_id == "reviewer" and assessment.score is not None:
+            reviewer_scores.append(assessment.score)
+
+    relative = (
+        "更差"
+        if "更差" in relative_judgments
+        else (
+            "更好"
+            if "更好" in relative_judgments
+            else ("持平" if relative_judgments else None)
+        )
+    )
+    score = (
+        sum(reviewer_scores) / len(reviewer_scores)
+        if reviewer_scores
+        else None
+    )
+    return ReviewBatch(
+        opinions=opinions,
+        channel_verdicts=channel_verdicts,
+        relative_judgment=relative,
+        score=score,
+    )
 
 
 _CHINESE_NUM = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
@@ -265,7 +431,9 @@ async def _run_rework(
                 db, provider, registry, policy, run_id, round_num,
                 target=target, items=group, question_num=q, cancel=cancel,
             )
-            result = ledger.收回执(receipts, 腿名=f"回炉{target}问{q}")
+            result = ledger.收回执(
+                receipts, 腿名=f"回炉{target}问{q}", 轮次=round_num
+            )
             stats[target] += result["受理"]
 
     text_items = ledger.待改条目(目标们=["文"])
@@ -274,7 +442,9 @@ async def _run_rework(
             db, provider, registry, policy, run_id, round_num,
             target="文", items=text_items, cancel=cancel,
         )
-        result = ledger.收回执(receipts, 腿名="回炉文")
+        result = ledger.收回执(
+            receipts, 腿名="回炉文", 轮次=round_num
+        )
         stats["文"] += result["受理"]
     return stats
 
@@ -346,6 +516,7 @@ async def run_s5(
         }
 
     for round_num in range(start_round, max_rounds + 1):
+        snapshot_files = _ensure_paper_snapshot(policy, round_num)
         compile_result = compiler(policy.root)
         render_issue: str | None = None
         rendered_pages: list[Path] = []
@@ -372,7 +543,7 @@ async def run_s5(
             })
 
         _write_ledger_view(policy, ledger)
-        opinions, verdicts = await _run_review_legs(
+        review = await _run_review_legs(
             db,
             provider,
             registry,
@@ -382,9 +553,58 @@ async def run_s5(
             page_images=rendered_pages,
             cancel=cancel,
         )
-        verdict_stats = ledger.收裁定(verdicts, 轮次=round_num)
+        merged_verdicts, abstention_votes = merge_channel_verdicts(
+            review.channel_verdicts
+        )
+        verdict_stats = ledger.收裁定(merged_verdicts, 轮次=round_num)
         missed_verdicts = ledger.待复核未裁()
-        stats = ledger.并入(mechanical + opinions, round_num)
+
+        previous_score = None
+        if rounds:
+            previous = rounds[-1]
+            if isinstance(previous, dict):
+                value = previous.get("effective_score", previous.get("score"))
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    previous_score = float(value)
+
+        retention_action, retention_reason = _retention_decision(
+            review.relative_judgment,
+            previous_score,
+            review.score,
+        )
+        restored_files = 0
+        rolled_back_issues = 0
+        effective_score = review.score
+        if round_num > 1 and retention_action == "回退":
+            restored_files = _restore_paper_snapshot(policy, round_num - 1)
+            if restored_files:
+                rolled_back_issues = ledger.回退轮修订(
+                    round_num - 1, retention_reason
+                )
+                effective_score = previous_score
+                events.append_event(
+                    db,
+                    "s5.rollback",
+                    {
+                        "round": round_num,
+                        "to_round": round_num - 1,
+                        "reason": retention_reason,
+                        "restored_files": restored_files,
+                        "reopened_issues": rolled_back_issues,
+                    },
+                    run_id=run_id,
+                )
+            else:
+                retention_action = "无法回退"
+                retention_reason += "；缺少上一轮持久快照"
+                events.append_event(
+                    db,
+                    "s5.rollback_unavailable",
+                    {"round": round_num, "reason": retention_reason},
+                    run_id=run_id,
+                )
+
+        stats = ledger.并入(mechanical + review.opinions, round_num)
 
         converged, blocking = ledger.收敛()
         round_info: dict[str, Any] = {
@@ -392,6 +612,15 @@ async def run_s5(
             "stats": stats,
             "verdicts": verdict_stats,
             "missed_verdicts": missed_verdicts,
+            "abstention_votes": abstention_votes,
+            "relative_judgment": review.relative_judgment,
+            "score": review.score,
+            "effective_score": effective_score,
+            "retention_action": retention_action,
+            "retention_reason": retention_reason,
+            "snapshot_files": snapshot_files,
+            "restored_files": restored_files,
+            "rolled_back_issues": rolled_back_issues,
             "converged": converged,
             "blocking": len(blocking),
         }
