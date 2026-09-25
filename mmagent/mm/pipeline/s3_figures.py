@@ -9,9 +9,9 @@ from mmagent.agent.loop import AgentLoop, AgentTask
 from mmagent.mm.config.profiles import get_profile
 from mmagent.mm.config.thresholds import DEFAULT_THRESHOLDS
 from mmagent.mm.gates.g3 import check_g3
+from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
 from mmagent.mm.roles.prompts import get_system_prompt
 from mmagent.mm.roles.registry import get_role
-from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
 from mmagent.providers.base import BaseProvider
 from mmagent.state import repositories
 from mmagent.state.db import Database
