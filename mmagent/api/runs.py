@@ -113,30 +113,54 @@ class RunController:
             active.handle.workspace.db, run_id, RunStatus.PAUSED
         )
 
-    async def cancel(self, run_id: str, reason: str = "user cancelled") -> None:
-        """Cancel a running or paused run with correct durable run status."""
+    async def cancel(
+        self,
+        run_id: str,
+        reason: str = "user cancelled",
+        *,
+        handle: ProjectHandle | None = None,
+    ) -> None:
+        """Cancel a live run or a persisted unfinished run after sidecar restart."""
         active = self._active.get(run_id)
         if active is not None and not active.task.done():
             active.engine.cancel_run(reason)
             return
 
-        if active is None:
+        target = active.handle if active is not None else handle
+        if target is None:
             raise LookupError(f"run 不在当前 sidecar 控制中: {run_id}")
-        row = active.handle.workspace.db.query_one(
+
+        row = target.workspace.db.query_one(
             "SELECT status FROM runs WHERE id = ?", (run_id,)
         )
         if row is None:
             raise LookupError(run_id)
         status = RunStatus(row["status"])
-        if status is RunStatus.PAUSED:
-            repositories.set_run_status(
-                active.handle.workspace.db, run_id, RunStatus.CANCELLED
-            )
-            active.handle.workspace.release_run_lock()
-            return
         if status is RunStatus.CANCELLED:
             return
-        raise RuntimeError(f"run 状态不可取消: {status.value}")
+        if status not in (RunStatus.PAUSED, RunStatus.RUNNING):
+            raise RuntimeError(f"run 状态不可取消: {status.value}")
+
+        # Claim the durable run lock before mutating a run that is not active in
+        # this controller.  A still-live external owner therefore blocks us.
+        acquired_here = active is None
+        if acquired_here:
+            target.workspace.acquire_run_lock(run_id)
+        try:
+            repositories.set_run_status(
+                target.workspace.db, run_id, RunStatus.CANCELLED
+            )
+        finally:
+            if acquired_here:
+                target.workspace.release_run_lock()
+
+    def list_status(self, handle: ProjectHandle) -> list[dict[str, Any]]:
+        """Return project runs newest-first, including process-local activity."""
+        rows = handle.workspace.db.query(
+            "SELECT id FROM runs WHERE project_id = ? ORDER BY created_at DESC",
+            (handle.project_id,),
+        )
+        return [self.status(handle, row["id"]) for row in rows]
 
     def status(self, handle: ProjectHandle, run_id: str) -> dict[str, Any]:
         row = handle.workspace.db.query_one(
