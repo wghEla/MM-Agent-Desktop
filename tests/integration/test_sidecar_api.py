@@ -114,3 +114,52 @@ def test_sidecar_rejects_short_token() -> None:
         assert "token" in str(exc)
     else:
         raise AssertionError("short sidecar token must be rejected")
+
+
+
+def test_sidecar_import_and_artifact_preview(tmp_path) -> None:
+    app = create_app(token=TOKEN, credentials=MemoryCredentialStore())
+    source = tmp_path / "problem.md"
+    source.write_text("synthetic problem", encoding="utf-8")
+
+    with TestClient(app) as client:
+        project = client.post(
+            "/projects",
+            headers=_auth(),
+            json={"root": str(tmp_path / "proj"), "name": "Artifacts"},
+        )
+        project_id = project.json()["id"]
+
+        imported = client.post(
+            f"/projects/{project_id}/imports",
+            headers=_auth(),
+            json={"sources": [str(source)], "kind": "problem"},
+        )
+        assert imported.status_code == 200, imported.text
+        assert imported.json()["imported"][0]["path"] == "输入/题目/problem.md"
+
+        state = app.state.mmagent
+        handle = state.project(project_id)
+        note = handle.workspace.root / "审稿" / "viewer.md"
+        note.write_text("artifact body", encoding="utf-8")
+
+        listed = client.get(
+            f"/projects/{project_id}/artifacts", headers=_auth()
+        )
+        assert listed.status_code == 200
+        assert any(item["path"] == "审稿/viewer.md" for item in listed.json())
+
+        preview = client.post(
+            f"/projects/{project_id}/artifacts/read",
+            headers=_auth(),
+            json={"path": "审稿/viewer.md"},
+        )
+        assert preview.status_code == 200
+        assert preview.json()["text"] == "artifact body"
+
+        denied = client.post(
+            f"/projects/{project_id}/artifacts/read",
+            headers=_auth(),
+            json={"path": ".mmagent/project.db"},
+        )
+        assert denied.status_code == 400
