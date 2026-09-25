@@ -226,3 +226,71 @@ async def test_s2_question_checkpoint_skips_completed_driver_work(
         assert len(checkpoints) == 1
     finally:
         handle.workspace.db.close()
+
+
+
+@pytest.mark.asyncio
+async def test_s2_downgraded_checkpoint_without_carrier_is_rerun(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import mmagent.mm.pipeline.s2_model as s2
+    from mmagent.api.projects import create_project
+
+    handle = create_project(
+        tmp_path / "proj-degraded-resume",
+        name="s2-degraded-resume",
+        profile="快速",
+    )
+    try:
+        root = handle.workspace.root
+        plan = {"问题清单": [{"编号": 1, "依赖问题": [], "主方法": "测试法"}]}
+        plan_path = root / "交接" / "计划.json"
+        plan_path.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+        run_id = repositories.create_run(
+            handle.workspace.db,
+            project_id=handle.project_id,
+            profile="快速",
+        )
+        events.append_event(
+            handle.workspace.db,
+            "checkpoint.s2_question",
+            {
+                "question": 1,
+                "pass": False,
+                "issues": ["old failure"],
+                "downgraded": True,
+            },
+            run_id=run_id,
+        )
+
+        calls = 0
+
+        async def repaired_attempt(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return True, []
+
+        monkeypatch.setattr(s2, "_normal_attempt", repaired_attempt)
+
+        result = await run_s2(
+            handle.workspace.db,
+            None,  # type: ignore[arg-type]
+            None,  # type: ignore[arg-type]
+            PathPolicy(root),
+            run_id,
+            plan_path,
+        )
+
+        assert calls == 1
+        assert result["gates"]["问1"]["pass"] is True
+        assert result["downgraded"] == []
+        invalidated = events.query_events(
+            handle.workspace.db,
+            run_id=run_id,
+            type="pipeline.s2_question_invalidated",
+        )
+        assert len(invalidated) == 1
+        assert "降级放行" in invalidated[0].payload["issues"][0]
+    finally:
+        handle.workspace.db.close()
