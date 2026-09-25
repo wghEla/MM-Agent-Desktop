@@ -25,12 +25,12 @@ from mmagent.api.providers import (
     public_profile,
 )
 from mmagent.api.runs import RunController
-from mmagent.runtime.environment import managed_python
 from mmagent.runtime.credentials import (
     CredentialStore,
     MemoryCredentialStore,
     WindowsCredentialStore,
 )
+from mmagent.runtime.environment import managed_python
 from mmagent.tools.filesystem import FsListTool, FsReadTool, FsWriteTool
 from mmagent.tools.python import PythonRunTool
 from mmagent.tools.registry import ToolRegistry
