@@ -153,6 +153,7 @@ async def run_s1(
         prototype_jobs,
         cancel=cancel,
         wave_key="S1:原型编写",
+        serial=provider.protocol == "mock",
     )
     for spec in prototype_specs:
         status = prototype_wave.results.get(spec["name"], "FAILED")
