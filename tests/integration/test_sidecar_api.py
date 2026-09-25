@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 from mmagent.runtime.credentials import MemoryCredentialStore
 from mmagent.sidecar.server import create_app
 
-
 TOKEN = "test-sidecar-token-0123456789"
 
 
