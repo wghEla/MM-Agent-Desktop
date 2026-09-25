@@ -477,27 +477,27 @@ async def run_s2(
                         },
                         run_id=run_id,
                     )
-
-                still_valid, current_issues = check_g2(policy.root, q)
-                if still_valid:
-                    results["gates"][f"问{q}"] = {
-                        "pass": True,
-                        "issues": checkpoint_issues,
-                        "downgraded": False,
-                    }
+                else:
+                    still_valid, current_issues = check_g2(policy.root, q)
+                    if still_valid:
+                        results["gates"][f"问{q}"] = {
+                            "pass": True,
+                            "issues": checkpoint_issues,
+                            "downgraded": False,
+                        }
+                        events.append_event(
+                            db,
+                            "pipeline.s2_question_reused",
+                            {"question": q},
+                            run_id=run_id,
+                        )
+                        continue
                     events.append_event(
                         db,
-                        "pipeline.s2_question_reused",
-                        {"question": q},
+                        "pipeline.s2_question_invalidated",
+                        {"question": q, "issues": current_issues},
                         run_id=run_id,
                     )
-                    continue
-                events.append_event(
-                    db,
-                    "pipeline.s2_question_invalidated",
-                    {"question": q, "issues": current_issues},
-                    run_id=run_id,
-                )
 
             ok, issues = await _normal_attempt(
                 db, provider, registry, policy, run_id, q,
