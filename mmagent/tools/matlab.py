@@ -28,7 +28,13 @@ class MatlabTool:
                 raise RuntimeError(f"MATLAB 未发现: {cap.detail}")
             self.matlab = cap.path
 
-    def run_batch(self, command: str, *, timeout_s: float = 300.0) -> dict:
+    def run_batch(
+        self,
+        command: str,
+        *,
+        timeout_s: float = 300.0,
+        cancel=None,
+    ) -> dict:
         """matlab.exe -batch 执行（headless）。"""
         argv = [self.matlab, "-batch", command]
         if self.process_manager is not None:
@@ -49,6 +55,7 @@ class MatlabTool:
                     rc, out_b, err_b, timed_out = self.process_manager.communicate(
                         managed,
                         timeout_s,
+                        cancel,
                     )
                 except ToolTimeout as exc:
                     return {
@@ -83,9 +90,19 @@ class MatlabTool:
         except OSError as e:
             return {"rc": -1, "stdout": "", "stderr": str(e)}
 
-    def run_script(self, script_path: str, *, timeout_s: float = 300.0) -> dict:
+    def run_script(
+        self,
+        script_path: str,
+        *,
+        timeout_s: float = 300.0,
+        cancel=None,
+    ) -> dict:
         """运行 .m 脚本。"""
         abs_path = self.root / script_path
         if not abs_path.is_file():
             return {"rc": -1, "stdout": "", "stderr": f"脚本不存在: {script_path}"}
-        return self.run_batch(f"run('{abs_path}')", timeout_s=timeout_s)
+        return self.run_batch(
+            f"run('{abs_path}')",
+            timeout_s=timeout_s,
+            cancel=cancel,
+        )
