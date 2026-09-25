@@ -10,6 +10,7 @@ import pytest
 
 from mmagent.runtime.cancellation import CancellationToken
 from mmagent.runtime.environment import managed_python
+from mmagent.runtime.tool_env import latex_env, matlab_env
 from mmagent.tools.filesystem import FsListTool, FsReadTool, FsWriteTool
 from mmagent.tools.latex import LatexTool, render_pdf_pages
 from mmagent.tools.matlab import MatlabTool
@@ -208,3 +209,31 @@ def test_latex_managed_success_preserves_output_contract(tmp_path: Path) -> None
     assert "managed-out" in result["stdout_tail"]
     assert result["errors"] == []
     assert manager.recycled == [manager.spawned[0]["name"]]
+
+
+
+def test_external_tool_env_is_allowlisted_and_secret_safe(monkeypatch) -> None:
+    monkeypatch.setenv("PATH", "C:\\Tools")
+    monkeypatch.setenv("TEXMFHOME", "C:\\texmf-home")
+    monkeypatch.setenv("MLM_LICENSE_FILE", "27000@license-host")
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-openai")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "secret-anthropic")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret-aws")
+    monkeypatch.setenv("MMAGENT_SIDECAR_TOKEN", "secret-sidecar")
+
+    tex = latex_env()
+    matlab = matlab_env()
+
+    assert tex["PATH"] == "C:\\Tools"
+    assert tex["TEXMFHOME"] == "C:\\texmf-home"
+    assert "MLM_LICENSE_FILE" not in tex
+
+    assert matlab["PATH"] == "C:\\Tools"
+    assert matlab["MLM_LICENSE_FILE"] == "27000@license-host"
+    assert "TEXMFHOME" not in matlab
+
+    for child_env in (tex, matlab):
+        assert "OPENAI_API_KEY" not in child_env
+        assert "ANTHROPIC_API_KEY" not in child_env
+        assert "AWS_SECRET_ACCESS_KEY" not in child_env
+        assert "MMAGENT_SIDECAR_TOKEN" not in child_env
