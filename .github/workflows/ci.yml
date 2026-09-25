@@ -41,7 +41,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install sidecar build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[package]"
+      - name: Build bundled Python sidecar
+        run: python scripts/build_sidecar.py
+      - name: Smoke bundled sidecar executable
+        shell: pwsh
+        run: |
+          $triple = rustc --print host-tuple
+          $binary = "apps/desktop/src-tauri/binaries/mmagent-sidecar-$triple.exe"
+          if (!(Test-Path $binary)) { throw "sidecar missing: $binary" }
+          & $binary --help
+          if ($LASTEXITCODE -ne 0) { throw "sidecar --help failed: $LASTEXITCODE" }
       - name: Install frontend dependencies
         working-directory: apps/desktop
         run: npm install
