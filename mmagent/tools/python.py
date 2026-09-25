@@ -87,8 +87,19 @@ class PythonRunTool(Tool):
     )
 
     def __init__(self, interpreter: str | None = None, process_manager=None):
-        # 受管解释器：默认当前 venv 的 python（产品版由 Environment Manager 提供）
-        self.interpreter = interpreter or sys.executable
+        # Product builds must use the separately bundled managed Python runtime.
+        # A PyInstaller sidecar is not a general-purpose Python executable, so
+        # silently falling back to sys.executable while frozen would corrupt the
+        # python.run contract.
+        configured = interpreter or os.environ.get("MMAGENT_PYTHON")
+        if configured:
+            self.interpreter = configured
+        elif getattr(sys, "frozen", False):
+            raise RuntimeError(
+                "受管 Python 未配置：冻结 sidecar 不能充当 python.run 解释器"
+            )
+        else:
+            self.interpreter = sys.executable
         # v0.2：ProcessManager——提供时进程纳入 Windows Job Object（KILL_ON_JOB_CLOSE）
         self.process_manager = process_manager
 
