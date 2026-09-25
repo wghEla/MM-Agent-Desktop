@@ -25,6 +25,7 @@ from mmagent.api.providers import (
     public_profile,
 )
 from mmagent.api.runs import RunController
+from mmagent.runtime.environment import managed_python
 from mmagent.runtime.credentials import (
     CredentialStore,
     MemoryCredentialStore,
@@ -121,11 +122,15 @@ def _default_credentials() -> CredentialStore:
 
 
 def build_tool_registry() -> ToolRegistry:
+    runtime = managed_python()
+    if not runtime.ok or not runtime.path:
+        raise RuntimeError(f"受管 Python 不可用: {runtime.detail}")
+
     registry = ToolRegistry()
     registry.register(FsReadTool())
     registry.register(FsWriteTool())
     registry.register(FsListTool())
-    registry.register(PythonRunTool())
+    registry.register(PythonRunTool(interpreter=runtime.path))
     return registry
 
 
