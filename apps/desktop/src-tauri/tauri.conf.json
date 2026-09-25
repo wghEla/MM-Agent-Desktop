@@ -6,5 +6,9 @@
   "app": {
     "windows": [{ "title": "MM-Agent Desktop", "width": 1280, "height": 800 }],
     "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "externalBin": ["binaries/mmagent-sidecar"]
   }
 }
