@@ -8,6 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from mmagent.mm.pipeline.compile_runtime import run_compile
 from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
 from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.base import BaseProvider
@@ -186,7 +187,7 @@ async def run_s6(
         if execute_issues:
             return {"pass": False, "issues": execute_issues}
 
-    compiled = compiler(policy.root)
+    compiled = await run_compile(compiler, policy.root, cancel=cancel)
     if compiled.get("rc") not in (0, None) or compiled.get("errors"):
         return {"pass": False, "issues": [f"S6 final compile 失败: {compiled.get('errors')}"]}
     if not (policy.root / "论文" / "论文.pdf").is_file():
