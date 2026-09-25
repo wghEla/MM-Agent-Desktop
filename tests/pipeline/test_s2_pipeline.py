@@ -87,3 +87,68 @@ async def test_s2_driver_executes_solver_and_red_scripts_then_g2_passes(tmp_path
         assert result["downgraded"] == []
     finally:
         handle.workspace.db.close()
+
+
+
+@pytest.mark.asyncio
+async def test_s2_pinned_layer_execution_is_sequential_with_layer_barrier(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Pinned 5f507e0b mechanically runs each question pipeline sequentially.
+
+    Its source comment says same-layer modelling is parallel, but the executable
+    loop is a plain per-question loop. Reproduce the actual behavior and prove
+    that the next dependency layer starts only after the whole prior layer.
+    """
+    import asyncio
+
+    import mmagent.mm.pipeline.s2_model as s2
+
+    plan = {
+        "问题清单": [
+            {"编号": 1, "依赖问题": [], "主方法": "A"},
+            {"编号": 3, "依赖问题": [], "主方法": "C"},
+            {"编号": 2, "依赖问题": [1, 3], "主方法": "B"},
+        ]
+    }
+    plan_path = tmp_path / "计划.json"
+    plan_path.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+
+    order: list[tuple[str, int]] = []
+    active = 0
+    peak = 0
+
+    async def fake_attempt(*args, **kwargs):
+        nonlocal active, peak
+        q = int(args[5])
+        active += 1
+        peak = max(peak, active)
+        order.append(("start", q))
+        await asyncio.sleep(0.01)
+        order.append(("end", q))
+        active -= 1
+        return True, []
+
+    monkeypatch.setattr(s2, "_normal_attempt", fake_attempt)
+
+    result = await run_s2(
+        None,  # type: ignore[arg-type]
+        None,  # type: ignore[arg-type]
+        None,  # type: ignore[arg-type]
+        None,  # type: ignore[arg-type]
+        "run-layer-test",
+        plan_path,
+    )
+
+    assert result["layers"] == [[1, 3], [2]]
+    assert order == [
+        ("start", 1),
+        ("end", 1),
+        ("start", 3),
+        ("end", 3),
+        ("start", 2),
+        ("end", 2),
+    ]
+    assert peak == 1
+    assert result["downgraded"] == []
