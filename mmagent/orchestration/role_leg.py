@@ -4,6 +4,7 @@ from __future__ import annotations
 from mmagent.agent.loop import AgentLoop, AgentTask
 from mmagent.mm.roles.prompts import get_system_prompt
 from mmagent.mm.roles.registry import get_role
+from mmagent.orchestration.budget import check_run_budget
 from mmagent.orchestration.resume import prepare_node_task
 from mmagent.providers.base import BaseProvider
 from mmagent.state.db import Database
@@ -47,6 +48,10 @@ async def run_role_leg(
     )
     if prepared.reused:
         return "SUCCEEDED"
+
+    # Budget applies only when this call will actually execute a new/retried leg;
+    # reused sealed nodes consume no new model/tool budget.
+    check_run_budget(db, run_id)
 
     loop = AgentLoop(db, provider, registry, checker, policy, cancel=cancel)
     outcome = await loop.run(
