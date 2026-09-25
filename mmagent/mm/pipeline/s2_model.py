@@ -98,6 +98,7 @@ async def _model_and_interpret(
     run_id: str,
     q: int,
     *,
+    attempt_key: str,
     rework: bool = False,
     cancel=None,
 ) -> tuple[bool, str]:
@@ -105,7 +106,7 @@ async def _model_and_interpret(
     model_status = await _agent_leg(
         db, provider, registry, policy, run_id,
         role_id="modeler",
-        node_key=f"S2:问{q}:{'返工建模' if rework else '建模'}",
+        node_key=f"S2:问{q}:{'返工建模' if rework else '建模'}:{attempt_key}",
         question_num=q,
         instructions=(
             f"{'按返工证据修正方法或实现；' if rework else ''}"
@@ -124,7 +125,7 @@ async def _model_and_interpret(
     interpretation = await _agent_leg(
         db, provider, registry, policy, run_id,
         role_id="interpreter",
-        node_key=f"S2:问{q}:结果解读",
+        node_key=f"S2:问{q}:结果解读:{attempt_key}",
         question_num=q,
         instructions=(
             f"读取问题{q}真实求解结果，写 交接/结果声明_问题{q}.json 与 "
@@ -150,14 +151,14 @@ async def _red_team_cycle(
     run_id: str,
     q: int,
     *,
-    cycle: int = 1,
+    cycle_key: str,
     cancel=None,
 ) -> tuple[bool, str]:
     script = f"求解/问题{q}/复算.py"
     author = await _agent_leg(
         db, provider, registry, policy, run_id,
         role_id="red_team",
-        node_key=f"S2:问{q}:红队脚本{cycle}",
+        node_key=f"S2:问{q}:红队脚本:{cycle_key}",
         question_num=q,
         instructions=(
             f"独立为问题{q}编写 {script}；禁止读建模师代码/笔记/解读。"
@@ -175,7 +176,7 @@ async def _red_team_cycle(
     report = await _agent_leg(
         db, provider, registry, policy, run_id,
         role_id="red_team",
-        node_key=f"S2:问{q}:红队报告{cycle}",
+        node_key=f"S2:问{q}:红队报告:{cycle_key}",
         question_num=q,
         instructions=(
             f"读取自己的复算结果与 交接/结果声明_问题{q}.json，先做口径对照再比较数值；"
@@ -213,16 +214,54 @@ async def _arbitrate(
     run_id: str,
     q: int,
     *,
+    cycle_key: str,
     cancel=None,
 ) -> bool:
     status = await _agent_leg(
         db, provider, registry, policy, run_id,
         role_id="interpreter",
-        node_key=f"S2:问{q}:仲裁",
+        node_key=f"S2:问{q}:仲裁:{cycle_key}",
         question_num=q,
         instructions=(
             f"红队结论不齐。先核对四类口径，再逐项定责；写 交接/仲裁_问题{q}.json。"
             "应改方=建模 的条目必须保持待处理，直到建模返工后有消解证据；纯口径差可已解释。"
+        ),
+        expected=[ExpectedArtifact(rel_path=f"交接/仲裁_问题{q}.json")],
+        cancel=cancel,
+    )
+    return status == "SUCCEEDED"
+
+
+async def _review_arbitration_after_rework(
+    db: Database,
+    provider: BaseProvider,
+    registry: ToolRegistry,
+    policy: PathPolicy,
+    run_id: str,
+    q: int,
+    *,
+    attempt_key: str,
+    cancel=None,
+) -> bool:
+    """Re-adjudicate old model-side arbitration items after fresh recomputation.
+
+    A previous arbitration carrier is part of G2 truth.  It must not stay
+    permanently "待处理" after the model has been reworked and the red-team
+    mechanical check has been refreshed.
+    """
+    arb = policy.root / "交接" / f"仲裁_问题{q}.json"
+    if not arb.is_file():
+        return True
+    status = await _agent_leg(
+        db, provider, registry, policy, run_id,
+        role_id="interpreter",
+        node_key=f"S2:问{q}:仲裁复核:{attempt_key}",
+        question_num=q,
+        instructions=(
+            f"这是问题{q}返工后的仲裁复核。读取当前 交接/仲裁_问题{q}.json、"
+            f"交接/结果声明_问题{q}.json 与 交接/红队_问题{q}.json。"
+            "逐条复核旧仲裁项：只有有新证据的条目才能改为 已消解/已解释；"
+            "没有证据的保持待处理。直接更新原仲裁文件，并为已消解项写复核证据。"
         ),
         expected=[ExpectedArtifact(rel_path=f"交接/仲裁_问题{q}.json")],
         cancel=cancel,
@@ -238,24 +277,34 @@ async def _normal_attempt(
     run_id: str,
     q: int,
     *,
+    attempt_key: str,
     rework: bool = False,
     cancel=None,
 ) -> tuple[bool, list[str]]:
     ok, detail = await _model_and_interpret(
-        db, provider, registry, policy, run_id, q, rework=rework, cancel=cancel
+        db, provider, registry, policy, run_id, q,
+        attempt_key=attempt_key, rework=rework, cancel=cancel
     )
     if not ok:
         return False, [detail]
     ok, detail = await _red_team_cycle(
-        db, provider, registry, policy, run_id, q, cycle=1, cancel=cancel
+        db, provider, registry, policy, run_id, q,
+        cycle_key=attempt_key, cancel=cancel
     )
     if not ok:
         return False, [detail]
     if _red_conclusion(policy, q) == "不齐":
         if not await _arbitrate(
-            db, provider, registry, policy, run_id, q, cancel=cancel
+            db, provider, registry, policy, run_id, q,
+            cycle_key=attempt_key, cancel=cancel
         ):
             return False, ["仲裁腿失败"]
+    elif rework:
+        if not await _review_arbitration_after_rework(
+            db, provider, registry, policy, run_id, q,
+            attempt_key=attempt_key, cancel=cancel
+        ):
+            return False, ["仲裁复核腿失败"]
     return check_g2(policy.root, q)
 
 
@@ -312,12 +361,16 @@ async def _run_escalation(
     if adjudication != "SUCCEEDED":
         return False, ["升格裁决失败"]
     ok, detail = await _red_team_cycle(
-        db, provider, registry, policy, run_id, q, cycle=2, cancel=cancel
+        db, provider, registry, policy, run_id, q,
+        cycle_key="升格复核", cancel=cancel
     )
     if not ok:
         return False, [detail]
     if _red_conclusion(policy, q) == "不齐":
-        await _arbitrate(db, provider, registry, policy, run_id, q, cancel=cancel)
+        await _arbitrate(
+            db, provider, registry, policy, run_id, q,
+            cycle_key="升格复核", cancel=cancel
+        )
     return check_g2(policy.root, q)
 
 
@@ -362,12 +415,14 @@ async def run_s2(
     for layer in layers:
         for q in layer:
             ok, issues = await _normal_attempt(
-                db, provider, registry, policy, run_id, q, cancel=cancel
+                db, provider, registry, policy, run_id, q,
+                attempt_key="初验", cancel=cancel
             )
             if not ok:
-                for _ in range(_MAX_REWORK):
+                for rework_index in range(1, _MAX_REWORK + 1):
                     ok, issues = await _normal_attempt(
                         db, provider, registry, policy, run_id, q,
+                        attempt_key=f"返工{rework_index}",
                         rework=True, cancel=cancel,
                     )
                     if ok:
