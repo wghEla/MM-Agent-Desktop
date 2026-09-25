@@ -802,8 +802,26 @@ def test_r2v02_cancel_race_natural_exit_keeps_rc(policy, ws):
     ctx = ToolContext(policy=policy, permission=checker, cancel=token)
 
     async def run_then_cancel():
-        task = aio.create_task(reg.invoke("python.run", {"path": "求解/quick.py", "timeout_s": 30}, ctx))
-        await aio.sleep(1.5)  # 进程 0.x s 内已结束，1.5s 后才取消
+        task = aio.create_task(
+            reg.invoke("python.run", {"path": "求解/quick.py", "timeout_s": 30}, ctx)
+        )
+        # 不用固定 sleep 猜测“应该已经退出”。高负载 Windows runner 上
+        # create_task/进程启动调度可能晚于墙钟假设，导致测试把真实 cancel
+        # 误称为 late cancel。机械等待 Job 整棵树自然归零，再触发取消。
+        deadline = aio.get_running_loop().time() + 10.0
+        observed = None
+        while aio.get_running_loop().time() < deadline:
+            procs = list(pm.registry._procs.values())
+            if procs:
+                observed = procs[0]
+                if not observed.tree_alive:
+                    break
+            if task.done():
+                result = await task
+                token.cancel("late stop")
+                return result
+            await aio.sleep(0.01)
+        assert observed is not None and not observed.tree_alive
         token.cancel("late stop")
         return await task
 
