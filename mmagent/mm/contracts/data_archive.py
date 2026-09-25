@@ -5,7 +5,7 @@ import hashlib
 import json
 import shutil
 import uuid
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 
