@@ -75,8 +75,8 @@
 | D5 | Beauty threshold | 8.5 | PARTIAL | value present; full upstream use in convergence path not fully proven |
 | D6 | Change guard / escalated guard | 0.45 / 0.70 | MATCH | thresholds + guard implementation/tests |
 | D7 | Default concurrency / 429 floor | 4 / 2 | NOT IMPLEMENTED | constants exist, but dynamic wave concurrency reduction is not implemented |
-| D8 | Deep profile | routes3 / abstract5 / review4 / beauty2 / 600 / 40h | PARTIAL | profile values match; budget enforcement and full all-role high-effort semantics not fully wired |
-| D9 | Standard profile | abstract3 / review3 / role tiers / 30h | PARTIAL | values/routing exist; runtime budget enforcement incomplete |
+| D8 | Deep profile | routes3 / abstract5 / review4 / beauty2 / 600 / 40h | PARTIAL | profile values + durable leg/hour budget enforcement match; full all-role high-effort semantics remain under audit |
+| D9 | Standard profile | abstract3 / review3 / role tiers / 30h | PARTIAL | values/routing + durable active-time enforcement exist; remaining gap is upstream behavioral parity rather than missing budget guard |
 | D10 | Quick profile | hard-question tournament / routes2 / review2 / beauty1 / 20h | PARTIAL | values exist; exact hard-question-only tournament behavior remains under audit |
 | D11 | ≤20 pages / 16–22 figures / src≥0.6 / decimals≤4 | PARTIAL | thresholds and several gates/audit checks exist; complete combined publication proof pending |
 
@@ -85,11 +85,11 @@
 | # | Mechanism | Status | Evidence / gap |
 |---|---|---|---|
 | E1 | One owner per workspace | MATCH | `run.lock` + PID liveness + tests |
-| E2 | Node/stage/S5-round resume; active residue fail-closed | PARTIAL | deterministic node reuse/retry, stage checkpoints and S5 snapshots exist; true hard-crash full-stage E2E still required |
+| E2 | Node/stage/S5-round resume; active residue fail-closed | MATCH | real mid-S1 orphan invocation recovery E2E proves fail-closed closure, sealed-node reuse, retry and completion to final PDF; S5 round-complete snapshots are separately tested |
 | E3 | Pause / resume / cancel + process-tree cleanup | PARTIAL | controller + cancellation + Windows process controls exist; installed-app failure proof pending |
 | E4 | Layered timeout / recycle before reassignment | PARTIAL | tool/runtime cleanup exists; full wave timeout semantics incomplete |
 | E5 | 429 handling and concurrency reduction | PARTIAL | typed retryable 429 behavior exists; adaptive concurrency reduction to floor 2 does not |
-| E6 | MAX_LEGS / MAX_HOURS emergency budget guard | NOT IMPLEMENTED | profile constants exist, but authoritative engine enforcement is not evidenced |
+| E6 | MAX_LEGS / MAX_HOURS emergency budget guard | MATCH | durable task count + accumulated RUNNING intervals are checked before executable role legs and at pipeline boundaries; pause time is excluded; unit tests cover both ceilings |
 | E7 | JSON repair loop | PARTIAL | tool-call malformed JSON recovery exists; full artifact-schema rewrite loop parity incomplete |
 | E8 | Compile repair loop | PARTIAL | compile failure is fail-closed and repair paths exist in later stages; bounded general compile-repair protocol not fully matched |
 | E9 | Run feedback ledger / metrics | MATCH | S6 event/task metrics → `审稿/回流账.json` + tests |
@@ -103,14 +103,14 @@ These are product requirements introduced by the independent desktop reimplement
 |---|---|---|---|
 | P1 | Authenticated loopback Python sidecar | MATCH | bearer token, loopback bind, shutdown path, sidecar API tests |
 | P2 | Secret-safe Provider Settings | MATCH | Windows Credential Manager abstraction; SQLite stores credential reference only; secret-boundary tests |
-| P3 | Tauri starts/stops/proxies sidecar | PARTIAL | source implemented; current Windows CI proof is pending after ICO replacement |
+| P3 | Tauri starts/stops/proxies sidecar | PARTIAL | authenticated proxy/lifecycle source + valid Windows build + frozen sidecar executable smoke exist; installed-release launch is still unverified |
 | P4 | Project create/open/import | MATCH | sidecar endpoints + React panel + artifact API tests |
 | P5 | Run start/pause/resume/cancel | MATCH | controller/sidecar/UI + integration tests |
 | P6 | Restart recovery from persisted Run history | MATCH | persisted run listing, detached RUNNING/PAUSED resume controls and safe cancel tests |
 | P7 | Dashboard / gates / event view | MATCH | React Dashboard + sidecar dashboard endpoint |
 | P8 | Artifact/image/PDF viewer | MATCH | artifact API + React viewer |
 | P9 | Synthetic actual-stage S0→S6 to delivery PDF | MATCH | `tests/e2e/test_actual_full_chain.py`; mock LLM + real stage modules/filesystem/Python execution |
-| P10 | Windows packaged installer launches without dev Python | NOT IMPLEMENTED | sidecar distribution/bundling + installer smoke remains |
+| P10 | Windows packaged installer launches without dev Python | PARTIAL | PyInstaller externalBin build and direct frozen-sidecar smoke are proven; NSIS build is now a CI gate, but installed-app launch without dev Python remains unverified |
 | P11 | Real-provider smoke test | NOT IMPLEMENTED | intentionally unverified until a real credential is supplied |
 
 ## Intentional deviations
