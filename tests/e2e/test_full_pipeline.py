@@ -87,7 +87,7 @@ def _s1_script() -> MockScript:
                     "fs.write",
                     {
                         "path": f"求解/问题1/原型_{index}.py",
-                        "content": f"print('route {name} diagnostic={1.0-index*0.1:.1f}')\\n",
+                        "content": f"print('route {name} diagnostic={1.0-index*0.1:.1f}')\n",
                     },
                 ),
             ]),
