@@ -8,6 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from mmagent.mm.contracts.final_contracts import PageReviewArtifact
 from mmagent.mm.pipeline.compile_runtime import run_compile
 from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
 from mmagent.orchestration.role_leg import run_role_leg
@@ -122,7 +123,7 @@ async def run_s6(
                 "只列必须修的提交级问题，每条含页、严重度、目标、问题、修改指令；"
                 "必须依据附带图片本身，不得根据文件名猜测。"
             ),
-            expected=[ExpectedArtifact(rel_path=review_rel)],
+            expected=[ExpectedArtifact(rel_path=review_rel, schema_model=PageReviewArtifact)],
             image_paths=rel_images,
             cancel=cancel,
         )
