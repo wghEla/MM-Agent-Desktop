@@ -79,9 +79,6 @@ jobs:
       - name: Build frontend
         working-directory: apps/desktop
         run: npm run build
-      - name: Cargo check
-        working-directory: apps/desktop/src-tauri
-        run: cargo check
       - name: Build NSIS installer
         working-directory: apps/desktop
         run: npm run tauri -- build --bundles nsis
@@ -113,6 +110,10 @@ jobs:
           try {
             $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
             Remove-Item Env:MMAGENT_PYTHON -ErrorAction SilentlyContinue
+
+            & $runtime -c "import numpy, pandas, scipy, matplotlib, sklearn, sympy, statsmodels, openpyxl, fitz; print('installed scientific runtime ok')"
+            if ($LASTEXITCODE -ne 0) { throw "installed scientific runtime import smoke failed: $LASTEXITCODE" }
+
             $smoke = Start-Process -FilePath $app.FullName -ArgumentList "--startup-smoke" -Wait -PassThru
             if ($smoke.ExitCode -ne 0) { throw "installed app startup smoke failed: $($smoke.ExitCode)" }
           } finally {
