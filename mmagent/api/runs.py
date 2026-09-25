@@ -143,7 +143,7 @@ class RunController:
 
         # Claim the durable run lock before mutating a run that is not active in
         # this controller.  A still-live external owner therefore blocks us.
-        acquired_here = active is None
+        acquired_here = active is None or active.task.done()
         if acquired_here:
             target.workspace.acquire_run_lock(run_id)
         try:
