@@ -10,6 +10,7 @@ from mmagent.mm.config.thresholds import DEFAULT_THRESHOLDS
 from mmagent.mm.gates.g3 import check_g3
 from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
 from mmagent.orchestration.role_leg import run_role_leg
+from mmagent.orchestration.wave import WaveJob, run_status_wave
 from mmagent.providers.base import BaseProvider
 from mmagent.state.db import Database
 from mmagent.tools.registry import ToolRegistry
@@ -78,22 +79,44 @@ async def run_s3(
     threshold = DEFAULT_THRESHOLDS.figure_review_threshold
     history: list[dict[str, Any]] = []
 
+    plot_jobs: list[WaveJob[str]] = []
+    captions = {q: f"交接/图注素材_问题{q}.json" for q in problem_numbers}
     for q in problem_numbers:
-        caption = f"交接/图注素材_问题{q}.json"
-        status = await _run_agent_leg(
-            db, provider, registry, policy, run_id,
-            role_id="plotter",
-            node_key=f"S3:问{q}:绘图",
-            instructions=(
-                f"为问题{q}生成可复现绘图脚本和图片；写 {caption}。"
-                "只写脚本，由 Runtime 统一执行。"
-            ),
-            expected=[ExpectedArtifact(rel_path=caption)],
-            question_num=q,
-            cancel=cancel,
-        )
-        if status != "SUCCEEDED":
-            return {"g3_pass": False, "g3_issues": [f"问{q} 绘图腿失败"], "reviews": history}
+        caption = captions[q]
+
+        async def write_plots(*, question=q, caption_rel=caption) -> str:
+            return await _run_agent_leg(
+                db, provider, registry, policy, run_id,
+                role_id="plotter",
+                node_key=f"S3:问{question}:绘图",
+                instructions=(
+                    f"为问题{question}生成可复现绘图脚本和图片；写 {caption_rel}。"
+                    "只写脚本，由 Runtime 统一执行。"
+                ),
+                expected=[ExpectedArtifact(rel_path=caption_rel)],
+                question_num=question,
+                cancel=cancel,
+            )
+
+        plot_jobs.append(WaveJob(f"问{q}:绘图", write_plots))
+
+    plot_wave = await run_status_wave(
+        db,
+        run_id,
+        plot_jobs,
+        cancel=cancel,
+        wave_key="S3:绘图脚本",
+        serial=provider.protocol == "mock",
+    )
+
+    for q in problem_numbers:
+        caption = captions[q]
+        if plot_wave.results.get(f"问{q}:绘图") != "SUCCEEDED":
+            return {
+                "g3_pass": False,
+                "g3_issues": [f"问{q} 绘图腿失败"],
+                "reviews": history,
+            }
 
         exec_issues = await run_question_plot_scripts(registry, policy, q, cancel=cancel)
         if exec_issues:
@@ -114,28 +137,52 @@ async def run_s3(
             batch_scores: list[float] = []
             batch_ok = True
             review_rels: list[str] = []
+            review_jobs: list[WaveJob[str]] = []
+            review_names: list[str] = []
             for batch_index, batch in enumerate(batches, 1):
                 suffix = "" if len(batches) == 1 else f"_B{batch_index}"
                 review_rel = f"审稿/图评R{round_num}_问题{q}{suffix}.json"
                 review_rels.append(review_rel)
                 rel_images = [p.relative_to(policy.root).as_posix() for p in batch]
-                review_status = await _run_agent_leg(
-                    db, provider, registry, policy, run_id,
-                    role_id="figure_reviewer",
-                    node_key=f"S3:问{q}:图评R{round_num}{suffix}",
-                    instructions=(
-                        f"视觉评审问题{q}这一批实际图片，写 {review_rel}；"
-                        f"顶层给出数值字段 总分，固定通过阈值为 {threshold:.1f}。"
-                        "必须依据随任务附带的图片本身，不得只读文件名推测。"
-                    ),
-                    expected=[ExpectedArtifact(rel_path=review_rel)],
-                    question_num=q,
-                    image_paths=rel_images,
-                    cancel=cancel,
-                )
+                name = f"图评{batch_index}"
+                review_names.append(name)
+
+                async def review_batch(
+                    *,
+                    suffix_key=suffix,
+                    review_path=review_rel,
+                    images=tuple(rel_images),
+                ) -> str:
+                    return await _run_agent_leg(
+                        db, provider, registry, policy, run_id,
+                        role_id="figure_reviewer",
+                        node_key=f"S3:问{q}:图评R{round_num}{suffix_key}",
+                        instructions=(
+                            f"视觉评审问题{q}这一批实际图片，写 {review_path}；"
+                            f"顶层给出数值字段 总分，固定通过阈值为 {threshold:.1f}。"
+                            "必须依据随任务附带的图片本身，不得只读文件名推测。"
+                        ),
+                        expected=[ExpectedArtifact(rel_path=review_path)],
+                        question_num=q,
+                        image_paths=list(images),
+                        cancel=cancel,
+                    )
+
+                review_jobs.append(WaveJob(name, review_batch))
+
+            review_wave = await run_status_wave(
+                db,
+                run_id,
+                review_jobs,
+                cancel=cancel,
+                wave_key=f"S3:问{q}:图评R{round_num}",
+                serial=provider.protocol == "mock",
+            )
+            for name, review_rel in zip(review_names, review_rels, strict=True):
+                status = review_wave.results.get(name, "FAILED")
                 score = _review_score(policy.root / review_rel)
                 batch_scores.append(score)
-                batch_ok = batch_ok and review_status == "SUCCEEDED"
+                batch_ok = batch_ok and status == "SUCCEEDED"
             score = min(batch_scores) if batch_scores else 0.0
             history.append({
                 "question": q,
