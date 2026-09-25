@@ -109,7 +109,7 @@ def merge_channel_verdicts(
             for channel, vote in votes
             if str(vote.get("裁定", "")).strip() != "已消解"
         ]
-        chosen_channel, chosen = unresolved[0] if unresolved else votes[0]
+        chosen_channel, _ = unresolved[0] if unresolved else votes[0]
         decision = "未消解" if unresolved else "已消解"
         reasons = [
             f"{channel}:{str(vote.get('理由', '')).strip()}"
@@ -238,6 +238,15 @@ class IssueLedger:
             if x is None:
                 stats["未知id"] += 1
                 continue
+            # generation CAS must happen before the receipt enters durable
+            # history; stale receipts must not later look like accepted edits.
+            receipt_gen = r.get("generation")
+            try:
+                if receipt_gen is not None and int(receipt_gen) != x.generation:
+                    continue
+            except (TypeError, ValueError):
+                continue
+
             new_change = str(r.get("改动", ""))[:300]
             import uuid as _uuid
             receipt_id = str(r.get("receipt_id", "")) or str(_uuid.uuid4())
@@ -251,10 +260,6 @@ class IssueLedger:
                 "证据": str(r.get("证据", ""))[:200],
                 "receipt_id": receipt_id,
             })
-            # generation CAS for receipt（round16 P1-2）
-            receipt_gen = r.get("generation")
-            if receipt_gen is not None and int(receipt_gen) != x.generation:
-                continue  # stale receipt → 忽略
             x.尝试次数 += 1
             if x.状态 in (待改, 未消解):
                 x.状态 = 待复核
