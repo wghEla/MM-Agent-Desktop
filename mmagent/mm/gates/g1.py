@@ -4,12 +4,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from mmagent.mm.config.profiles import get_profile
 from mmagent.mm.contracts.s1_contracts import PrototypeResults, RouteScout
 
 
-def check_g1(workspace_root: Path) -> tuple[bool, list[str]]:
+def check_g1(workspace_root: Path, *, profile: str = "标准") -> tuple[bool, list[str]]:
     root = Path(workspace_root)
     issues: list[str] = []
+    cfg = get_profile(profile)
 
     scout_path = root / "交接" / "路线侦察.json"
     proto_path = root / "交接" / "原型结果.json"
@@ -29,10 +31,24 @@ def check_g1(workspace_root: Path) -> tuple[bool, list[str]]:
 
     scout_by_q = {q.编号: q for q in scout.问题清单}
     evidence = {(x.问题编号, x.路线名): x for x in prototypes.条目}
+
+    if not scout_by_q:
+        issues.append("路线侦察 问题清单 为空")
+
+    hardest = scout.最难问题编号
+    if not cfg.全问开锦标赛:
+        if hardest is None or hardest not in scout_by_q:
+            issues.append("快速档必须给出有效的 最难问题编号")
+
+    required_by_q: dict[int, list] = {}
     for qnum, q in scout_by_q.items():
-        required_routes = q.路线
-        if scout.最难问题编号 is not None and qnum != scout.最难问题编号:
-            required_routes = q.路线[:1]
+        required_count = cfg.每问路线数 if cfg.全问开锦标赛 or qnum == hardest else 1
+        if len(q.路线) < required_count:
+            issues.append(
+                f"问{qnum} 候选路线不足: {len(q.路线)} < {required_count}"
+            )
+        required_routes = q.路线[:required_count]
+        required_by_q[qnum] = required_routes
         for route in required_routes:
             ev = evidence.get((qnum, route.路线名))
             if ev is None:
@@ -58,11 +74,19 @@ def check_g1(workspace_root: Path) -> tuple[bool, list[str]]:
         tournament = item.get("锦标赛") or {}
         winner = tournament.get("优胜") if isinstance(tournament, dict) else None
         basis = tournament.get("依据") if isinstance(tournament, dict) else None
-        route_names = {x.路线名 for x in scout_by_q[qnum].路线}
-        if not winner or winner not in route_names:
-            issues.append(f"问{qnum} 锦标赛优胜路线缺失或不在候选中")
-        elif (qnum, winner) not in evidence:
-            issues.append(f"问{qnum} 优胜路线 {winner} 没有真实原型证据")
+        participants = tournament.get("参赛路线") if isinstance(tournament, dict) else None
+        required_names = {x.路线名 for x in required_by_q.get(qnum, [])}
+        if not isinstance(participants, list) or set(participants) != required_names:
+            issues.append(
+                f"问{qnum} 锦标赛参赛路线与真实执行原型不一致: "
+                f"plan={participants!r}, required={sorted(required_names)!r}"
+            )
+        if not winner or winner not in required_names:
+            issues.append(f"问{qnum} 锦标赛优胜路线缺失或未参加真实原型赛")
+        else:
+            ev = evidence.get((qnum, winner))
+            if ev is None or ev.rc != 0:
+                issues.append(f"问{qnum} 优胜路线 {winner} 没有成功的真实原型证据")
         if not basis:
             issues.append(f"问{qnum} 锦标赛缺裁决依据")
     if not plan.get("叙事主线"):
