@@ -24,6 +24,11 @@
     ],
     "resources": {
       "resources/runtime/": "runtime/"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
     }
   }
 }
