@@ -99,6 +99,18 @@ impl SidecarBridge {
     }
 
     fn shutdown(&self) {
+        // Normal desktop exit is not a crash: ask FastAPI/Uvicorn to exit so its
+        // lifespan can pause unfinished runs and close project DBs cleanly.
+        if let Ok(client) = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_millis(800))
+            .build()
+        {
+            let _ = client
+                .post(format!("{}/shutdown", self.endpoint))
+                .bearer_auth(&self.token)
+                .send();
+        }
+
         let Ok(mut guard) = self.child.lock() else {
             return;
         };
@@ -106,14 +118,15 @@ impl SidecarBridge {
             return;
         };
 
-        // FastAPI lifespan needs a graceful signal to turn unfinished runs into
-        // resumable PAUSED state. On Windows, Child::kill is forceful; until the
-        // packaged sidecar has a dedicated shutdown endpoint/signal handler, wait
-        // briefly for normal process exit, then kill as a last resort.
-        if matches!(child.try_wait(), Ok(Some(_))) {
-            *guard = None;
-            return;
+        for _ in 0..30 {
+            if matches!(child.try_wait(), Ok(Some(_))) {
+                *guard = None;
+                return;
+            }
+            thread::sleep(Duration::from_millis(100));
         }
+
+        // Last resort only: genuine hung sidecar.
         let _ = child.kill();
         let _ = child.wait();
         *guard = None;
