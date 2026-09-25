@@ -5,9 +5,16 @@ from pathlib import Path
 
 import pytest
 
+from mmagent.agent.errors import RateLimitError
 from mmagent.api.projects import create_project
+from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.orchestration.wave import WaveJob, current_wave_concurrency, run_status_wave
+from mmagent.providers.mock import MockProvider, MockScript, MockTurn
 from mmagent.state import events, repositories
+from mmagent.tools.filesystem import FsReadTool, FsWriteTool
+from mmagent.tools.registry import ToolRegistry
+from mmagent.workspace.artifacts import ExpectedArtifact
+from mmagent.workspace.path_policy import PathPolicy
 
 
 def _run_ctx(tmp_path: Path):
@@ -144,5 +151,72 @@ async def test_failed_leg_retries_once_but_cancelled_does_not(tmp_path: Path) ->
         assert outcome.results["failed"] == "SUCCEEDED"
         assert outcome.results["cancelled"] == "CANCELLED"
         assert calls == {"failed": 2, "cancelled": 1}
+    finally:
+        handle.workspace.db.close()
+
+
+
+@pytest.mark.asyncio
+async def test_real_role_leg_429_requeues_reduces_and_retries_same_node(
+    tmp_path: Path,
+) -> None:
+    handle, run_id = _run_ctx(tmp_path)
+    provider = MockProvider(MockScript([
+        MockTurn(tool_calls=[(
+            "write",
+            "fs.write",
+            {"path": "交接/读题体检.md", "content": "429 retry recovered"},
+        )]),
+        MockTurn(text="完成"),
+    ]))
+    provider.queue_error(RateLimitError("429", retry_after_s=0))
+
+    registry = ToolRegistry()
+    registry.register(FsReadTool())
+    registry.register(FsWriteTool())
+    policy = PathPolicy(handle.workspace.root)
+
+    async def leg() -> str:
+        return await run_role_leg(
+            handle.workspace.db,
+            provider,
+            registry,
+            policy,
+            run_id,
+            stage_key="S0",
+            role_id="reader",
+            node_key="S0:429-wave",
+            instructions="写 交接/读题体检.md。",
+            expected_artifacts=[
+                ExpectedArtifact(rel_path="交接/读题体检.md", kind="text")
+            ],
+        )
+
+    try:
+        outcome = await run_status_wave(
+            handle.workspace.db,
+            run_id,
+            [WaveJob("reader", leg)],
+            wave_key="real-429",
+        )
+
+        assert outcome.results == {"reader": "SUCCEEDED"}
+        assert outcome.attempts["reader"] == 2
+        assert outcome.end_concurrency == 3
+        assert (policy.root / "交接" / "读题体检.md").read_text(
+            encoding="utf-8"
+        ) == "429 retry recovered"
+
+        tasks = repositories.list_tasks(handle.workspace.db, run_id)
+        task = next(x for x in tasks if x.node_key == "S0:429-wave")
+        assert task.attempt == 2
+        assert task.status.value == "SUCCEEDED"
+
+        rate_events = events.query_events(
+            handle.workspace.db,
+            run_id=run_id,
+            type="task.rate_limited",
+        )
+        assert len(rate_events) == 1
     finally:
         handle.workspace.db.close()
