@@ -6,6 +6,10 @@ import pytest
 from pydantic import ValidationError
 
 from mmagent.agent.errors import ArtifactInvalid
+from mmagent.mm.contracts.final_contracts import (
+    PageReviewArtifact,
+    PublicationReviewVerdict,
+)
 from mmagent.mm.contracts.s3_contracts import FigureReview
 from mmagent.mm.contracts.s4_contracts import (
     AbstractRestatementVerdict,
@@ -160,3 +164,80 @@ def test_s5_review_artifact_keeps_supported_envelope_aliases() -> None:
 def test_s5_review_artifact_rejects_consumer_ambiguous_payloads(payload) -> None:
     with pytest.raises(ValidationError):
         ReviewArtifact.model_validate(payload)
+
+
+
+def test_page_review_contract_accepts_current_empty_and_issue_envelopes() -> None:
+    empty = PageReviewArtifact.model_validate({"页问题": [], "美观分": 9.0})
+    assert empty.root.美观分 == 9.0
+
+    with_issue = PageReviewArtifact.model_validate({
+        "页问题": [{
+            "页": 4,
+            "目标": "图",
+            "严重度": 2,
+            "问题": "问题1 图例过小",
+            "修改指令": "放大图例",
+        }]
+    })
+    assert with_issue.root.页问题[0].目标 == "图"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"美观分": 9.0},
+        {
+            "页问题": [{
+                "页": 1,
+                "目标": "表格",
+                "严重度": 2,
+                "问题": "拥挤",
+                "修改指令": "调整",
+            }]
+        },
+        {
+            "页问题": [{
+                "页": 0,
+                "目标": "文",
+                "严重度": 1,
+                "问题": "拥挤",
+                "修改指令": "调整",
+            }]
+        },
+        {
+            "页问题": [{
+                "页": 1,
+                "目标": "文",
+                "严重度": 1,
+                "问题": "拥挤",
+                "修改指令": "   ",
+            }]
+        },
+    ],
+)
+def test_page_review_contract_rejects_routing_ambiguous_payloads(payload) -> None:
+    with pytest.raises(ValidationError):
+        PageReviewArtifact.model_validate(payload)
+
+
+def test_publication_review_contract_matches_current_g5_carrier() -> None:
+    verdict = PublicationReviewVerdict.model_validate({
+        "通过": True,
+        "依据版本": "当前PDF",
+        "页码": [1],
+    })
+    assert verdict.通过 is True
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"依据版本": "当前PDF"},
+        {"通过": True},
+        {"通过": True, "依据版本": "   "},
+    ],
+)
+def test_publication_review_contract_rejects_unverifiable_verdict(payload) -> None:
+    with pytest.raises(ValidationError):
+        PublicationReviewVerdict.model_validate(payload)
