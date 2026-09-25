@@ -4,10 +4,10 @@ from __future__ import annotations
 import argparse
 import os
 import secrets
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from collections.abc import Callable
 from typing import Annotated, Any
 
 import uvicorn
