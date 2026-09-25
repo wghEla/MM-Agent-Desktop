@@ -7,6 +7,7 @@ import secrets
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from collections.abc import Callable
 from typing import Annotated, Any
 
 import uvicorn
@@ -84,6 +85,7 @@ class CancelRequest(BaseModel):
 class SidecarState:
     token: str
     credentials: CredentialStore
+    shutdown_callback: Callable[[], None] | None = None
     projects: dict[str, ProjectHandle] = field(default_factory=dict)
     runs: RunController = field(default_factory=RunController)
 
@@ -131,11 +133,16 @@ def create_app(
     *,
     token: str,
     credentials: CredentialStore | None = None,
+    shutdown_callback: Callable[[], None] | None = None,
 ) -> FastAPI:
     if len(token) < 24:
         raise ValueError("sidecar token must contain at least 24 characters")
 
-    state = SidecarState(token=token, credentials=credentials or _default_credentials())
+    state = SidecarState(
+        token=token,
+        credentials=credentials or _default_credentials(),
+        shutdown_callback=shutdown_callback,
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -182,6 +189,13 @@ def create_app(
     @app.get("/health", dependencies=auth)
     async def health() -> dict[str, Any]:
         return {"ok": True, "service": "mmagent-sidecar", "pid": os.getpid()}
+
+    @app.post("/shutdown", dependencies=auth)
+    async def shutdown() -> dict[str, Any]:
+        callback = state.shutdown_callback
+        if callback is not None:
+            callback()
+        return {"ok": True, "will_exit": callback is not None}
 
     @app.post("/projects", dependencies=auth)
     async def project_create(req: ProjectCreateRequest) -> dict[str, Any]:
@@ -349,14 +363,21 @@ def main() -> None:
     if len(token) < 24:
         raise SystemExit(f"{_TOKEN_ENV} missing or too short")
 
-    app = create_app(token=token)
-    uvicorn.run(
+    server: uvicorn.Server
+
+    def request_shutdown() -> None:
+        server.should_exit = True
+
+    app = create_app(token=token, shutdown_callback=request_shutdown)
+    config = uvicorn.Config(
         app,
         host="127.0.0.1",
         port=args.port,
         access_log=False,
         log_level="warning",
     )
+    server = uvicorn.Server(config)
+    server.run()
 
 
 if __name__ == "__main__":
