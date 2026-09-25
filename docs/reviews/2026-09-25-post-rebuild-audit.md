@@ -14,7 +14,7 @@ The rebuild now contains an authoritative S0→S6 engine, G0→G5 gates, executa
 stages, a desktop control plane, crash-safe durable state, and a self-contained Windows
 distribution path.
 
-CI #174 is the first end-to-end release proof:
+CI #174 is the first end-to-end release proof. Follow-up source hardening is additionally green in CI #195 at the Python layer (Linux 268 passed / 31 skipped; Windows 298 passed / 1 skipped; Ruff clean):
 
 - Linux: **262 passed / 31 skipped**, Ruff clean.
 - Windows: **292 passed / 1 skipped**, Ruff clean.
@@ -75,9 +75,15 @@ and requires:
 - explicit retry of the interrupted node;
 - final S0→S6 completion and PDF delivery.
 
-### 3. S5 review-loop hardening
+### 3. Review-loop hardening
 
-Current S5 has:
+Current S4/S5 review loops now have:
+
+- a shared persistent best-retention implementation; 
+- S4 chapter review compares the prior visible snapshot to the current paper and rolls back a worse version;
+- adaptive bounded waves for S4 chapter/blind review, abstract candidates and S5 independent review lanes;
+
+Current S5 additionally has:
 
 - post-rework durable round checkpoints;
 - Issue Ledger generation-CAS verdicts and receipt idempotency;
@@ -119,29 +125,20 @@ inventing an inactive threshold exit.
 
 ## Remaining P1 fidelity / release-confidence work
 
-### 1. Parallel wave scheduling and adaptive 429 concurrency
+### 1. Remaining concurrency / timeout parity
 
-This is the clearest remaining upstream behavioral gap.
-
-Pinned upstream behavior:
+The adaptive wave mechanism itself is now implemented and mechanically tested:
 
 - default wave concurrency = 4;
-- queue fills available slots;
-- a wave that observes upstream 429 reduces the next-wave concurrency by 1;
-- floor = 2;
-- failed legs get one retry;
-- timeout/dead-process semantics remain distinct from 429.
+- provider 429 returns the task to durable QUEUED state;
+- the next retry/wave reduces concurrency by 1 down to floor 2;
+- failed/rate-limited jobs get one retry;
+- concurrency reduction is persisted as events and survives resume;
+- S1 prototype authoring, S2 escalation variants, S3 plot/review batches, S4 review/abstract waves and S5 review lanes use it.
 
-The rebuild has typed `RateLimitError`, durable requeue, retryable state and the
-4/2 constants, but most role legs still execute sequentially. A bounded async wave
-scheduler is still needed before this item can be MATCH.
+Two important gaps remain: S2 questions within one dependency layer are still executed as whole-question pipelines sequentially, and direct non-wave single legs do not yet all receive the same automatic retry wrapper. Full upstream timeout/dead-process recycle semantics are also still PARTIAL.
 
-### 2. S4 chapter-review best-retention
-
-S5 now has persistent best-version rollback. S4 chapter review still lacks the pinned
-relative-review + snapshot + 0.5-noise rollback semantics.
-
-### 3. Failure injection
+### 2. Failure injection
 
 Already covered: 429 retry, Python tool timeout/tree kill, cancellation, orphan recovery,
 missing compiler executable, corrupt PDF, stale values and several state/adversarial cases.
@@ -153,14 +150,14 @@ Still worth closing:
 - provider auth failure/network timeout;
 - additional corrupt-carrier cases.
 
-### 4. Producer/consumer contract audit
+### 3. Producer/consumer contract audit
 
 Artifact/schema enforcement exists, but the entire stage graph has not yet been
 mechanically checked for:
 
 `consumer required fields ⊆ producer guaranteed fields`.
 
-### 5. Real-provider smoke
+### 4. Real-provider smoke
 
 This remains deliberately **unverified**. Offline protocol tests and mock-provider E2E
 are not substitutes for one real end-to-end configured endpoint. No claim of
@@ -174,9 +171,10 @@ runtime skeleton. It is suitable for continued beta/hardening work.
 
 It should remain a draft PR until:
 
-1. the remaining high-value fidelity deviations are closed or explicitly accepted;
-2. installed scientific-runtime relocation smoke is green on the current head;
+1. the remaining high-value fidelity deviations (especially S2 same-layer whole-question parallelism and timeout/recycle parity) are closed or explicitly accepted;
+2. installed scientific-runtime relocation smoke is green on the final head;
 3. failure-injection coverage is considered sufficient for release;
-4. real-provider smoke status is explicit and truthful.
+4. producer/consumer contracts are mechanically audited or explicitly accepted;
+5. real-provider smoke status is explicit and truthful.
 
 The historical `v1.0.0` tag must remain untouched.

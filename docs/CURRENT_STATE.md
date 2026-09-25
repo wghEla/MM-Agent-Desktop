@@ -23,8 +23,8 @@ Historical `v1.0.0` is preserved unchanged. Development continues on
 - S1 route scout + real prototype execution + evidence-based tournament plan
 - S2 DAG layers + solver + frozen hashed red-team input package + independent recomputation + compare/arbitration + bounded rework/escalation/degraded-release carriers
 - S3 plot runtime → figure review loop + G3
-- S4 narrative/draft/chapter-review/blind-reader/integrator/abstract swarm + G4
-- bounded S5 review arena with page-image judge input, Issue Ledger, channel-aware R45 abstention merge, targeted calc/figure/text repair, persistent best-version snapshots/0.5-noise-band rollback, and resumable round-complete snapshots
+- S4 narrative/draft/chapter-review/blind-reader/integrator/abstract swarm + G4, with persistent paired-review best-version rollback shared with S5
+- bounded S5 review arena with page-image judge input, Issue Ledger, channel-aware R45 abstention merge, targeted calc/figure/text repair, persistent best-version snapshots/0.5-noise-band rollback, adaptive four-lane review waves, and resumable round-complete snapshots
 - S5a abstract restatement gate
 - S5b page-image beautification routing + page guard
 - G5 publication gate + stale-value checks + final defect verification
@@ -34,6 +34,7 @@ Historical `v1.0.0` is preserved unchanged. Development continues on
 - interrupted-task fail-closed recovery that also closes orphaned RUNNING invocations
 - cooperative pause/resume/cancel semantics
 - durable MAX_LEGS / active-time MAX_HOURS enforcement at executable-leg and pipeline boundaries
+- durable adaptive wave scheduler: default concurrency 4, 429-triggered decrement to floor 2, one retry, and persisted concurrency state across resume; wired into S1 prototype authoring, S2 escalation variants, S3 plot/review batches, S4 chapter/blind + abstract swarm, and S5 independent review lanes
 - Desktop-facing `RunController`
 - persisted run history and restart recovery controls
 - provider model/reasoning/max-output/timeout binding
@@ -57,7 +58,7 @@ Historical `v1.0.0` is preserved unchanged. Development continues on
 - `tests/unit/test_budget.py` verifies active runtime excludes pauses and that leg/hour ceilings fail closed.
 - S5 resume uses only post-rework `checkpoint.s5_round_complete` snapshots; review-only observations are not treated as durable resume boundaries.
 - sidecar tests cover bearer authentication, secret boundaries, provider profiles, graceful shutdown and persisted-run recovery controls.
-- CI #174 is fully green: Linux 262 passed / 31 skipped; Windows 292 passed / 1 skipped; Ruff clean on both.
+- CI #195 validates the current source-level hardening: Linux 268 passed / 31 skipped; Windows 298 passed / 1 skipped; Ruff clean on both. CI #174 remains the last completed installed-release proof.
 - CI #174 built the managed scientific runtime and PyInstaller sidecar, produced an NSIS installer, silently installed it, verified the installed `runtime/python.exe`, removed developer-Python PATH/override state, and launched the installed app through `--startup-smoke` successfully.
 - the retained Windows installer artifact is `mmagent-desktop-windows-nsis`; the Actions ZIP is 153,590,163 bytes (~153.6 MB decimal).
 - Desktop source can create/open projects, import files, configure/test providers, start/pause/resume/cancel runs, reopen persisted runs, inspect dashboards and preview artifacts.
@@ -68,10 +69,10 @@ The repository must **not** be described as final v1.0 product-complete yet.
 
 Remaining high-priority work:
 
-1. Re-audit and implement the remaining pinned-upstream fidelity gaps, especially bounded parallel wave scheduling and adaptive 429 concurrency reduction (default 4 → floor 2).
-2. Extend best-retention/rollback from S5 to the S4 chapter-review loop; S5 now has persistent pre-review snapshots and mechanically tested rollback.
-3. Finish failure injection around XeLaTeX timeout/failure, MATLAB timeout/failure, provider network/auth failures and additional corrupted carriers.
-4. Complete a mechanical producer/consumer contract audit across every stage boundary.
+1. Finish the remaining concurrency parity: S2 questions inside the same dependency layer still execute as whole-question pipelines sequentially, and direct non-wave single legs do not yet inherit the automatic one-retry 429 wrapper. Full timeout/dead-process recycle semantics also remain PARTIAL.
+2. Finish failure injection around XeLaTeX timeout/failure, MATLAB timeout/failure, provider network/auth failures and additional corrupted carriers.
+3. Complete a mechanical producer/consumer contract audit across every stage boundary.
+4. Tighten any broader-than-necessary write scopes that could become shared-carrier risks as more lanes are parallelized.
 5. Real-provider smoke testing remains unverified until a credential is supplied through the product UI.
 
 ## Evidence discipline
@@ -79,6 +80,7 @@ Remaining high-priority work:
 - Historical `v1.0.0` and its “197 passed” result remain historical evidence only.
 - Source presence is not sufficient for MATCH: CI/tests/mechanical checks must support fidelity claims.
 - Synthetic mock-provider E2E proves orchestration/tool/product wiring, not real-provider compatibility or model quality.
+- MockProvider-backed wave tests are intentionally serialized because the mock is one linear scripted-turn cursor; real HTTP providers use the bounded concurrent scheduler. Scheduler concurrency/429 behavior is separately tested with real async jobs and a RateLimitError→QUEUED→retry AgentLoop path.
 - CI #174 proves installer bundling and installed-app startup without developer Python; model-quality and real-provider behavior remain separate claims.
 - Real-provider compatibility must remain explicitly unverified until exercised with a real configured provider.
 

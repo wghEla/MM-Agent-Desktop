@@ -16,7 +16,7 @@
 |---|---|---|---|
 | A1 | S0 problem digestion / contract / prediction / trace matrix | PARTIAL | `s0_s1.py`, resumable role legs, `test_s0_s1.py`; exact upstream seed/health-check decomposition not fully audited |
 | A2 | G0 contract gate | MATCH | `gates/g0.py`, `test_g0_gate.py` |
-| A3 | S1 strategic tournament with real prototypes | PARTIAL | `s1_tournament.py`, real prototype execution, `test_s1_tournament.py`; upstream wave/parallel tournament semantics still being audited |
+| A3 | S1 strategic tournament with real prototypes | PARTIAL | `s1_tournament.py`, adaptive bounded prototype-authoring wave + real prototype execution + `test_s1_tournament.py`; exact upstream route scoring/selection parity remains under audit |
 | A4 | G1 route/plan/prototype evidence gate | MATCH | G1 profile semantics + `test_g1_profile_semantics.py` |
 | A5 | S2 dependency DAG layered execution | PARTIAL | DAG + topological layers implemented; questions inside a layer remain sequential |
 | A6 | Red-team independent recomputation | PARTIAL | hard read isolation, independent `复算.py`, frozen hashed input packages and tests; exact upstream recompute protocol still under audit |
@@ -24,13 +24,13 @@
 | A8 | Arbitration / interpretation responsibility assignment | PARTIAL | arbitration legs exist; depth and archive parity still under audit |
 | A9 | Per-question G2 | PARTIAL | `gates/g2.py`, red-team tests; complete upstream evidence semantics not yet declared MATCH |
 | A10 | Normal repair bounded to ≤2 | MATCH | bounded rework constant and S2 control flow |
-| A11 | Escalation swarm (3 variants + adjudication + recheck) | PARTIAL | executable 3-variant escalation path exists; full evidence parity pending |
+| A11 | Escalation swarm (3 variants + adjudication + recheck) | PARTIAL | executable 3-variant escalation path exists and variant authoring uses the adaptive wave scheduler; full evidence parity pending |
 | A12 | Degraded release with unresolved evidence | PARTIAL | `降级放行.json` carrier and G5 integration exist; full delivery-report parity pending |
-| A13 | S3 figure evidence + two-round figure review | MATCH | `s3_figures.py`, plot runtime, `test_s3_figures.py` |
+| A13 | S3 figure evidence + two-round figure review | MATCH | `s3_figures.py`, adaptive plotter/reviewer waves, plot runtime, `test_s3_figures.py` |
 | A14 | G3 mechanical figure gate | MATCH | 16–22 figures, schematic/diversity/caption checks + `test_g3_gate.py` |
-| A15 | S4 narrative → paper → chapter/blind review → integrate → abstract swarm | PARTIAL | full source path exists with focused tests; exact upstream editorial-guard ordering/parity still under audit |
+| A15 | S4 narrative → paper → chapter/blind review → integrate → abstract swarm | PARTIAL | full source path exists; chapter/blind and abstract candidates use bounded waves, and chapter review has persistent best-version rollback; exact upstream editorial-guard ordering/parity remains under audit |
 | A16 | G4 paper gate | PARTIAL | compile/page/audit/src/trace checks exist + `test_g4_gate.py`; not all upstream mechanical clauses proven |
-| A17 | S5 18-step review-round semantics | PARTIAL | review/rework/ledger/checkpoint loop, R45 channel-aware verdict merge and persistent best-version rollback exist; remaining gap is mainly upstream wave/timeout scheduling and some repair-lane details |
+| A17 | S5 18-step review-round semantics | PARTIAL | review/rework/ledger/checkpoint loop, R45 merge, persistent rollback and four-lane adaptive review waves exist; remaining gap is mainly full timeout/dead-process recycle parity and some repair-lane details |
 | A18 | Reviewer A/B + defect hunter + judge simulator + mechanical lane | MATCH | four independent role legs, page-image judge input, mechanical lane; pipeline tests |
 | A19 | S5a abstract finalization / S5b beautification | PARTIAL | both implemented and tested; upstream cosmetic-loop parity still under audit |
 | A20 | G5 publication gate | PARTIAL | final compile, G4 reuse, ledger convergence, stale-value/page guards, defect review exist; all R49–R52 paths not yet proven |
@@ -52,7 +52,7 @@
 | B10 | Page Guard | MATCH | +max(10%,2 pages) and sudden-drop guard implemented/tested |
 | B11 | Integrator/frozen-fact guard | PARTIAL | editorial/frozen-input protections exist, but complete per-file fingerprint parity not proven |
 | B12 | Version-change manifest / stale-value guard | PARTIAL | stale-value scan exists and is wired into G5; full calc→figure→text propagation proof pending |
-| B13 | Best-retention / rollback package / 0.5 noise band | PARTIAL | S5 now persists pre-review TeX snapshots, applies relative verdict first and 0.5 score noise band fallback, restores prior files and reopens rolled-back receipts; full S4 chapter-review parity remains |
+| B13 | Best-retention / rollback package / 0.5 noise band | MATCH | shared retention runtime persists pre-review TeX snapshots for S4/S5; relative verdict wins, 0.5 score drop is the fallback, prior files are restored, and S4/S5 integration tests prove rollback behavior |
 | B14 | Cascade recomputation / downstream invalidation | PARTIAL | DAG primitives exist; full durable invalidation-and-rerun behavior not yet proven |
 
 ## C. Roles and legs
@@ -74,7 +74,7 @@
 | D4 | Review target / plateau | 8.6 / 0.15 | MATCH | constants are retained, and the pinned 5f507e0b driver never reads them; current upstream S5 exits on blocking-ledger convergence / round cap / budget, with score diagnostic only |
 | D5 | Beauty threshold | 8.5 | PARTIAL | value present; full upstream use in convergence path not fully proven |
 | D6 | Change guard / escalated guard | 0.45 / 0.70 | MATCH | thresholds + guard implementation/tests |
-| D7 | Default concurrency / 429 floor | 4 / 2 | NOT IMPLEMENTED | constants exist, but dynamic wave concurrency reduction is not implemented |
+| D7 | Default concurrency / 429 floor | 4 / 2 | MATCH | durable adaptive wave scheduler starts at 4, persists 429-triggered decrements, floors at 2, retries failed/rate-limited jobs once, and has focused + real AgentLoop 429 tests |
 | D8 | Deep profile | routes3 / abstract5 / review4 / beauty2 / 600 / 40h | PARTIAL | profile values + durable leg/hour budget enforcement match; full all-role high-effort semantics remain under audit |
 | D9 | Standard profile | abstract3 / review3 / role tiers / 30h | PARTIAL | values/routing + durable active-time enforcement exist; remaining gap is upstream behavioral parity rather than missing budget guard |
 | D10 | Quick profile | hard-question tournament / routes2 / review2 / beauty1 / 20h | PARTIAL | values exist; exact hard-question-only tournament behavior remains under audit |
@@ -88,7 +88,7 @@
 | E2 | Node/stage/S5-round resume; active residue fail-closed | MATCH | real mid-S1 orphan invocation recovery E2E proves fail-closed closure, sealed-node reuse, retry and completion to final PDF; S5 round-complete snapshots are separately tested |
 | E3 | Pause / resume / cancel + process-tree cleanup | PARTIAL | controller + cancellation + Windows process controls exist; installed-app failure proof pending |
 | E4 | Layered timeout / recycle before reassignment | PARTIAL | tool/runtime cleanup exists; full wave timeout semantics incomplete |
-| E5 | 429 handling and concurrency reduction | PARTIAL | typed retryable 429 behavior exists; adaptive concurrency reduction to floor 2 does not |
+| E5 | 429 handling and concurrency reduction | PARTIAL | typed `RateLimitError` → durable QUEUED is wired through adaptive 4→2 waves with one retry and an end-to-end AgentLoop test; remaining direct single-leg paths still need the same automatic retry wrapper |
 | E6 | MAX_LEGS / MAX_HOURS emergency budget guard | MATCH | durable task count + accumulated RUNNING intervals are checked before executable role legs and at pipeline boundaries; pause time is excluded; unit tests cover both ceilings |
 | E7 | JSON repair loop | PARTIAL | tool-call malformed JSON recovery exists; full artifact-schema rewrite loop parity incomplete |
 | E8 | Compile repair loop | PARTIAL | compile failure is fail-closed and repair paths exist in later stages; bounded general compile-repair protocol not fully matched |
@@ -128,6 +128,6 @@ Do **not** call the rebuild product-complete until all of the following are true
 1. current-head Python Linux + Windows CI is green;
 2. Windows release build + managed runtime + NSIS install/startup smoke is green;
 3. hard-crash/restart E2E proves real-stage resume behavior;
-4. remaining fidelity deviations (notably wave/adaptive concurrency and S4 rollback) are either closed or explicitly accepted;
+4. remaining fidelity deviations (notably S2 same-layer whole-question parallelism and full timeout/dead-process recycle parity) are either closed or explicitly accepted;
 5. failure-injection matrix is closed or explicitly documented as accepted deviation;
 6. real-provider smoke status is stated truthfully.
