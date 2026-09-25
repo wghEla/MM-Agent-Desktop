@@ -16,6 +16,7 @@ from mmagent.mm.ledger.issue_ledger import (
     merge_channel_verdicts,
 )
 from mmagent.mm.pipeline.compile_runtime import run_compile
+from mmagent.mm.contracts.s5_contracts import ReviewArtifact
 from mmagent.mm.retention import (
     ensure_paper_snapshot as _ensure_shared_snapshot,
 )
@@ -249,7 +250,7 @@ async def _run_review_legs(
                 role_id=role_key,
                 node_key=node_key,
                 instructions=prompt,
-                expected_artifacts=[ExpectedArtifact(rel_path=expected_artifact)],
+                expected_artifacts=[ExpectedArtifact(rel_path=expected_artifact, schema_model=ReviewArtifact)],
                 image_paths=list(images),
                 cancel=cancel,
             )
