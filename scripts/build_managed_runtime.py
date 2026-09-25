@@ -92,7 +92,7 @@ def build_runtime() -> Path:
             check=True,
         )
         resolved = subprocess.check_output(
-            [uv, "python", "find", "3.11", "--managed-python"],
+            [uv, "python", "find", "3.11"],
             cwd=ROOT,
             env=env,
             text=True,
