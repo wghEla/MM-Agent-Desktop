@@ -8,18 +8,15 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from mmagent.agent.loop import AgentLoop, AgentTask
 from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
-from mmagent.mm.roles.prompts import get_system_prompt
-from mmagent.mm.roles.registry import get_role
+from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.base import BaseProvider
-from mmagent.state import events, repositories
+from mmagent.state import events
 from mmagent.state.db import Database
 from mmagent.tools.latex import LatexTool, render_pdf_pages
 from mmagent.tools.registry import ToolRegistry
 from mmagent.workspace.artifacts import ExpectedArtifact
 from mmagent.workspace.path_policy import PathPolicy
-from mmagent.workspace.permissions import PermissionChecker
 
 CompileFn = Callable[[Path], dict[str, Any]]
 RenderFn = Callable[[Path], list[Path]]
@@ -34,23 +31,20 @@ def _default_compile(root: Path) -> dict[str, Any]:
 
 async def _leg(
     db, provider, registry, policy, run_id, *, role_id, node, instructions,
-    expected, image_paths: list[str] | None = None, cancel=None,
+    expected, question_num: int | None = None,
+    image_paths: list[str] | None = None, cancel=None,
 ):
-    role = get_role(role_id)
-    loop = AgentLoop(
-        db, provider, registry, PermissionChecker(role.permissions(), policy), policy, cancel=cancel
+    return await run_role_leg(
+        db, provider, registry, policy, run_id,
+        stage_key="S6",
+        role_id=role_id,
+        node_key=node,
+        instructions=instructions,
+        expected_artifacts=expected,
+        question_num=question_num,
+        image_paths=image_paths,
+        cancel=cancel,
     )
-    task = repositories.create_task(
-        db, run_id=run_id, stage_key="S6", node_key=node, role_id=role_id
-    )
-    result = await loop.run(AgentTask(
-        task_id=task.id, node_key=node, role_id=role_id,
-        system_prompt=get_system_prompt(role_id), instructions=instructions,
-        model="mock", reasoning=role.reasoning, expected_artifacts=expected,
-        image_paths=list(image_paths or []),
-    ))
-    return result.status.value
-
 
 def _final_issues(path: Path) -> list[dict]:
     try:
@@ -168,28 +162,22 @@ async def run_s6(
         groups.setdefault(int(match.group(1)), []).append(item)
 
     for q, group in groups.items():
-        role = get_role("plotter")
-        loop = AgentLoop(
-            db, provider, registry,
-            PermissionChecker(role.permissions(question=str(q)), policy), policy, cancel=cancel,
-        )
         node = f"S6:终审改图问{q}"
-        task = repositories.create_task(
-            db, run_id=run_id, stage_key="S6", node_key=node, role_id="plotter"
-        )
         receipt = f"审稿/回执_S6_图问{q}.json"
-        outcome = await loop.run(AgentTask(
-            task_id=task.id, node_key=node, role_id="plotter",
-            system_prompt=get_system_prompt("plotter"),
+        status = await _leg(
+            db, provider, registry, policy, run_id,
+            role_id="plotter",
+            node=node,
+            question_num=q,
             instructions=(
                 "只修下面终审点名的图问题，不改冻结结果："
                 + json.dumps(group, ensure_ascii=False)
                 + f"。写 {receipt}。"
             ),
-            model="mock", reasoning=role.reasoning,
-            expected_artifacts=[ExpectedArtifact(rel_path=receipt)],
-        ))
-        if outcome.status.value != "SUCCEEDED":
+            expected=[ExpectedArtifact(rel_path=receipt)],
+            cancel=cancel,
+        )
+        if status != "SUCCEEDED":
             return {"pass": False, "issues": [f"S6 问{q}终审改图失败"]}
         execute_issues = await run_question_plot_scripts(
             registry, policy, q, cancel=cancel
