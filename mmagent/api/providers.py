@@ -15,7 +15,6 @@ from mmagent.runtime.credentials import CredentialStore
 from mmagent.state import repositories
 from mmagent.state.db import Database
 
-
 SUPPORTED_PROTOCOLS = frozenset(
     {
         "openai_chat",
