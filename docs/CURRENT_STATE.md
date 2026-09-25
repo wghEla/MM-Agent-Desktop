@@ -33,6 +33,9 @@ Historical `v1.0.0` is preserved unchanged. Development continues on
 - node-level reuse/retry for deterministic role legs
 - interrupted-task fail-closed recovery that also closes orphaned RUNNING invocations
 - cooperative pause/resume/cancel semantics
+- cancellation-aware paper compilation: S4–S6 compile calls run off the sidecar event loop and pass the run CancellationToken into the managed XeLaTeX Job Object path
+- shared Windows ProcessManager in the Desktop sidecar for managed Python/XeLaTeX lifecycle; MATLAB helper uses the same process-tree backend; external LaTeX/MATLAB environments are allowlisted so provider/cloud secrets are not inherited
+- per-leg adaptive-wave deadlines measured from concurrency-slot acquisition, with awaited timeout cancellation before retry and peer cleanup on programming/runtime exceptions (R60 no-double-writer invariant)
 - durable MAX_LEGS / active-time MAX_HOURS enforcement at executable-leg and pipeline boundaries
 - durable adaptive wave scheduler: default concurrency 4, 429-triggered decrement to floor 2, one retry, and persisted concurrency state across resume; wired into S1 prototype authoring, S2 escalation variants, S3 plot/review batches, S4 chapter/blind + abstract swarm, and S5 independent review lanes; direct standalone role legs are wrapped as one-job waves, while an outer-wave context suppresses nested retry
 - Desktop-facing `RunController`
@@ -47,7 +50,8 @@ Historical `v1.0.0` is preserved unchanged. Development continues on
 - React project/import, Provider Settings, Run Dashboard, run history/control and artifact/image/PDF viewer
 - synthetic full-chain test using real S0→S6 stage modules, real Python tool execution and final delivery PDF carrier
 - real mid-S1 crash/restart E2E: orphan active invocation → fail-closed recovery → sealed-node reuse → retry → final delivery PDF
-- structured failure handling/tests for 429, Python tool timeout, missing compiler executable and corrupt PDF carriers
+- structured failure handling/tests for 429, Python/XeLaTeX/MATLAB timeout paths, managed-process recycle, missing compiler executable, external-tool environment secret boundaries and corrupt PDF carriers
+- mechanical cross-stage carrier ownership registry plus consumer-facing Pydantic success-gate schemas for S3 figure reviews, S4 requirement/review/abstract carriers, S5 review envelopes, S5b/S6 page reviews and G5 publication verdicts
 - GitHub Actions CI covering Python on Linux/Windows and Windows desktop/bundled-sidecar build
 - NSIS release installer production, silent-install verification, installed-app startup smoke and artifact retention
 
@@ -58,7 +62,9 @@ Historical `v1.0.0` is preserved unchanged. Development continues on
 - `tests/unit/test_budget.py` verifies active runtime excludes pauses and that leg/hour ceilings fail closed.
 - S5 resume uses only post-rework `checkpoint.s5_round_complete` snapshots; review-only observations are not treated as durable resume boundaries.
 - sidecar tests cover bearer authentication, secret boundaries, provider profiles, graceful shutdown and persisted-run recovery controls.
-- CI #208 validates the current source-level hardening: Linux 272 passed / 31 skipped; Windows 302 passed / 1 skipped; Ruff clean on both. CI #174 remains the last completed installed-release proof until the final documentation head completes its release job.
+- The latest **executed** source jobs before the current GitHub Actions provisioning failure are CI #227: Linux 287 passed / 31 skipped and Windows 317 passed / 1 skipped, with Ruff clean on both. These jobs predate the newest wave-timeout and field-schema commits, so they are not evidence for the current HEAD.
+- CI #231 was triggered on a later head and failed twice before runner startup: all three jobs returned `steps=null` and `logs_url=null` within seconds. That is an external Actions/runner-provisioning failure, not a code-test result. Current-head claims therefore remain conservative until runners execute again.
+- CI #174 remains the last completed installed-release proof.
 - CI #174 built the managed scientific runtime and PyInstaller sidecar, produced an NSIS installer, silently installed it, verified the installed `runtime/python.exe`, removed developer-Python PATH/override state, and launched the installed app through `--startup-smoke` successfully.
 - the retained Windows installer artifact is `mmagent-desktop-windows-nsis`; the Actions ZIP is 153,590,163 bytes (~153.6 MB decimal).
 - Desktop source can create/open projects, import files, configure/test providers, start/pause/resume/cancel runs, reopen persisted runs, inspect dashboards and preview artifacts.
@@ -69,16 +75,16 @@ The repository must **not** be described as final v1.0 product-complete yet.
 
 Remaining high-priority work:
 
-1. Close full timeout/dead-process recycle parity, especially whole-process-tree timeout handling for external XeLaTeX/MATLAB tools, and continue the narrower repair-lane fidelity audit.
-2. Finish failure injection around XeLaTeX timeout/failure, MATLAB timeout/failure, provider network/auth failures and additional corrupted carriers.
-3. Complete a mechanical producer/consumer contract audit across every stage boundary.
-4. Tighten any broader-than-necessary write scopes that could become shared-carrier risks as more lanes are parallelized.
+1. Recover **current-head executable evidence** once GitHub Actions runners are available again: Linux/Windows Python gates plus NSIS install/startup smoke. The newest wave-timeout, cancellation, environment-boundary and artifact-schema changes must not be promoted to MATCH on source presence alone.
+2. Continue the narrower repair-lane / G4–G5 fidelity audit and add installed-product cancellation-during-live-tool failure proof.
+3. Extend field-level contracts to the remaining lower-risk carriers/repair receipts; cross-stage ownership and the highest-risk downstream-consumed JSON carriers are already mechanically enforced.
+4. Finish run-level provider network/auth propagation failure injection and tighten any broader-than-necessary shared-carrier write scopes.
 5. Real-provider smoke testing remains unverified until a credential is supplied through the product UI.
 
 ## Evidence discipline
 
 - Historical `v1.0.0` and its “197 passed” result remain historical evidence only.
-- Source presence is not sufficient for MATCH: CI/tests/mechanical checks must support fidelity claims.
+- Source presence is not sufficient for MATCH: CI/tests/mechanical checks must support fidelity claims. Zero-step Actions provisioning failures are recorded as infrastructure blockers, not converted into either pass or fail evidence for the code.
 - Synthetic mock-provider E2E proves orchestration/tool/product wiring, not real-provider compatibility or model quality.
 - MockProvider-backed multi-leg wave tests are intentionally serialized because the mock is one linear scripted-turn cursor; real HTTP providers use the bounded concurrent scheduler. Scheduler concurrency/429 behavior is separately tested with real async jobs plus direct-role and outer-wave RateLimitError→QUEUED→retry paths.
 - The pinned 5f507e0b S2 source contains a stale comment claiming same-layer modeling parallelism, but its executable loop processes each question pipeline sequentially. Fidelity follows the executable behavior, not the stale comment.
