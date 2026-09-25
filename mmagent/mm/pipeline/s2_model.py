@@ -12,6 +12,7 @@ from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.orchestration.wave import WaveJob, run_status_wave
 from mmagent.providers.base import BaseProvider
 from mmagent.runtime.cancellation import CancellationToken
+from mmagent.state import events
 from mmagent.state.db import Database
 from mmagent.tools.registry import ToolRegistry
 from mmagent.tools.tool_protocol import ToolContext
@@ -416,8 +417,53 @@ async def run_s2(
     layers = topological_layers(graph)
     results: dict[str, Any] = {"layers": layers, "gates": {}, "downgraded": []}
 
+    question_checkpoints: dict[int, dict[str, Any]] = {}
+    for event in events.query_events(
+        db,
+        run_id=run_id,
+        type="checkpoint.s2_question",
+        limit=1000,
+    ):
+        value = event.payload.get("question")
+        if isinstance(value, int):
+            question_checkpoints[value] = dict(event.payload)
+
     for layer in layers:
         for q in layer:
+            checkpoint = question_checkpoints.get(q)
+            if checkpoint is not None:
+                downgraded = bool(checkpoint.get("downgraded", False))
+                checkpoint_issues = list(checkpoint.get("issues") or [])
+                if downgraded:
+                    results["downgraded"].append(q)
+                    results["gates"][f"问{q}"] = {
+                        "pass": bool(checkpoint.get("pass", False)),
+                        "issues": checkpoint_issues,
+                        "downgraded": True,
+                    }
+                    continue
+
+                still_valid, current_issues = check_g2(policy.root, q)
+                if still_valid:
+                    results["gates"][f"问{q}"] = {
+                        "pass": True,
+                        "issues": checkpoint_issues,
+                        "downgraded": False,
+                    }
+                    events.append_event(
+                        db,
+                        "pipeline.s2_question_reused",
+                        {"question": q},
+                        run_id=run_id,
+                    )
+                    continue
+                events.append_event(
+                    db,
+                    "pipeline.s2_question_invalidated",
+                    {"question": q, "issues": current_issues},
+                    run_id=run_id,
+                )
+
             ok, issues = await _normal_attempt(
                 db, provider, registry, policy, run_id, q,
                 attempt_key="初验", cancel=cancel
@@ -438,9 +484,18 @@ async def run_s2(
             if not ok:
                 _record_degraded_release(policy, q, issues)
                 results["downgraded"].append(q)
-            results["gates"][f"问{q}"] = {
+            gate_result = {
                 "pass": ok,
                 "issues": issues,
                 "downgraded": not ok,
             }
+            results["gates"][f"问{q}"] = gate_result
+            payload = {"question": q, **gate_result}
+            events.append_event(
+                db,
+                "checkpoint.s2_question",
+                payload,
+                run_id=run_id,
+            )
+            question_checkpoints[q] = payload
     return results
