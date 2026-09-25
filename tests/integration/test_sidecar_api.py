@@ -8,7 +8,11 @@ from fastapi.testclient import TestClient
 import mmagent.sidecar.server as sidecar_server
 from mmagent.runtime.credentials import MemoryCredentialStore
 from mmagent.runtime.environment import ToolCapability
-from mmagent.sidecar.server import build_tool_registry, create_app
+from mmagent.sidecar.server import (
+    build_pipeline_hooks,
+    build_tool_registry,
+    create_app,
+)
 from mmagent.state import repositories
 from mmagent.state.models import RunStatus
 
@@ -276,3 +280,41 @@ def test_sidecar_health_fails_when_managed_python_is_unavailable(monkeypatch) ->
 
     assert response.status_code == 503
     assert "managed Python unavailable" in response.text
+
+
+
+def test_sidecar_registry_forwards_shared_process_manager(monkeypatch) -> None:
+    monkeypatch.setenv("MMAGENT_PYTHON", sys.executable)
+    marker = object()
+
+    registry = build_tool_registry(marker)
+    python_tool = registry.get("python.run")
+
+    assert python_tool.process_manager is marker
+
+
+def test_pipeline_compile_hook_uses_shared_process_manager(
+    monkeypatch, tmp_path
+) -> None:
+    marker = object()
+    seen: dict[str, object] = {}
+
+    class FakeLatexTool:
+        def __init__(self, root, process_manager=None):
+            seen["root"] = root
+            seen["process_manager"] = process_manager
+
+        def compile(self, tex_file):
+            seen["tex_file"] = tex_file
+            return {"rc": 0, "errors": [], "pages": 7}
+
+    monkeypatch.setattr(sidecar_server, "LatexTool", FakeLatexTool)
+    hooks = build_pipeline_hooks(marker)
+
+    assert hooks.compile_paper is not None
+    result = hooks.compile_paper(tmp_path)
+
+    assert result["rc"] == 0
+    assert seen["root"] == tmp_path
+    assert seen["process_manager"] is marker
+    assert seen["tex_file"] == "论文/论文.tex"
