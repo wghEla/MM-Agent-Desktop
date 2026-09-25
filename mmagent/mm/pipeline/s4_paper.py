@@ -254,6 +254,7 @@ async def run_s4(
             cancel=cancel,
             wave_key=f"S4:评审R{round_num}",
             serial=provider.protocol == "mock",
+            timeout_s=3600,
         )
         chapter_status = review_wave.results.get("章评", "FAILED")
         reader_status = review_wave.results.get("闭卷", "FAILED")
