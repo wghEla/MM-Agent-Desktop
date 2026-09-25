@@ -1,13 +1,13 @@
 """XeLaTeX 工具：编译 / 日志检查 / 页数 / 页渲染。"""
 from __future__ import annotations
 
-import os
 import re
 import subprocess
 import uuid
 from pathlib import Path
 
 from mmagent.runtime.environment import discover_xelatex
+from mmagent.runtime.tool_env import latex_env
 
 
 class LatexTool:
@@ -50,9 +50,9 @@ class LatexTool:
                     name,
                     argv,
                     cwd=str(workdir),
-                    env=dict(os.environ),
+                    env=latex_env(),
                 )
-            except OSError as exc:
+            except (OSError, RuntimeError) as exc:
                 return {
                     "rc": -1,
                     "stdout_tail": "",
@@ -90,6 +90,7 @@ class LatexTool:
                     capture_output=True,
                     timeout=timeout_s,
                     stdin=subprocess.DEVNULL,
+                    env=latex_env(),
                 )
                 rc = proc.returncode
                 stdout = proc.stdout.decode("utf-8", errors="replace")[-5000:]
