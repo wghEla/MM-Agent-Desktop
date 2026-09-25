@@ -7,6 +7,7 @@ from typing import Any
 
 from mmagent.mm.config.profiles import get_profile
 from mmagent.mm.config.thresholds import DEFAULT_THRESHOLDS
+from mmagent.mm.contracts.s3_contracts import FigureReview
 from mmagent.mm.gates.g3 import check_g3
 from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
 from mmagent.orchestration.role_leg import run_role_leg
@@ -164,7 +165,7 @@ async def run_s3(
                             f"顶层给出数值字段 总分，固定通过阈值为 {threshold:.1f}。"
                             "必须依据随任务附带的图片本身，不得只读文件名推测。"
                         ),
-                        expected=[ExpectedArtifact(rel_path=review_path)],
+                        expected=[ExpectedArtifact(rel_path=review_path, schema_model=FigureReview)],
                         question_num=question,
                         image_paths=list(images),
                         cancel=cancel,
