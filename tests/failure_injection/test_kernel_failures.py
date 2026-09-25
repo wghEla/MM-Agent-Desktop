@@ -139,18 +139,45 @@ def db_and_root(env):
     return env["db"], env["run_id"], env["ws"].workspace.root
 
 
-def test_crash_recovery_marks_running_failed(ws, db, run_id):
-    t = repositories.create_task(db, run_id=run_id, stage_key="S", node_key="S:crash", role_id="x")
+def test_crash_recovery_marks_task_and_invocation_failed(ws, db, run_id):
+    t = repositories.create_task(
+        db, run_id=run_id, stage_key="S", node_key="S:crash", role_id="x"
+    )
     repositories.transition_task(db, t.id, TaskStatus.READY)
     repositories.transition_task(db, t.id, TaskStatus.QUEUED)
-    assert repositories.acquire_task_lease(db, t.id, repositories.new_owner_token())
-    # 模拟崩溃后重开：open_project + reset_interrupted_tasks
+    owner = repositories.new_owner_token()
+    assert repositories.acquire_task_lease(db, t.id, owner)
+    _, invocation_id = repositories.begin_task_attempt(
+        db,
+        t.id,
+        owner,
+        role_id="x",
+        provider_profile="default",
+        model="mock",
+        reasoning=None,
+    )
+
+    # 模拟崩溃后重开：active task 和 invocation 都不得继续伪装成 RUNNING。
     handle = api_projects.open_project(ws.workspace.root)
-    n = api_projects.reset_interrupted_tasks(handle, run_id)
+    try:
+        n = api_projects.reset_interrupted_tasks(handle, run_id)
+    finally:
+        handle.workspace.db.close()
+
     assert n == 1
     t2 = repositories.get_task(db, t.id)
-    assert t2.status is TaskStatus.FAILED  # 绝不假定成功
-    # FAILED 可重试回 READY
+    assert t2.status is TaskStatus.FAILED
+    invocation = db.query_one(
+        "SELECT status, ended_at FROM agent_invocations WHERE id = ?",
+        (invocation_id,),
+    )
+    assert invocation["status"] == "FAILED"
+    assert invocation["ended_at"] is not None
+
+    recovered = events.query_events(db, run_id=run_id, type="task.recovered")
+    assert recovered[-1].payload["closed_invocations"] == 1
+
+    # FAILED 可显式重试回 READY。
     repositories.transition_task(db, t.id, TaskStatus.READY)
 
 
