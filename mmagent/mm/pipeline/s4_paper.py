@@ -12,6 +12,7 @@ from mmagent.mm.config.profiles import get_profile
 from mmagent.mm.config.thresholds import DEFAULT_THRESHOLDS
 from mmagent.mm.gates.g4 import check_g4, check_narrative
 from mmagent.orchestration.role_leg import run_role_leg
+from mmagent.orchestration.wave import WaveJob, run_status_wave
 from mmagent.providers.base import BaseProvider
 from mmagent.state.db import Database
 from mmagent.tools.latex import LatexTool
@@ -173,18 +174,38 @@ async def run_s4(
     for round_num in range(1, cfg.章评轮数 + 1):
         chapter_rel = f"审稿/章评R{round_num}.json"
         reader_rel = f"审稿/读者R{round_num}.json"
-        chapter_status = await _leg(
-            db, provider, registry, policy, run_id,
-            role_id="chapter_reviewer", node_key=f"S4:章评R{round_num}",
-            instructions=f"评审论文各章并写 {chapter_rel}，顶层给出数值字段 总分。",
-            expected=[ExpectedArtifact(rel_path=chapter_rel)], cancel=cancel,
+        async def chapter_review() -> str:
+            return await _leg(
+                db, provider, registry, policy, run_id,
+                role_id="chapter_reviewer", node_key=f"S4:章评R{round_num}",
+                instructions=f"评审论文各章并写 {chapter_rel}，顶层给出数值字段 总分。",
+                expected=[ExpectedArtifact(rel_path=chapter_rel)], cancel=cancel,
+            )
+
+        async def blind_review() -> str:
+            return await _leg(
+                db, provider, registry, policy, run_id,
+                role_id="blind_reader", node_key=f"S4:闭卷R{round_num}",
+                instructions=(
+                    f"只读论文内容做闭卷理解测试并写 {reader_rel}，"
+                    "顶层给出数值字段 读者分。"
+                ),
+                expected=[ExpectedArtifact(rel_path=reader_rel)], cancel=cancel,
+            )
+
+        review_wave = await run_status_wave(
+            db,
+            run_id,
+            [
+                WaveJob("章评", chapter_review),
+                WaveJob("闭卷", blind_review),
+            ],
+            cancel=cancel,
+            wave_key=f"S4:评审R{round_num}",
+            serial=provider.protocol == "mock",
         )
-        reader_status = await _leg(
-            db, provider, registry, policy, run_id,
-            role_id="blind_reader", node_key=f"S4:闭卷R{round_num}",
-            instructions=f"只读论文内容做闭卷理解测试并写 {reader_rel}，顶层给出数值字段 读者分。",
-            expected=[ExpectedArtifact(rel_path=reader_rel)], cancel=cancel,
-        )
+        chapter_status = review_wave.results.get("章评", "FAILED")
+        reader_status = review_wave.results.get("闭卷", "FAILED")
         chapter_score = _score(policy.root / chapter_rel)
         reader_score = _score(policy.root / reader_rel)
         review_history.append({
@@ -230,32 +251,76 @@ async def run_s4(
     if integrate != "SUCCEEDED":
         return {"g4_pass": False, "g4_issues": ["统稿腿失败"], "reviews": review_history}
 
-    candidates: list[dict[str, Any]] = []
+    candidate_rows: dict[int, dict[str, Any]] = {}
+    candidate_jobs: list[WaveJob[str]] = []
     for index in range(1, cfg.摘要变体数 + 1):
         candidate_rel = f"论文/摘要候选_{index}.tex"
         verdict_rel = f"审稿/摘要复述_{index}.json"
-        status = await _leg(
-            db, provider, registry, policy, run_id,
-            role_id="writer", node_key=f"S4:摘要候选{index}",
-            instructions=f"独立写摘要候选 {candidate_rel}；突出题目对象、方法、各问结果与可信性。",
-            expected=[ExpectedArtifact(rel_path=candidate_rel, kind="text")], cancel=cancel,
-        )
-        if status != "SUCCEEDED":
+
+        async def run_candidate(
+            *,
+            candidate_index=index,
+            candidate_path=candidate_rel,
+            verdict_path=verdict_rel,
+        ) -> str:
+            status = await _leg(
+                db, provider, registry, policy, run_id,
+                role_id="writer", node_key=f"S4:摘要候选{candidate_index}",
+                instructions=(
+                    f"独立写摘要候选 {candidate_path}；"
+                    "突出题目对象、方法、各问结果与可信性。"
+                ),
+                expected=[ExpectedArtifact(rel_path=candidate_path, kind="text")],
+                cancel=cancel,
+            )
+            if status != "SUCCEEDED":
+                return status
+
+            verdict_status = await _leg(
+                db, provider, registry, policy, run_id,
+                role_id="blind_reader", node_key=f"S4:摘要复述{candidate_index}",
+                instructions=(
+                    f"只读 {candidate_path} 做四要素复述门，写 {verdict_path}；"
+                    "顶层必须有 通过(boolean) 与 分数(number)。"
+                ),
+                expected=[ExpectedArtifact(rel_path=verdict_path)],
+                cancel=cancel,
+            )
+            if verdict_status == "SUCCEEDED":
+                passed, score = _abstract_verdict(policy.root / verdict_path)
+                candidate_rows[candidate_index] = {
+                    "index": candidate_index,
+                    "path": candidate_path,
+                    "passed": passed,
+                    "score": score,
+                }
+            return verdict_status
+
+        candidate_jobs.append(WaveJob(f"摘要{index}", run_candidate))
+
+    candidate_wave = await run_status_wave(
+        db,
+        run_id,
+        candidate_jobs,
+        cancel=cancel,
+        wave_key="S4:摘要蜂群",
+        serial=provider.protocol == "mock",
+    )
+    candidates: list[dict[str, Any]] = []
+    for index in range(1, cfg.摘要变体数 + 1):
+        row = candidate_rows.get(index)
+        if row is None:
+            candidates.append({
+                "index": index,
+                "path": f"论文/摘要候选_{index}.tex",
+                "passed": False,
+                "score": 0.0,
+                "status": candidate_wave.results.get(f"摘要{index}", "FAILED"),
+            })
             continue
-        verdict_status = await _leg(
-            db, provider, registry, policy, run_id,
-            role_id="blind_reader", node_key=f"S4:摘要复述{index}",
-            instructions=(
-                f"只读 {candidate_rel} 做四要素复述门，写 {verdict_rel}；"
-                "顶层必须有 通过(boolean) 与 分数(number)。"
-            ),
-            expected=[ExpectedArtifact(rel_path=verdict_rel)], cancel=cancel,
-        )
-        passed, score = _abstract_verdict(policy.root / verdict_rel)
-        candidates.append({
-            "index": index, "path": candidate_rel, "passed": passed and verdict_status == "SUCCEEDED",
-            "score": score,
-        })
+        row["status"] = candidate_wave.results.get(f"摘要{index}", "FAILED")
+        row["passed"] = bool(row["passed"] and row["status"] == "SUCCEEDED")
+        candidates.append(row)
 
     passing = [x for x in candidates if x["passed"]]
     if not passing:
