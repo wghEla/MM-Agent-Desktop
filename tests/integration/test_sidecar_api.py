@@ -163,3 +163,21 @@ def test_sidecar_import_and_artifact_preview(tmp_path) -> None:
             json={"path": ".mmagent/project.db"},
         )
         assert denied.status_code == 400
+
+
+
+def test_sidecar_shutdown_endpoint_is_authenticated_and_invokes_callback() -> None:
+    calls: list[str] = []
+    app = create_app(
+        token=TOKEN,
+        credentials=MemoryCredentialStore(),
+        shutdown_callback=lambda: calls.append("shutdown"),
+    )
+    with TestClient(app) as client:
+        denied = client.post("/shutdown")
+        assert denied.status_code == 401
+
+        response = client.post("/shutdown", headers=_auth())
+        assert response.status_code == 200
+        assert response.json() == {"ok": True, "will_exit": True}
+        assert calls == ["shutdown"]
