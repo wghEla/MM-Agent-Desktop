@@ -22,6 +22,7 @@ function App() {
   const [providers, setProviders] = useState<ProviderProfile[]>([]);
   const [selectedProvider, setSelectedProvider] = useState("");
   const [run, setRun] = useState<RunStatus | null>(null);
+  const [runHistory, setRunHistory] = useState<RunStatus[]>([]);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -49,6 +50,7 @@ function App() {
       backend<Dashboard>("GET", `/projects/${project.id}/runs/${run.id}/dashboard`),
     ]);
     setRun(status);
+    setRunHistory((items) => items.map((item) => item.id === status.id ? status : item));
     setDashboard(board);
   }, [project, run?.id]);
 
@@ -61,6 +63,29 @@ function App() {
     }, 1800);
     return () => window.clearInterval(timer);
   }, [project?.id, run?.id, run?.status, refreshRun]);
+
+  async function loadRunHistory(p: ProjectView, selectExisting = false) {
+    const history = await backend<RunStatus[]>("GET", `/projects/${p.id}/runs`);
+    setRunHistory(history);
+    if (!selectExisting) return;
+    const candidate = history.find((item) => ["RUNNING", "PAUSED"].includes(item.status)) ?? history[0] ?? null;
+    setRun(candidate);
+    if (candidate) {
+      const board = await backend<Dashboard>("GET", `/projects/${p.id}/runs/${candidate.id}/dashboard`);
+      setDashboard(board);
+    } else {
+      setDashboard(null);
+    }
+  }
+
+  async function selectHistoricalRun(candidate: RunStatus) {
+    if (!project) return;
+    await guarded(async () => {
+      setRun(candidate);
+      const board = await backend<Dashboard>("GET", `/projects/${project.id}/runs/${candidate.id}/dashboard`);
+      setDashboard(board);
+    });
+  }
 
   async function guarded(action: () => Promise<void>) {
     setBusy(true);
@@ -82,8 +107,10 @@ function App() {
         : await backend<ProjectView>("POST", "/projects/open", { root });
       setProject(p);
       setRun(null);
+      setRunHistory([]);
       setDashboard(null);
       await refreshProviders(p);
+      await loadRunHistory(p, mode === "open");
       setNotice(mode === "create" ? "项目已创建" : "项目已打开");
     });
   }
@@ -98,6 +125,7 @@ function App() {
       const status = await backend<RunStatus>("GET", `/projects/${project.id}/runs/${result.run_id}`);
       setRun(status);
       setDashboard(null);
+      await loadRunHistory(project);
       setNotice("运行已启动");
     });
   }
@@ -113,6 +141,7 @@ function App() {
             : undefined;
       await backend("POST", `/projects/${project.id}/runs/${run.id}/${kind}`, body);
       await refreshRun();
+      await loadRunHistory(project);
       setNotice(kind === "pause" ? "已请求暂停" : kind === "resume" ? "已继续" : "已请求取消");
     });
   }
@@ -152,6 +181,19 @@ function App() {
                 setNotice("Provider 已保存到项目配置；密钥仅保存到系统凭据库");
               }}
               onGuarded={guarded}
+            />
+          )}
+
+          {project && runHistory.length > 0 && (
+            <RunHistoryPanel
+              runs={runHistory}
+              currentRunId={run?.id ?? null}
+              busy={busy}
+              onSelect={selectHistoricalRun}
+              onNew={() => {
+                setRun(null);
+                setDashboard(null);
+              }}
             />
           )}
 
@@ -379,6 +421,43 @@ function ProviderPanel({
   );
 }
 
+function RunHistoryPanel({
+  runs,
+  currentRunId,
+  busy,
+  onSelect,
+  onNew,
+}: {
+  runs: RunStatus[];
+  currentRunId: string | null;
+  busy: boolean;
+  onSelect: (run: RunStatus) => Promise<void>;
+  onNew: () => void;
+}) {
+  return (
+    <section className="card">
+      <div className="provider-title">
+        <h2>运行历史</h2>
+        <button disabled={busy} onClick={onNew}>新建一炉</button>
+      </div>
+      <div className="run-history">
+        {runs.map((item) => (
+          <button
+            key={item.id}
+            disabled={busy}
+            className={`run-history-item ${currentRunId === item.id ? "selected" : ""}`}
+            onClick={() => void onSelect(item)}
+          >
+            <span className="mono">{item.id}</span>
+            <span className={`status ${item.status}`}>{item.status}</span>
+            <span className="muted">{item.profile}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function RunPanel({
   provider,
   run,
@@ -412,11 +491,22 @@ function RunPanel({
         <>
           <p><span className={`status ${run.status}`}>{run.status}</span></p>
           <div className="row wrap">
-            <button disabled={busy || run.status !== "RUNNING"} onClick={() => void onControl("pause")}>Pause</button>
-            <button disabled={busy || run.status !== "PAUSED" || !provider} onClick={() => void onControl("resume")}>Resume</button>
-            <button className="danger" disabled={busy || !["RUNNING", "PAUSED"].includes(run.status)} onClick={() => void onControl("cancel")}>Cancel</button>
+            <button
+              disabled={busy || run.status !== "RUNNING" || !run.active_in_sidecar}
+              onClick={() => void onControl("pause")}
+            >Pause</button>
+            <button
+              disabled={busy || !["PAUSED", "RUNNING"].includes(run.status) || run.active_in_sidecar || !provider}
+              onClick={() => void onControl("resume")}
+            >Resume</button>
+            <button
+              className="danger"
+              disabled={busy || !["RUNNING", "PAUSED"].includes(run.status)}
+              onClick={() => void onControl("cancel")}
+            >Cancel</button>
           </div>
           <p className="muted mono">{run.id}</p>
+          <p className="muted">{run.active_in_sidecar ? "当前 sidecar 已接管" : "未接管，可从断点继续"}</p>
         </>
       )}
     </section>
