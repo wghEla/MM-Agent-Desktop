@@ -8,8 +8,11 @@ Important semantics:
 - default concurrency 4, floor 2;
 - adaptive limit is persisted as append-only events, so resume preserves it;
 - FAILED and rate-limited QUEUED legs are retried once;
-- CANCELLED legs are never retried;
-- programming/runtime exceptions are not swallowed as ordinary leg failures.
+- per-leg timeout starts only after the concurrency slot is acquired; timeout
+  cancellation is awaited before a retry can start, preventing old/new copies
+  from double-writing the same carriers;
+- programming/runtime exceptions cancel and await peer legs before propagating;
+- externally CANCELLED legs are never retried.
 """
 from __future__ import annotations
 
@@ -99,8 +102,11 @@ async def run_status_wave(
 
     Job return values are expected to be task status strings. QUEUED means
     AgentLoop released the task after a provider 429; FAILED is an ordinary
-    failed leg. Both receive at most one retry. The retry pass is a new wave,
-    so an observed 429 reduces its concurrency before retrying.
+    failed leg. Both receive at most one retry. A per-leg timeout is measured
+    from actual slot acquisition, not queue entry. wait_for cancellation is
+    fully awaited before the retry pass starts, preserving the upstream R60
+    no-double-writer invariant. The retry pass is a new wave, so an observed
+    429 reduces its concurrency before retrying.
     """
     if serial:
         default_concurrency = 1
