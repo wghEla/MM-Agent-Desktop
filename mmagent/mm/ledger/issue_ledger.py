@@ -62,6 +62,35 @@ class IssueLedger:
         self._前缀 = 前缀
         self._序号 = 0
 
+    @classmethod
+    def 从快照(cls, rows: list[dict], *, 前缀: str = "意") -> "IssueLedger":
+        """Restore a ledger from a trusted runtime snapshot/carrier."""
+        ledger = cls(前缀=前缀)
+        max_seq = 0
+        for raw in rows or []:
+            if not isinstance(raw, dict):
+                continue
+            allowed = {
+                "id", "级别", "目标", "定位", "问题", "指令", "验收", "来源",
+                "轮次", "状态", "尝试次数", "重开次数", "回执", "历史", "对应",
+                "generation",
+            }
+            payload = {k: raw[k] for k in allowed if k in raw}
+            issue = Issue(**payload)
+            ledger.条目.append(issue)
+            ledger.轮次 = max(ledger.轮次, int(issue.轮次))
+            match = re.search(r"-(\d+)$", issue.id)
+            if match:
+                max_seq = max(max_seq, int(match.group(1)))
+        ledger._序号 = max(max_seq, len(ledger.条目))
+        return ledger
+
+    def 快照(self) -> list[dict]:
+        """Return a JSON-serializable full-state snapshot."""
+        from dataclasses import asdict
+
+        return [asdict(item) for item in self.条目]
+
     def 并入(self, 新条目: list[dict], 轮次: int) -> dict[str, int]:
         """把一轮评审的新意见并进台账。返回 {新增, 合并, 重开}。"""
         self.轮次 = max(self.轮次, 轮次)
