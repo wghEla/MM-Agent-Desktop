@@ -48,6 +48,7 @@ class WaveOutcome(Generic[T]):
     start_concurrency: int
     end_concurrency: int
     rate_limited_jobs: tuple[str, ...]
+    timed_out_jobs: tuple[str, ...] = ()
 
 
 def current_wave_concurrency(
@@ -92,6 +93,7 @@ async def run_status_wave(
     cancel=None,
     wave_key: str = "",
     serial: bool = False,
+    timeout_s: float | None = 1300.0,
 ) -> WaveOutcome[str]:
     """Run independent status-returning jobs with upstream-compatible wave rules.
 
@@ -103,6 +105,8 @@ async def run_status_wave(
     if serial:
         default_concurrency = 1
         min_concurrency = 1
+    if timeout_s is not None and timeout_s <= 0:
+        raise ValueError("timeout_s must be positive or None")
 
     if not jobs:
         limit = current_wave_concurrency(
@@ -129,6 +133,7 @@ async def run_status_wave(
     attempts = {job.name: 0 for job in jobs}
     results: dict[str, str] = {}
     rate_limited_seen: list[str] = []
+    timed_out_seen: list[str] = []
     pending = list(jobs)
     pass_no = 0
 
@@ -153,20 +158,56 @@ async def run_status_wave(
 
         async def invoke(
             job: WaveJob[str], *, gate=semaphore
-        ) -> tuple[str, str]:
+        ) -> tuple[str, str, bool]:
             async with gate:
                 if cancel is not None:
                     cancel.check()
                 attempts[job.name] += 1
                 token = _WAVE_ACTIVE.set(True)
                 try:
-                    status = await job.run()
+                    try:
+                        if timeout_s is None:
+                            status = await job.run()
+                        else:
+                            status = await asyncio.wait_for(
+                                job.run(),
+                                timeout=float(timeout_s),
+                            )
+                    except TimeoutError:
+                        events.append_event(
+                            db,
+                            "wave.job_timed_out",
+                            {
+                                "wave": wave_key,
+                                "pass": pass_no,
+                                "job": job.name,
+                                "timeout_s": timeout_s,
+                            },
+                            run_id=run_id,
+                        )
+                        return job.name, "FAILED", True
                 finally:
                     _WAVE_ACTIVE.reset(token)
-                return job.name, str(status)
+                return job.name, str(status), False
 
-        pairs = await asyncio.gather(*(invoke(job) for job in pending))
-        pass_results = dict(pairs)
+        running = [
+            asyncio.create_task(invoke(job), name=f"wave:{wave_key}:{job.name}")
+            for job in pending
+        ]
+        try:
+            triples = await asyncio.gather(*running)
+        except BaseException:
+            for task in running:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*running, return_exceptions=True)
+            raise
+
+        pass_results = {name: status for name, status, _ in triples}
+        timed_out_now = [name for name, _, timed_out in triples if timed_out]
+        for name in timed_out_now:
+            if name not in timed_out_seen:
+                timed_out_seen.append(name)
 
         limited = [
             name for name, status in pass_results.items() if status == "QUEUED"
@@ -225,6 +266,7 @@ async def run_status_wave(
                 "concurrency": limit,
                 "results": pass_results,
                 "retry": sorted(retry_names),
+                "timed_out": sorted(timed_out_now),
             },
             run_id=run_id,
         )
@@ -242,4 +284,5 @@ async def run_status_wave(
         start_concurrency=start_limit,
         end_concurrency=end_limit,
         rate_limited_jobs=tuple(rate_limited_seen),
+        timed_out_jobs=tuple(timed_out_seen),
     )
