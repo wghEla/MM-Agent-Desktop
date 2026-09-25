@@ -168,5 +168,5 @@ async def run_s1(
             "g1_issues": ["规划裁决定稿失败"],
             "prototype_results": evidence,
         }
-    ok, issues = check_g1(policy.root)
+    ok, issues = check_g1(policy.root, profile=profile)
     return {"g1_pass": ok, "g1_issues": issues, "prototype_results": evidence}
