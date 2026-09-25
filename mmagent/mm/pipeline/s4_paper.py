@@ -10,6 +10,12 @@ from typing import Any
 from mmagent.mm.audit import audit_paper
 from mmagent.mm.config.profiles import get_profile
 from mmagent.mm.config.thresholds import DEFAULT_THRESHOLDS
+from mmagent.mm.contracts.s4_contracts import (
+    AbstractRestatementVerdict,
+    BlindReaderReview,
+    ChapterReview,
+    RequirementCoverageDocument,
+)
 from mmagent.mm.gates.g4 import check_g4, check_narrative
 from mmagent.mm.pipeline.compile_runtime import run_compile
 from mmagent.mm.retention import (
@@ -186,7 +192,7 @@ async def run_s4(
         ),
         expected=[
             ExpectedArtifact(rel_path="论文/论文.tex", kind="text"),
-            ExpectedArtifact(rel_path="交接/需求覆盖.json"),
+            ExpectedArtifact(rel_path="交接/需求覆盖.json", schema_model=RequirementCoverageDocument),
         ], cancel=cancel,
     )
     if draft_status != "SUCCEEDED":
@@ -222,7 +228,7 @@ async def run_s4(
                         else ""
                     )
                 ),
-                expected=[ExpectedArtifact(rel_path=review_path)], cancel=cancel,
+                expected=[ExpectedArtifact(rel_path=review_path, schema_model=ChapterReview)], cancel=cancel,
             )
 
         async def blind_review(
@@ -235,7 +241,7 @@ async def run_s4(
                     f"只读论文内容做闭卷理解测试并写 {review_path}，"
                     "顶层给出数值字段 读者分。"
                 ),
-                expected=[ExpectedArtifact(rel_path=review_path)], cancel=cancel,
+                expected=[ExpectedArtifact(rel_path=review_path, schema_model=BlindReaderReview)], cancel=cancel,
             )
 
         review_wave = await run_status_wave(
@@ -393,7 +399,7 @@ async def run_s4(
                     f"只读 {candidate_path} 做四要素复述门，写 {verdict_path}；"
                     "顶层必须有 通过(boolean) 与 分数(number)。"
                 ),
-                expected=[ExpectedArtifact(rel_path=verdict_path)],
+                expected=[ExpectedArtifact(rel_path=verdict_path, schema_model=AbstractRestatementVerdict)],
                 cancel=cancel,
             )
             if verdict_status == "SUCCEEDED":
