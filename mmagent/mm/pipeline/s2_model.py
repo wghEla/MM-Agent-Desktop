@@ -5,15 +5,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from mmagent.agent.loop import AgentLoop, AgentTask
 from mmagent.mm.config.thresholds import DEFAULT_THRESHOLDS
 from mmagent.mm.gates.g2 import check_g2, normalize_red_team_report
-from mmagent.mm.roles.prompts import get_system_prompt
-from mmagent.mm.roles.registry import get_role
 from mmagent.orchestration.dag import build_dependency_graph, topological_layers
+from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.base import BaseProvider
 from mmagent.runtime.cancellation import CancellationToken
-from mmagent.state import repositories
 from mmagent.state.db import Database
 from mmagent.tools.registry import ToolRegistry
 from mmagent.tools.tool_protocol import ToolContext
@@ -39,30 +36,16 @@ async def _agent_leg(
     question_num: int,
     cancel=None,
 ) -> str:
-    role = get_role(role_id)
-    loop = AgentLoop(
-        db,
-        provider,
-        registry,
-        PermissionChecker(role.permissions(question=str(question_num)), policy),
-        policy,
+    return await run_role_leg(
+        db, provider, registry, policy, run_id,
+        stage_key="S2",
+        role_id=role_id,
+        node_key=node_key,
+        instructions=instructions,
+        expected_artifacts=expected,
+        question_num=question_num,
         cancel=cancel,
     )
-    task = repositories.create_task(
-        db, run_id=run_id, stage_key="S2", node_key=node_key, role_id=role_id
-    )
-    outcome = await loop.run(AgentTask(
-        task_id=task.id,
-        node_key=node_key,
-        role_id=role_id,
-        system_prompt=get_system_prompt(role_id),
-        instructions=instructions,
-        model="mock",
-        reasoning=role.reasoning,
-        expected_artifacts=expected,
-    ))
-    return outcome.status.value
-
 
 async def _run_script(
     registry: ToolRegistry,
