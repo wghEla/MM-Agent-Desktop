@@ -141,8 +141,10 @@ async def run_status_wave(
             run_id=run_id,
         )
 
-        async def invoke(job: WaveJob[str]) -> tuple[str, str]:
-            async with semaphore:
+        async def invoke(
+            job: WaveJob[str], *, gate=semaphore
+        ) -> tuple[str, str]:
+            async with gate:
                 if cancel is not None:
                     cancel.check()
                 attempts[job.name] += 1
