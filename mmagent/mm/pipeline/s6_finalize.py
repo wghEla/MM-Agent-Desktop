@@ -11,7 +11,7 @@ from typing import Any
 from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
 from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.base import BaseProvider
-from mmagent.state import events
+from mmagent.state import events, repositories
 from mmagent.state.db import Database
 from mmagent.tools.latex import LatexTool, render_pdf_pages
 from mmagent.tools.registry import ToolRegistry
@@ -45,6 +45,7 @@ async def _leg(
         image_paths=image_paths,
         cancel=cancel,
     )
+
 
 def _final_issues(path: Path) -> list[dict]:
     try:
