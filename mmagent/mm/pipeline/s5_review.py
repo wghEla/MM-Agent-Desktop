@@ -264,6 +264,7 @@ async def _run_review_legs(
         cancel=cancel,
         wave_key=f"S5:审稿R{round_num}",
         serial=provider.protocol == "mock",
+        timeout_s=3600,
     )
 
     for role_id, suffix in legs:
