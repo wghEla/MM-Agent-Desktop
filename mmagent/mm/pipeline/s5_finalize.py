@@ -11,6 +11,7 @@ from mmagent.mm.audit import audit_paper
 from mmagent.mm.config.profiles import get_profile
 from mmagent.mm.gates.g5 import check_g5
 from mmagent.mm.guards.guards import page_guard
+from mmagent.mm.pipeline.compile_runtime import run_compile
 from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
 from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.base import BaseProvider
@@ -181,7 +182,7 @@ async def run_s5b(
     cfg = get_profile(profile)
     compiler = compile_paper or _default_compile
     renderer = render_pages or _default_render
-    initial = compiler(policy.root)
+    initial = await run_compile(compiler, policy.root, cancel=cancel)
     if initial.get("rc") not in (0, None) or initial.get("errors"):
         return {"pass": False, "issues": ["美化前编译失败"], "rounds": []}
     baseline = int(initial.get("pages") or 0)
@@ -229,7 +230,7 @@ async def run_s5b(
         failures = await _apply_beauty_issues(
             db, provider, registry, policy, run_id, round_num, issues, cancel=cancel
         )
-        compiled = compiler(policy.root)
+        compiled = await run_compile(compiler, policy.root, cancel=cancel)
         new_pages = int(compiled.get("pages") or 0)
         page_ok, page_issue = page_guard(baseline, new_pages, baseline=baseline)
         rounds.append({
@@ -258,7 +259,7 @@ async def run_g5(
 ) -> dict[str, Any]:
     """Final publication gate. R51 semantics: compile immediately before final defect review."""
     compiler = compile_paper or _default_compile
-    compiled = compiler(policy.root)
+    compiled = await run_compile(compiler, policy.root, cancel=cancel)
     audit_paper(policy.root)
     pages = int(compiled.get("pages") or 0)
     ok, issues = check_g5(
