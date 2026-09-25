@@ -24,7 +24,7 @@ Historical `v1.0.0` is preserved unchanged. Development continues on
 - S2 DAG layers + solver + frozen hashed red-team input package + independent recomputation + compare/arbitration + bounded rework/escalation/degraded-release carriers
 - S3 plot runtime → figure review loop + G3
 - S4 narrative/draft/chapter-review/blind-reader/integrator/abstract swarm + G4
-- bounded S5 review arena with page-image judge input, Issue Ledger, targeted calc/figure/text repair and resumable round-complete snapshots
+- bounded S5 review arena with page-image judge input, Issue Ledger, channel-aware R45 abstention merge, targeted calc/figure/text repair, persistent best-version snapshots/0.5-noise-band rollback, and resumable round-complete snapshots
 - S5a abstract restatement gate
 - S5b page-image beautification routing + page guard
 - G5 publication gate + stale-value checks + final defect verification
@@ -42,13 +42,13 @@ Historical `v1.0.0` is preserved unchanged. Development continues on
 - authenticated loopback Python sidecar
 - Tauri lifecycle management and authenticated request proxy
 - PyInstaller frozen sidecar build using Tauri `externalBin` naming
-- Release builds use the bundled sidecar; debug builds may use managed Python for development
+- Release builds use the bundled sidecar plus an embedded managed Python 3.11 scientific runtime; debug builds may use managed Python for development
 - React project/import, Provider Settings, Run Dashboard, run history/control and artifact/image/PDF viewer
 - synthetic full-chain test using real S0→S6 stage modules, real Python tool execution and final delivery PDF carrier
 - real mid-S1 crash/restart E2E: orphan active invocation → fail-closed recovery → sealed-node reuse → retry → final delivery PDF
 - structured failure handling/tests for 429, Python tool timeout, missing compiler executable and corrupt PDF carriers
 - GitHub Actions CI covering Python on Linux/Windows and Windows desktop/bundled-sidecar build
-- CI configuration for NSIS release installer production and artifact retention
+- NSIS release installer production, silent-install verification, installed-app startup smoke and artifact retention
 
 ## Evidence already present
 
@@ -57,7 +57,9 @@ Historical `v1.0.0` is preserved unchanged. Development continues on
 - `tests/unit/test_budget.py` verifies active runtime excludes pauses and that leg/hour ceilings fail closed.
 - S5 resume uses only post-rework `checkpoint.s5_round_complete` snapshots; review-only observations are not treated as durable resume boundaries.
 - sidecar tests cover bearer authentication, secret boundaries, provider profiles, graceful shutdown and persisted-run recovery controls.
-- Windows CI has already demonstrated PyInstaller sidecar creation and direct executable smoke (`--help`); the current workflow additionally attempts a full NSIS bundle.
+- CI #174 is fully green: Linux 262 passed / 31 skipped; Windows 292 passed / 1 skipped; Ruff clean on both.
+- CI #174 built the managed scientific runtime and PyInstaller sidecar, produced an NSIS installer, silently installed it, verified the installed `runtime/python.exe`, removed developer-Python PATH/override state, and launched the installed app through `--startup-smoke` successfully.
+- the retained Windows installer artifact is `mmagent-desktop-windows-nsis`; the Actions ZIP is 153,590,163 bytes (~153.6 MB decimal).
 - Desktop source can create/open projects, import files, configure/test providers, start/pause/resume/cancel runs, reopen persisted runs, inspect dashboards and preview artifacts.
 
 ## Still not product-complete
@@ -66,19 +68,18 @@ The repository must **not** be described as final v1.0 product-complete yet.
 
 Remaining high-priority work:
 
-1. Obtain a clean CI run at the current branch head after the latest hardening and NSIS packaging changes.
-2. Prove the generated NSIS installer installs and the installed app launches the bundled sidecar on a clean Windows environment; producing the installer alone is not enough.
-3. Re-audit S1/S2/S5 against the pinned upstream snapshot for remaining behavioral differences, especially parallel wave scheduling, 429 adaptive concurrency, review score/plateau semantics and best-retention/rollback.
-4. Finish failure injection around XeLaTeX timeout/failure, MATLAB timeout/failure, provider network/auth failures and additional corrupted carriers.
+1. Re-audit and implement the remaining pinned-upstream fidelity gaps, especially bounded parallel wave scheduling and adaptive 429 concurrency reduction (default 4 → floor 2).
+2. Extend best-retention/rollback from S5 to the S4 chapter-review loop; S5 now has persistent pre-review snapshots and mechanically tested rollback.
+3. Finish failure injection around XeLaTeX timeout/failure, MATLAB timeout/failure, provider network/auth failures and additional corrupted carriers.
+4. Complete a mechanical producer/consumer contract audit across every stage boundary.
 5. Real-provider smoke testing remains unverified until a credential is supplied through the product UI.
-6. Refresh the historical 2026-09-24 audit with a new post-rebuild audit; the old P0 list is no longer a valid description of the branch.
 
 ## Evidence discipline
 
 - Historical `v1.0.0` and its “197 passed” result remain historical evidence only.
 - Source presence is not sufficient for MATCH: CI/tests/mechanical checks must support fidelity claims.
 - Synthetic mock-provider E2E proves orchestration/tool/product wiring, not real-provider compatibility or model quality.
-- A built installer proves bundling, not installed-app launch/runtime behavior.
+- CI #174 proves installer bundling and installed-app startup without developer Python; model-quality and real-provider behavior remain separate claims.
 - Real-provider compatibility must remain explicitly unverified until exercised with a real configured provider.
 
 See:
