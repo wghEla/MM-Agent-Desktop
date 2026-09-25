@@ -34,6 +34,7 @@ class Issue:
 
 _PUNCT_CHARS = "，。；：、()（）【】"
 
+
 def _net(s: str) -> str:
     for ch in _PUNCT_CHARS:
         s = s.replace(ch, "")
@@ -63,7 +64,7 @@ class IssueLedger:
         self._序号 = 0
 
     @classmethod
-    def 从快照(cls, rows: list[dict], *, 前缀: str = "意") -> "IssueLedger":
+    def 从快照(cls, rows: list[dict], *, 前缀: str = "意") -> IssueLedger:
         """Restore a ledger from a trusted runtime snapshot/carrier."""
         ledger = cls(前缀=前缀)
         max_seq = 0
