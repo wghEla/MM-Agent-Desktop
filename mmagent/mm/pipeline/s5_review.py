@@ -10,6 +10,7 @@ from typing import Any
 
 from mmagent.mm.audit import audit_paper
 from mmagent.mm.gates.g4 import check_g4
+from mmagent.mm.pipeline.compile_runtime import run_compile
 from mmagent.mm.ledger.issue_ledger import (
     Issue,
     IssueLedger,
@@ -485,7 +486,7 @@ async def run_s5(
 
     for round_num in range(start_round, max_rounds + 1):
         snapshot_files = _ensure_paper_snapshot(policy, round_num)
-        compile_result = compiler(policy.root)
+        compile_result = await run_compile(compiler, policy.root, cancel=cancel)
         render_issue: str | None = None
         rendered_pages: list[Path] = []
         if compile_result.get("rc") in (0, None) and not compile_result.get("errors"):
