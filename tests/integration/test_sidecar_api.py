@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 
 from mmagent.runtime.credentials import MemoryCredentialStore
 from mmagent.sidecar.server import create_app
+from mmagent.state import repositories
+from mmagent.state.models import RunStatus
 
 TOKEN = "test-sidecar-token-0123456789"
 
@@ -181,3 +183,51 @@ def test_sidecar_shutdown_endpoint_is_authenticated_and_invokes_callback() -> No
         assert response.status_code == 200
         assert response.json() == {"ok": True, "will_exit": True}
         assert calls == ["shutdown"]
+
+
+def test_sidecar_lists_and_cancels_persisted_run(tmp_path) -> None:
+    app = create_app(token=TOKEN, credentials=MemoryCredentialStore())
+    with TestClient(app) as client:
+        project = client.post(
+            "/projects",
+            headers=_auth(),
+            json={"root": str(tmp_path / "proj-history"), "name": "History"},
+        )
+        assert project.status_code == 200
+        project_id = project.json()["id"]
+
+        state = app.state.mmagent
+        handle = state.project(project_id)
+        run_id = repositories.create_run(
+            handle.workspace.db,
+            project_id=handle.project_id,
+            profile="标准",
+        )
+        handle.workspace.acquire_run_lock(run_id)
+        repositories.set_run_status(
+            handle.workspace.db, run_id, RunStatus.RUNNING
+        )
+        repositories.set_run_status(
+            handle.workspace.db, run_id, RunStatus.PAUSED
+        )
+        handle.workspace.release_run_lock()
+
+        listed = client.get(
+            f"/projects/{project_id}/runs", headers=_auth()
+        )
+        assert listed.status_code == 200
+        assert listed.json()[0]["id"] == run_id
+        assert listed.json()[0]["status"] == "PAUSED"
+        assert listed.json()[0]["active_in_sidecar"] is False
+
+        cancelled = client.post(
+            f"/projects/{project_id}/runs/{run_id}/cancel",
+            headers=_auth(),
+            json={"reason": "desktop stop after restart"},
+        )
+        assert cancelled.status_code == 200
+
+        status = client.get(
+            f"/projects/{project_id}/runs/{run_id}", headers=_auth()
+        )
+        assert status.json()["status"] == "CANCELLED"
