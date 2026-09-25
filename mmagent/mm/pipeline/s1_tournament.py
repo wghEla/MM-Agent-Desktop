@@ -3,43 +3,34 @@ from __future__ import annotations
 
 from typing import Any
 
-from mmagent.agent.loop import AgentLoop, AgentTask
 from mmagent.mm.config.profiles import get_profile
 from mmagent.mm.contracts.s1_contracts import PrototypeResults, RouteScout
 from mmagent.mm.gates.g1 import check_g1
-from mmagent.mm.roles.prompts import get_system_prompt
-from mmagent.mm.roles.registry import get_role
 from mmagent.providers.base import BaseProvider
 from mmagent.runtime.cancellation import CancellationToken
-from mmagent.state import repositories
 from mmagent.state.db import Database
 from mmagent.tools.registry import ToolRegistry
 from mmagent.tools.tool_protocol import ToolContext
 from mmagent.workspace.artifacts import ExpectedArtifact
 from mmagent.workspace.path_policy import PathPolicy
 from mmagent.workspace.permissions import PermissionChecker, RolePermissions
+from mmagent.orchestration.role_leg import run_role_leg
 
 
 async def _leg(
     db, provider, registry, policy, run_id, *,
     role_id, node, instructions, expected, question=None, cancel=None,
 ):
-    role = get_role(role_id)
-    vars = {"question": str(question)} if question is not None else {}
-    loop = AgentLoop(
-        db, provider, registry,
-        PermissionChecker(role.permissions(**vars), policy), policy, cancel=cancel,
+    return await run_role_leg(
+        db, provider, registry, policy, run_id,
+        stage_key="S1",
+        role_id=role_id,
+        node_key=node,
+        instructions=instructions,
+        expected_artifacts=expected,
+        question_num=question,
+        cancel=cancel,
     )
-    task = repositories.create_task(
-        db, run_id=run_id, stage_key="S1", node_key=node, role_id=role_id
-    )
-    result = await loop.run(AgentTask(
-        task_id=task.id, node_key=node, role_id=role_id,
-        system_prompt=get_system_prompt(role_id), instructions=instructions,
-        model="mock", reasoning=role.reasoning, expected_artifacts=expected,
-    ))
-    return result.status.value
-
 
 async def _execute(registry: ToolRegistry, policy: PathPolicy, rel: str, *, cancel=None):
     if not registry.has("python.run"):
