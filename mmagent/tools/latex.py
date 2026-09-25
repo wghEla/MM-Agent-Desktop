@@ -1,8 +1,10 @@
 """XeLaTeX 工具：编译 / 日志检查 / 页数 / 页渲染。"""
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+import uuid
 from pathlib import Path
 
 from mmagent.runtime.environment import discover_xelatex
@@ -11,8 +13,14 @@ from mmagent.runtime.environment import discover_xelatex
 class LatexTool:
     """XeLaTeX 编译器包装（工具发现由 EnvironmentManager 负责，Agent 不猜路径）。"""
 
-    def __init__(self, workspace_root: Path, xelatex_path: str | None = None):
+    def __init__(
+        self,
+        workspace_root: Path,
+        xelatex_path: str | None = None,
+        process_manager=None,
+    ):
         self.root = workspace_root
+        self.process_manager = process_manager
         if xelatex_path:
             self.xelatex = xelatex_path
         else:
@@ -27,24 +35,78 @@ class LatexTool:
         if not tex_path.is_file():
             return {"rc": -1, "stdout_tail": "", "errors": [f"文件不存在: {tex_file}"], "pages": 0}
         workdir = tex_path.parent
-        try:
-            proc = subprocess.run(
-                [self.xelatex, "-interaction=nonstopmode", "-synctex=1",
-                 tex_path.name],
-                cwd=str(workdir), capture_output=True, timeout=timeout_s,
-                stdin=subprocess.DEVNULL,
-            )
-            rc = proc.returncode
-            stdout = proc.stdout.decode("utf-8", errors="replace")[-5000:]
-        except subprocess.TimeoutExpired:
-            return {"rc": -2, "stdout_tail": "编译超时", "errors": ["超时"], "pages": 0}
-        except OSError as exc:
-            return {
-                "rc": -1,
-                "stdout_tail": "",
-                "errors": [f"XeLaTeX 启动失败: {exc}"],
-                "pages": 0,
-            }
+        argv = [
+            self.xelatex,
+            "-interaction=nonstopmode",
+            "-synctex=1",
+            tex_path.name,
+        ]
+        if self.process_manager is not None:
+            from mmagent.agent.errors import ToolTimeout
+
+            name = f"latex_{uuid.uuid4().hex[:10]}"
+            try:
+                managed = self.process_manager.spawn(
+                    name,
+                    argv,
+                    cwd=str(workdir),
+                    env=dict(os.environ),
+                )
+            except OSError as exc:
+                return {
+                    "rc": -1,
+                    "stdout_tail": "",
+                    "errors": [f"XeLaTeX 启动失败: {exc}"],
+                    "pages": 0,
+                }
+            try:
+                try:
+                    rc, out_b, _err_b, timed_out = self.process_manager.communicate(
+                        managed,
+                        timeout_s,
+                    )
+                except ToolTimeout as exc:
+                    return {
+                        "rc": -2,
+                        "stdout_tail": "编译超时",
+                        "errors": [f"超时: {exc}"],
+                        "pages": 0,
+                    }
+                stdout = out_b.decode("utf-8", errors="replace")[-5000:]
+                if timed_out:
+                    return {
+                        "rc": -2,
+                        "stdout_tail": stdout or "编译超时",
+                        "errors": ["超时"],
+                        "pages": 0,
+                    }
+            finally:
+                self.process_manager.recycle(name)
+        else:
+            try:
+                proc = subprocess.run(
+                    argv,
+                    cwd=str(workdir),
+                    capture_output=True,
+                    timeout=timeout_s,
+                    stdin=subprocess.DEVNULL,
+                )
+                rc = proc.returncode
+                stdout = proc.stdout.decode("utf-8", errors="replace")[-5000:]
+            except subprocess.TimeoutExpired:
+                return {
+                    "rc": -2,
+                    "stdout_tail": "编译超时",
+                    "errors": ["超时"],
+                    "pages": 0,
+                }
+            except OSError as exc:
+                return {
+                    "rc": -1,
+                    "stdout_tail": "",
+                    "errors": [f"XeLaTeX 启动失败: {exc}"],
+                    "pages": 0,
+                }
 
         log_path = workdir / (tex_path.stem + ".log")
         errors, pages = [], 0
