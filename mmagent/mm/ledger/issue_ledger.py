@@ -90,7 +90,13 @@ def merge_channel_verdicts(
             if not issue_id:
                 continue
             generation = raw.get("generation")
-            key = (issue_id, int(generation) if generation is not None else None)
+            try:
+                normalized_generation = (
+                    int(generation) if generation is not None else None
+                )
+            except (TypeError, ValueError):
+                normalized_generation = None
+            key = (issue_id, normalized_generation)
             if _is_abstention(channel, raw):
                 abstentions += 1
                 continue
