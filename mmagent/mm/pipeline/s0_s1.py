@@ -9,16 +9,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from mmagent.agent.loop import AgentLoop, AgentTask
-from mmagent.mm.roles.prompts import ANSWER_PREDICTOR_SYSTEM, READER_SYSTEM
-from mmagent.mm.roles.registry import get_role
+from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.base import BaseProvider
-from mmagent.state import repositories
 from mmagent.state.db import Database
 from mmagent.tools.registry import ToolRegistry
 from mmagent.workspace.artifacts import ExpectedArtifact
 from mmagent.workspace.path_policy import PathPolicy
-from mmagent.workspace.permissions import PermissionChecker
 
 
 async def run_s0(
@@ -35,25 +31,23 @@ async def run_s0(
     返回 {"g0_pass": bool, "g0_issues": [...], "tasks": [...]}。
     """
     tasks: list[dict] = []
-    for role_id, node_key, system, instructions, expected in _s0_specs():
-        task_rec = repositories.create_task(
-            db, run_id=run_id, stage_key="S0", node_key=node_key, role_id=role_id,
-        )
-        loop = AgentLoop(
-            db, provider, registry,
-            PermissionChecker(get_role(role_id).permissions(), policy),
-            policy, cancel=cancel,
-        )
-        spec = AgentTask(
-            task_id=task_rec.id, node_key=node_key, role_id=role_id,
-            system_prompt=system, instructions=instructions,
-            model="mock", reasoning=get_role(role_id).reasoning,
+    for role_id, node_key, instructions, expected in _s0_specs():
+        status = await run_role_leg(
+            db, provider, registry, policy, run_id,
+            stage_key="S0",
+            role_id=role_id,
+            node_key=node_key,
+            instructions=instructions,
             expected_artifacts=expected,
+            cancel=cancel,
         )
-        outcome = await loop.run(spec)
-        tasks.append({"node": node_key, "status": outcome.status.value, "error": outcome.error})
-        if outcome.status.value != "SUCCEEDED":
-            return {"g0_pass": False, "g0_issues": [f"{node_key} 未成功: {outcome.error}"], "tasks": tasks}
+        tasks.append({"node": node_key, "status": status, "error": None})
+        if status != "SUCCEEDED":
+            return {
+                "g0_pass": False,
+                "g0_issues": [f"{node_key} 未成功"],
+                "tasks": tasks,
+            }
 
     # 机械生成需求追踪矩阵
     await _generate_requirement_matrix(db, policy, run_id, registry, cancel)
@@ -65,17 +59,25 @@ async def run_s0(
     return {"g0_pass": ok, "g0_issues": issues, "tasks": tasks}
 
 
-def _s0_specs() -> list[tuple[str, str, str, str, list[ExpectedArtifact]]]:
+def _s0_specs() -> list[tuple[str, str, str, list[ExpectedArtifact]]]:
     return [
-        ("reader", "S0.2:读题", READER_SYSTEM,
-         "读取 输入/题目/ 下的题目文件与 输入/数据/ 下的附件清单。"
-         "产出 交接/题面契约.json 和 交接/数据档案.json。",
-         [ExpectedArtifact(rel_path="交接/题面契约.json"),
-          ExpectedArtifact(rel_path="交接/数据档案.json")]),
-        ("answer_predictor", "S0.3:预测", ANSWER_PREDICTOR_SYSTEM,
-         "读取 交接/题面契约.json 和 交接/数据档案.json。"
-         "产出 交接/典型答卷预测.md。",
-         [ExpectedArtifact(rel_path="交接/典型答卷预测.md", kind="text")]),
+        (
+            "reader",
+            "S0.2:读题",
+            "读取 输入/题目/ 下的题目文件与 输入/数据/ 下的附件清单。"
+            "产出 交接/题面契约.json 和 交接/数据档案.json。",
+            [
+                ExpectedArtifact(rel_path="交接/题面契约.json"),
+                ExpectedArtifact(rel_path="交接/数据档案.json"),
+            ],
+        ),
+        (
+            "answer_predictor",
+            "S0.3:预测",
+            "读取 交接/题面契约.json 和 交接/数据档案.json。"
+            "产出 交接/典型答卷预测.md。",
+            [ExpectedArtifact(rel_path="交接/典型答卷预测.md", kind="text")],
+        ),
     ]
 
 
