@@ -268,6 +268,11 @@ def create_app(
         finally:
             await provider.aclose()
 
+    @app.get("/projects/{project_id}/runs", dependencies=auth)
+    async def runs_list(project_id: str) -> list[dict[str, Any]]:
+        handle = state.project(project_id)
+        return state.runs.list_status(handle)
+
     @app.post("/projects/{project_id}/runs", dependencies=auth)
     async def run_start(
         project_id: str, req: RunStartRequest
@@ -319,8 +324,8 @@ def create_app(
     async def run_cancel(
         project_id: str, run_id: str, req: CancelRequest
     ) -> dict[str, Any]:
-        state.project(project_id)
-        await state.runs.cancel(run_id, req.reason)
+        handle = state.project(project_id)
+        await state.runs.cancel(run_id, req.reason, handle=handle)
         return {"ok": True}
 
     @app.get(
