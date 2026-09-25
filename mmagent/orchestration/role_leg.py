@@ -6,6 +6,7 @@ from mmagent.mm.roles.prompts import get_system_prompt
 from mmagent.mm.roles.registry import get_role
 from mmagent.orchestration.budget import check_run_budget
 from mmagent.orchestration.resume import prepare_node_task
+from mmagent.orchestration.wave import WaveJob, run_status_wave, wave_active
 from mmagent.providers.base import BaseProvider
 from mmagent.state.db import Database
 from mmagent.tools.registry import ToolRegistry
@@ -14,7 +15,7 @@ from mmagent.workspace.path_policy import PathPolicy
 from mmagent.workspace.permissions import PermissionChecker
 
 
-async def run_role_leg(
+async def _run_role_leg_once(
     db: Database,
     provider: BaseProvider,
     registry: ToolRegistry,
@@ -68,3 +69,71 @@ async def run_role_leg(
         )
     )
     return outcome.status.value
+
+
+
+async def run_role_leg(
+    db: Database,
+    provider: BaseProvider,
+    registry: ToolRegistry,
+    policy: PathPolicy,
+    run_id: str,
+    *,
+    stage_key: str,
+    role_id: str,
+    node_key: str,
+    instructions: str,
+    expected_artifacts: list[ExpectedArtifact],
+    question_num: int | None = None,
+    image_paths: list[str] | None = None,
+    cancel=None,
+) -> str:
+    """Run one role node with the pinned one-retry/adaptive-wave semantics.
+
+    An outer multi-leg wave owns retry/concurrency when one is already active.
+    Otherwise a direct role leg is treated as a one-job wave, so provider 429
+    and ordinary leg failure receive the same single retry and durable 4→2
+    concurrency feedback as batched lanes.
+    """
+    if wave_active():
+        return await _run_role_leg_once(
+            db,
+            provider,
+            registry,
+            policy,
+            run_id,
+            stage_key=stage_key,
+            role_id=role_id,
+            node_key=node_key,
+            instructions=instructions,
+            expected_artifacts=expected_artifacts,
+            question_num=question_num,
+            image_paths=image_paths,
+            cancel=cancel,
+        )
+
+    async def attempt() -> str:
+        return await _run_role_leg_once(
+            db,
+            provider,
+            registry,
+            policy,
+            run_id,
+            stage_key=stage_key,
+            role_id=role_id,
+            node_key=node_key,
+            instructions=instructions,
+            expected_artifacts=expected_artifacts,
+            question_num=question_num,
+            image_paths=image_paths,
+            cancel=cancel,
+        )
+
+    wave = await run_status_wave(
+        db,
+        run_id,
+        [WaveJob(node_key, attempt)],
+        cancel=cancel,
+        wave_key=f"{stage_key}:{node_key}",
+    )
+    return wave.results.get(node_key, "FAILED")
