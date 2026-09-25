@@ -377,6 +377,25 @@ async def _run_escalation(
     return check_g2(policy.root, q)
 
 
+def _has_degraded_release(policy: PathPolicy, q: int) -> bool:
+    path = policy.root / "交接" / "降级放行.json"
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(raw, dict) or not isinstance(raw.get("问题"), list):
+        return False
+    for row in raw["问题"]:
+        if not isinstance(row, dict):
+            continue
+        try:
+            if int(row.get("问题编号")) == q:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
 def _record_degraded_release(policy: PathPolicy, q: int, issues: list[str]) -> None:
     path = policy.root / "交接" / "降级放行.json"
     try:
@@ -434,14 +453,30 @@ async def run_s2(
             if checkpoint is not None:
                 downgraded = bool(checkpoint.get("downgraded", False))
                 checkpoint_issues = list(checkpoint.get("issues") or [])
-                if downgraded:
+                if downgraded and _has_degraded_release(policy, q):
                     results["downgraded"].append(q)
                     results["gates"][f"问{q}"] = {
                         "pass": bool(checkpoint.get("pass", False)),
                         "issues": checkpoint_issues,
                         "downgraded": True,
                     }
+                    events.append_event(
+                        db,
+                        "pipeline.s2_question_reused",
+                        {"question": q, "downgraded": True},
+                        run_id=run_id,
+                    )
                     continue
+                if downgraded:
+                    events.append_event(
+                        db,
+                        "pipeline.s2_question_invalidated",
+                        {
+                            "question": q,
+                            "issues": ["降级放行 carrier 缺失或不可解析"],
+                        },
+                        run_id=run_id,
+                    )
 
                 still_valid, current_issues = check_g2(policy.root, q)
                 if still_valid:
