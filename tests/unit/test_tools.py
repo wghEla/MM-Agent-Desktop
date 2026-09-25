@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -129,3 +130,81 @@ def test_environment_reports_missing_configured_managed_runtime(
     assert capability.ok is False
     assert capability.path == str(missing)
     assert "不存在" in capability.detail
+
+
+
+class _FakeProcessManager:
+    def __init__(self, *, timed_out: bool = False):
+        self.timed_out = timed_out
+        self.spawned: list[dict] = []
+        self.recycled: list[str] = []
+
+    def spawn(self, name, argv, *, cwd=None, env=None):
+        self.spawned.append({
+            "name": name,
+            "argv": list(argv),
+            "cwd": cwd,
+            "env": env,
+        })
+        return SimpleNamespace(name=name)
+
+    def communicate(self, proc, timeout_s, cancel=None):
+        if self.timed_out:
+            return 137, b"", b"", True
+        return 0, b"managed-out", b"", False
+
+    def recycle(self, name):
+        self.recycled.append(name)
+        return True
+
+
+def test_latex_managed_timeout_is_structured_and_recycles(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    paper = root / "论文"
+    paper.mkdir(parents=True)
+    (paper / "论文.tex").write_text("\\documentclass{article}", encoding="utf-8")
+    manager = _FakeProcessManager(timed_out=True)
+
+    result = LatexTool(
+        root,
+        xelatex_path="xelatex.exe",
+        process_manager=manager,
+    ).compile(timeout_s=1)
+
+    assert result["rc"] == -2
+    assert result["pages"] == 0
+    assert manager.spawned
+    assert manager.recycled == [manager.spawned[0]["name"]]
+
+
+def test_matlab_managed_timeout_is_structured_and_recycles(tmp_path: Path) -> None:
+    manager = _FakeProcessManager(timed_out=True)
+
+    result = MatlabTool(
+        tmp_path,
+        matlab_path="matlab.exe",
+        process_manager=manager,
+    ).run_batch("disp(1)", timeout_s=1)
+
+    assert result["rc"] == -2
+    assert manager.spawned
+    assert manager.recycled == [manager.spawned[0]["name"]]
+
+
+def test_latex_managed_success_preserves_output_contract(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    paper = root / "论文"
+    paper.mkdir(parents=True)
+    (paper / "论文.tex").write_text("\\documentclass{article}", encoding="utf-8")
+    manager = _FakeProcessManager()
+
+    result = LatexTool(
+        root,
+        xelatex_path="xelatex.exe",
+        process_manager=manager,
+    ).compile(timeout_s=1)
+
+    assert result["rc"] == 0
+    assert "managed-out" in result["stdout_tail"]
+    assert result["errors"] == []
+    assert manager.recycled == [manager.spawned[0]["name"]]
