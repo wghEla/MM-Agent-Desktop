@@ -81,6 +81,7 @@ async def run_status_wave(
     min_concurrency: int | None = None,
     cancel=None,
     wave_key: str = "",
+    serial: bool = False,
 ) -> WaveOutcome[str]:
     """Run independent status-returning jobs with upstream-compatible wave rules.
 
@@ -89,6 +90,10 @@ async def run_status_wave(
     failed leg. Both receive at most one retry. The retry pass is a new wave,
     so an observed 429 reduces its concurrency before retrying.
     """
+    if serial:
+        default_concurrency = 1
+        min_concurrency = 1
+
     if not jobs:
         limit = current_wave_concurrency(
             db,
