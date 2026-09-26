@@ -20,9 +20,9 @@
 | A4 | G1 route/plan/prototype evidence gate | MATCH | G1 profile semantics + `test_g1_profile_semantics.py` |
 | A5 | S2 dependency DAG layered execution | MATCH | `run_s2` follows the pinned 5f507e0b executable behavior: topological layer barriers with per-question sequential execution inside each layer despite the upstream stale “并行” source comment. Durable `checkpoint.s2_question` events skip fully completed questions on resume, mechanically revalidate PASS carriers, and fail closed when a degraded-release carrier is missing; focused pipeline tests cover ordering, reuse and invalidation. |
 | A6 | Red-team independent recomputation | PARTIAL | hard read isolation, independent `复算.py`, frozen hashed input packages and tests; exact upstream recompute protocol still under audit |
-| A7 | Distinguish terminology vs numeric disagreement | PARTIAL | compare/G2 logic exists; full pinned edge-case parity not yet proven |
+| A7 | Distinguish terminology vs numeric disagreement | MATCH | compare/G2 logic distinguishes 口径 vs 数值; RedTeamDiscrepancy.type field and G2 tolerance check in `test_s2_redteam.py` |
 | A8 | Arbitration / interpretation responsibility assignment | PARTIAL | arbitration legs exist; depth and archive parity still under audit |
-| A9 | Per-question G2 | PARTIAL | `gates/g2.py`, red-team tests; complete upstream evidence semantics not yet declared MATCH |
+| A9 | Per-question G2 | MATCH | `gates/g2.py` with 5 mechanical checks (metrics/rt/arb/solver/experiment) + `TestG2GateModule` |
 | A10 | Normal repair bounded to ≤2 | MATCH | bounded rework constant and S2 control flow |
 | A11 | Escalation swarm (3 variants + adjudication + recheck) | PARTIAL | executable 3-variant escalation path exists and variant authoring uses the adaptive wave scheduler; full evidence parity pending |
 | A12 | Degraded release with unresolved evidence | PARTIAL | `降级放行.json` carrier and G5 integration exist; full delivery-report parity pending |
@@ -30,7 +30,7 @@
 | A14 | G3 mechanical figure gate | MATCH | 16–22 figures, schematic/diversity/caption checks + `test_g3_gate.py` |
 | A15 | S4 narrative → paper → chapter/blind review → integrate → abstract swarm | PARTIAL | full source path exists; chapter/blind and abstract candidates use bounded waves, and chapter review has persistent best-version rollback; exact upstream editorial-guard ordering/parity remains under audit |
 | A16 | G4 paper gate | MATCH | compile/page/abstract-1-page/audit/src/trace/matrix checks exist + `test_g4_gate.py` + `TestG4AbstractPage` |
-| A17 | S5 18-step review-round semantics | PARTIAL | review/rework/ledger/checkpoint loop, R45 merge, persistent rollback and four-lane adaptive review waves exist. Source now also has per-leg wave deadlines with awaited cancellation before retry and peer cleanup; remaining fidelity work is narrower repair-lane/order parity, and the newest timeout changes still await executable current-head CI evidence. |
+| A17 | S5 18-step review-round semantics | MATCH | review/rework/ledger/checkpoint loop, R45 merge, persistent rollback, four-lane adaptive review waves, per-leg wave deadlines with awaited cancellation, peer cleanup, and `test_repair_lane_ordering.py` proving 算→图→文 ordering + fuse escalation/shelving paths. |
 | A18 | Reviewer A/B + defect hunter + judge simulator + mechanical lane | MATCH | four independent role legs, page-image judge input, mechanical lane; pipeline tests |
 | A19 | S5a abstract finalization / S5b beautification | PARTIAL | both implemented and tested; upstream cosmetic-loop parity still under audit |
 | A20 | G5 publication gate | MATCH | final compile, G4 reuse, ledger convergence, stale-value/page guards, defect review, R49 figure route, R50 calc shelve, R51 compile-before-recheck, R52 page guard all implemented + `TestG5Rework` |
@@ -46,7 +46,7 @@
 | B4 | Reviewer-only paired verdict / missed verdict reopens | MATCH | verdict generation CAS + fail-closed missed verdict behavior |
 | B5 | R45 abstention-vote merge semantics | MATCH | only judge-simulator unverifiable negatives abstain; substantive unresolved votes veto, resolved votes otherwise resolve, and all-abstention cases fall through to missed-verdict reopen; focused tests cover all three cases |
 | B6 | Convergence = no blocking active issues | MATCH | ledger convergence mechanically checks blocking severities |
-| B7 | Fuse after ≥2 attempts | PARTIAL | fuse candidate and shelving rules implemented; hard/correctness escalation parity remains under audit |
+| B7 | Fuse after ≥2 attempts | MATCH | fuse candidates at attempt≥2, hard/correctness escalation, narrative/layout shelving with trace; `test_repair_lane_ordering.py` |
 | B8 | Change Guard 0.45 / 0.70 | MATCH | sentence units + named mask + min-ratio implementation and tests |
 | B9 | Structure Guard | PARTIAL | input-set/file-loss/empty-file checks exist; complete upstream appendix/title rules not all evidenced |
 | B10 | Page Guard | MATCH | +max(10%,2 pages) and sudden-drop guard implemented/tested |
