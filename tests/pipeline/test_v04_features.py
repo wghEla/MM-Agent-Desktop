@@ -297,3 +297,33 @@ class TestG5Rework:
         # 搁置后阻塞级仍算 blocked
         ok, _ = ledger.收敛()
         assert not ok  # 搁置的正确性仍不算收敛（G5 降级放行）
+
+
+# ==================== S6 Retrospective schemas ====================
+class TestRetrospectiveSchemas:
+    def test_retrospective_report_valid(self):
+        from mmagent.mm.contracts.s6_contracts import RetrospectiveReport
+        r = RetrospectiveReport(
+            总评="整体质量良好",
+            瓶颈环节=[{"环节": "S2 红队", "次数": 3, "耗时占比": 0.3}],
+            回流账={"仲裁": 3, "编译失败": 2},
+            质量指标={"章评均分": 7.5},
+        )
+        assert r.总评 == "整体质量良好"
+
+    def test_run_metrics_valid(self):
+        from mmagent.mm.contracts.s6_contracts import RunMetrics
+        m = RunMetrics(total_legs=100, gates_passed=5, gates_failed=1)
+        assert m.total_legs == 100
+
+    def test_run_metrics_negative_rejected(self):
+        from mmagent.mm.contracts.s6_contracts import RunMetrics
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            RunMetrics(total_legs=-1)
+
+    def test_bottleneck_duration_range(self):
+        from mmagent.mm.contracts.s6_contracts import RetrospectiveBottleneck
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            RetrospectiveBottleneck(环节="S3", 次数=1, 耗时占比=1.5)
