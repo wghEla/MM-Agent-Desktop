@@ -208,3 +208,37 @@ class TestPageGuard:
         from mmagent.mm.guards.guards import page_guard
         ok, _ = page_guard(20, 10)
         assert not ok  # 骤降告警
+
+
+# ==================== v0.7.0 Repair receipt schemas ====================
+class TestRepairReceiptSchemas:
+    def test_repair_receipt_valid(self):
+        from mmagent.mm.contracts.repair_receipts import RepairReceipt
+        r = RepairReceipt(id="审-1-01", 改动="修复了数值", 证据="论文/ch3.tex:15", receipt_id="r1")
+        assert r.id == "审-1-01"
+        assert r.generation == 0
+
+    def test_repair_receipt_empty_change_rejected(self):
+        from mmagent.mm.contracts.repair_receipts import RepairReceipt
+        with pytest.raises(Exception):
+            RepairReceipt(id="审-1-01", 改动="")
+
+    def test_beauty_receipt_target(self):
+        from mmagent.mm.contracts.repair_receipts import BeautyReceipt
+        r = BeautyReceipt(id="美-1-01", 目标="图", 改动="重绘图3")
+        assert r.目标 == "图"
+
+    def test_g5_repair_receipt(self):
+        from mmagent.mm.contracts.repair_receipts import G5RepairReceipt
+        r = G5RepairReceipt(id="G5-1", 目标="算", 改动="重算")
+        assert r.目标 == "算"
+
+    def test_s6_terminal_receipt_page(self):
+        from mmagent.mm.contracts.repair_receipts import S6TerminalReceipt
+        r = S6TerminalReceipt(id="S6-1", 页码=3, 改动="排版修复")
+        assert r.页码 == 3
+
+    def test_generation_defaults_zero(self):
+        from mmagent.mm.contracts.repair_receipts import RepairReceipt
+        r = RepairReceipt(id="x", 改动="y")
+        assert r.generation == 0
