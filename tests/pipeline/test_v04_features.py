@@ -219,8 +219,9 @@ class TestRepairReceiptSchemas:
         assert r.generation == 0
 
     def test_repair_receipt_empty_change_rejected(self):
-        from mmagent.mm.contracts.repair_receipts import RepairReceipt
         from pydantic import ValidationError
+
+        from mmagent.mm.contracts.repair_receipts import RepairReceipt
         with pytest.raises(ValidationError):
             RepairReceipt(id="审-1-01", 改动="")
 
