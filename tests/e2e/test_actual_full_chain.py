@@ -202,7 +202,7 @@ def _provider_script() -> MockScript:
 
     # S5a final abstract + restatement
     turns += _write("s5af", "论文/0.摘要.tex", "最终摘要可复述对象、方法、结果2.17和局限。 % src: 交接/结果声明_问题1.json")
-    turns += _write("s5av", "审稿/摘要复述_定稿1.json", {"通过": True})
+    turns += _write("s5av", "审稿/摘要复述_定稿1.json", {"通过": True, "分数": 8.5})
 
     # S5b page review -> no changes
     turns += _write("s5beauty", "审稿/美1.json", {"页问题": [], "美观分": 9.0})

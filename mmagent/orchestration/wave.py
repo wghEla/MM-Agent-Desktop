@@ -163,7 +163,7 @@ async def run_status_wave(
         )
 
         async def invoke(
-            job: WaveJob[str], *, gate=semaphore
+            job: WaveJob[str], *, gate=semaphore, pass_no=pass_no
         ) -> tuple[str, str, bool]:
             async with gate:
                 if cancel is not None:

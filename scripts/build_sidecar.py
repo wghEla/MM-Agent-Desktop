@@ -25,12 +25,12 @@ def _target_triple() -> str:
             text=True,
             cwd=ROOT,
         ).strip()
-    except (OSError, subprocess.CalledProcessError):
+    except (OSError, subprocess.CalledProcessError) as err:
         verbose = subprocess.check_output(["rustc", "-Vv"], text=True, cwd=ROOT)
         for line in verbose.splitlines():
             if line.startswith("host: "):
                 return line.split(":", 1)[1].strip()
-        raise RuntimeError("unable to determine Rust host target triple")
+        raise RuntimeError("unable to determine Rust host target triple") from err
 
 
 def build_sidecar() -> Path:

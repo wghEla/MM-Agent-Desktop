@@ -72,7 +72,7 @@ async def test_s5a_abstract_restate_gate(tmp_path: Path) -> None:
         run_id = repositories.create_run(handle.workspace.db, project_id=handle.project_id, profile="快速")
         script = MockScript(
             _write("a", "论文/0.摘要.tex", "对象、方法、结果、局限都能从摘要复述。")
-            + _write("v", "审稿/摘要复述_定稿1.json", {"通过": True})
+            + _write("v", "审稿/摘要复述_定稿1.json", {"通过": True, "分数": 8.5})
         )
         result = await run_s5a(
             handle.workspace.db, MockProvider(script), _registry(), PathPolicy(root), run_id
