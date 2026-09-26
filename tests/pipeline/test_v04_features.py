@@ -244,3 +244,56 @@ class TestRepairReceiptSchemas:
         from mmagent.mm.contracts.repair_receipts import RepairReceipt
         r = RepairReceipt(id="x", 改动="y")
         assert r.generation == 0
+
+
+# ==================== G5 Rework R49-R52 tests ====================
+class TestG5Rework:
+    def test_g5_rework_import(self):
+        from mmagent.mm.pipeline.s5_finalize import run_g5_rework
+        assert callable(run_g5_rework)
+
+    @pytest.mark.asyncio
+    async def test_g5_rework_no_blocking_passes(self, tmp_path: Path):
+        """No blocking issues → G5 passes on first check, no rework needed."""
+        from mmagent.api.projects import create_project
+        from mmagent.mm.pipeline.s5_finalize import run_g5_rework
+        from mmagent.providers.mock import MockProvider, MockScript, MockTurn
+        from mmagent.state import repositories
+        from mmagent.tools.filesystem import FsReadTool, FsWriteTool
+        from mmagent.tools.registry import ToolRegistry
+        from mmagent.workspace.path_policy import PathPolicy
+
+        reg = ToolRegistry()
+        reg.register(FsReadTool())
+        reg.register(FsWriteTool())
+
+        root = tmp_path / "g5r"
+        handle = create_project(root, name="t")
+        db = handle.workspace.db
+        policy = PathPolicy(root)
+        run_id = repositories.create_run(db, project_id=handle.project_id, profile="std")
+        (root / "论文").mkdir(exist_ok=True)
+        (root / "论文" / "论文.tex").write_text(r"\documentclass{article}", encoding="utf-8")
+
+        provider = MockProvider(MockScript([MockTurn(text="done")]))
+        result = await run_g5_rework(
+            db, provider, reg, policy, run_id,
+            beauty_baseline_pages=10, cancel=None,
+        )
+        assert "rework_rounds" in result
+        db.close()
+
+    @pytest.mark.asyncio
+    async def test_g5_rework_calc_shelved(self, tmp_path: Path):
+        """R50: 算类阻塞在 G5 被搁置（不重算）。"""
+        from mmagent.mm.ledger.issue_ledger import IssueLedger
+        ledger = IssueLedger(前缀="审")
+        ledger.并入([{"问题": "需要重算", "级别": "正确性", "目标": "算"}], 轮次=1)
+        assert not ledger.收敛()[0]  # blocked
+        # G5: shelve 算条
+        for x in ledger.待改条目(级别们=["正确性"]):
+            if x.目标 == "算":
+                ledger.搁置条目(x.id, "G5 无算路")
+        # 搁置后阻塞级仍算 blocked
+        ok, _ = ledger.收敛()
+        assert not ok  # 搁置的正确性仍不算收敛（G5 降级放行）

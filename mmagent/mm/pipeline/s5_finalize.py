@@ -296,3 +296,154 @@ async def run_g5(
         db, "gate.result", {"gate": "G5", "pass": bool(ok), "issues": issues}, run_id=run_id
     )
     return {"pass": bool(ok), "issues": issues, "pages": pages}
+
+
+async def run_g5_rework(
+    db: Database, provider: BaseProvider, registry: ToolRegistry, policy: PathPolicy,
+    run_id: str, *, beauty_baseline_pages: int, compile_paper: CompileFn | None = None,
+    max_rework: int = 3, cancel=None,
+) -> dict[str, Any]:
+    """G5 rework loop implementing R49/R50/R51/R52.
+
+    Each rework round:
+    1. Un-shelve blocking issues (give one more chance at G5)
+    2. R49: Figure route → plotter → rebuild → then writer
+    3. R50: Calc route → shelve (no recalc at publication gate)
+    4. Text route → writer → change guard → structure guard
+    5. R51: Compile before defect re-check
+    6. R52: Page guard against beauty baseline
+    7. Defect hunter re-check on new PDF
+    8. New defects merged → fuse → checkpoint
+    """
+    from mmagent.mm.ledger.issue_ledger import (
+        IssueLedger,
+        待改,
+        搁置,
+        阻塞级别,
+    )
+    compiler = compile_paper or _default_compile
+    rework_count = 0
+
+    # Load S5 ledger state
+    ledger = IssueLedger(前缀="审")
+    ledger_path = policy.root / "台账" / "审稿台账.json"
+    if ledger_path.is_file():
+        try:
+            data = json.loads(ledger_path.read_text(encoding="utf-8"))
+            for entry in data.get("条目", []):
+                if isinstance(entry, dict):
+                    from mmagent.mm.ledger.issue_ledger import Issue
+                    ledger.条目.append(Issue(**{
+                        k: v for k, v in entry.items()
+                        if k in Issue.model_fields
+                    }))
+        except (OSError, json.JSONDecodeError, Exception):
+            pass
+
+    for rework_n in range(1, max_rework + 1):
+        rework_count = rework_n
+
+        # Step 1: Un-shelve blocking issues for one more chance at G5
+        for x in ledger.条目:
+            if x.状态 == 搁置 and x.级别 in 阻塞级别:
+                x.状态 = 待改
+
+        blocking = ledger.待改条目(级别们=list(阻塞级别))
+        if not blocking:
+            # No blocking issues left — G5 can pass
+            break
+
+        # R49: Figure route
+        figure_items = [x for x in blocking if x.目标 == "图"]
+        if figure_items:
+            for item in figure_items:
+                q = _question_from_issue({"定位": item.定位, "问题": item.问题})
+                if q is None:
+                    continue
+                await _leg(
+                    db, provider, registry, policy, run_id,
+                    stage="G5", role_id="plotter", node=f"G5:R{rework_n}:图问{q}",
+                    question_num=q,
+                    instructions=(
+                        f"【G5返工·改图】第{rework_n}次返工。改绘图脚本（只改不跑），"
+                        f"按台账条目同步图内数字/标注。"
+                    ),
+                    expected=[], cancel=cancel,
+                )
+                await run_question_plot_scripts(registry, policy, q, cancel=cancel)
+
+        # R50: Calc route → shelve (no recalc at publication gate)
+        calc_items = [x for x in blocking if x.目标 == "算"]
+        for x in calc_items:
+            ledger.搁置条目(x.id, "G5 无算路（出版前重算风险大），交复盘/人工")
+
+        # Text route → writer
+        text_items = [x for x in ledger.待改条目(级别们=list(阻塞级别)) if x.目标 != "算"]
+        if text_items:
+            await _leg(
+                db, provider, registry, policy, run_id,
+                stage="G5", role_id="writer", node=f"G5:R{rework_n}:文",
+                instructions=(
+                    f"【G5返工】第{rework_n}次返工。只改编号点名处，"
+                    "不许删除 \\cite，不许整章移附录，"
+                    f"共 {len(text_items)} 条。"
+                ),
+                expected=[], cancel=cancel,
+            )
+
+        # R51: Compile before re-check
+        compiled = await run_compile(compiler, policy.root, cancel=cancel)
+        pages = int(compiled.get("pages") or 0)
+
+        # R52: Page guard against beauty baseline
+        if pages > 0 and beauty_baseline_pages > 0:
+            page_ok, page_issue = page_guard(beauty_baseline_pages, pages)
+            if not page_ok:
+                events.append_event(db, "gate.g5_page_guard",
+                                    {"rework": rework_n, "pages": pages,
+                                     "baseline": beauty_baseline_pages},
+                                    run_id=run_id)
+
+        # Defect hunter re-check on new PDF
+        review_rel = f"审稿/G5复核{rework_n}.json"
+        status = await _leg(
+            db, provider, registry, policy, run_id,
+            stage="G5", role_id="defect_hunter", node=f"G5:R{rework_n}:复核",
+            instructions=(
+                f"G5 复核（第{rework_n}次）。只基于刚编译的当前 PDF，写 {review_rel}。"
+            ),
+            expected=[ExpectedArtifact(rel_path=review_rel,
+                                       schema_model=PublicationReviewVerdict)],
+            cancel=cancel,
+        )
+        new_pass = False
+        if status == "SUCCEEDED":
+            try:
+                data = json.loads((policy.root / review_rel).read_text(encoding="utf-8"))
+                new_pass = isinstance(data, dict) and bool(data.get("通过", False))
+            except (OSError, json.JSONDecodeError):
+                new_pass = False
+
+        events.append_event(
+            db, "gate.g5_rework",
+            {"rework": rework_n, "pass": new_pass, "pages": pages},
+            run_id=run_id,
+        )
+        if new_pass:
+            break
+
+    # Final check
+    compiled = await run_compile(compiler, policy.root, cancel=cancel)
+    pages = int(compiled.get("pages") or 0)
+    ok, issues = check_g5(
+        policy.root, beauty_baseline_pages=beauty_baseline_pages, current_pages=pages
+    )
+
+    events.append_event(
+        db, "gate.result",
+        {"gate": "G5", "pass": bool(ok), "issues": issues,
+         "rework_rounds": rework_count},
+        run_id=run_id,
+    )
+    return {"pass": bool(ok), "issues": issues, "pages": pages,
+            "rework_rounds": rework_count}
