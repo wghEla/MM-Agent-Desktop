@@ -55,8 +55,28 @@ These fixes do not change product logic — they align test data with the
 
 ## C. Windows Release
 
-Not yet executed in this pass. Build scripts exist at `scripts/build_sidecar.py`
-and `scripts/` directory. Will be validated in the next pass.
+### PyInstaller sidecar
+- Command: `uv run python scripts/build_sidecar.py`
+- Result: **SUCCESS** → `apps/desktop/src-tauri/binaries/mmagent-sidecar-x86_64-pc-windows-msvc.exe`
+- PyInstaller onefile mode, includes FastAPI + uvicorn + PyMuPDF + mmagent
+
+### React frontend
+- Command: `npm install && npm run build` (in apps/desktop/)
+- Result: **SUCCESS** → `apps/desktop/dist/` (157KB gzip 50KB)
+- Vite 5.4.21, 30 modules transformed
+
+### Tauri binary
+- Command: `cargo build --release` (in apps/desktop/src-tauri/)
+- Result: **BLOCKED** — MSVC Build Tools not installed
+- Error: `link.exe` resolves to Git Bash's POSIX `link`, not MSVC linker
+- Fix needed: Install `Microsoft.VisualStudio.2022.BuildTools` with `VCTools` workload
+  (requires admin elevation / UAC approval — winget install fails with 1602)
+
+### NSIS installer
+- Not yet attempted (depends on Tauri binary)
+
+### Installed startup smoke
+- Not yet attempted (depends on installer)
 
 ## D. Baseline notes
 
