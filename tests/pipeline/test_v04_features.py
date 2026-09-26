@@ -329,3 +329,41 @@ class TestRetrospectiveSchemas:
         from mmagent.mm.contracts.s6_contracts import RetrospectiveBottleneck
         with pytest.raises(ValidationError):
             RetrospectiveBottleneck(环节="S3", 次数=1, 耗时占比=1.5)
+
+
+class TestG4AbstractPage:
+    def test_abstract_page_check_in_g4(self, tmp_path: Path):
+        """G4 检查摘要恰好 1 页（aux abstract:end 标签）。"""
+        from mmagent.mm.gates.g4 import check_g4
+        root = tmp_path / "g4abs"
+        (root / "论文").mkdir(parents=True)
+        (root / "论文" / "论文.tex").write_text(r"\documentclass{article}", encoding="utf-8")
+        (root / "论文" / "0.摘要.tex").write_text("摘要内容", encoding="utf-8")
+        (root / "论文" / "论文.log").write_text(
+            "Output written on 论文.pdf (18 pages).", encoding="utf-8")
+        (root / "论文" / "论文.aux").write_text(
+            "\newlabel{abstract:end}{{}{1}}", encoding="utf-8")
+        (root / "审稿").mkdir(exist_ok=True)
+        (root / "审稿" / "审计报告.json").write_text("{}", encoding="utf-8")
+        (root / "交接").mkdir(exist_ok=True)
+        (root / "交接" / "需求追踪矩阵.json").write_text("[]", encoding="utf-8")
+        ok, issues = check_g4(root)
+        # Abstract page 1 is OK, other issues may exist
+        assert not any("摘要" in i for i in issues), issues
+
+    def test_abstract_page_2_fails(self, tmp_path: Path):
+        from mmagent.mm.gates.g4 import check_g4
+        root = tmp_path / "g4abs2"
+        (root / "论文").mkdir(parents=True)
+        (root / "论文" / "论文.tex").write_text(r"\documentclass{article}", encoding="utf-8")
+        (root / "论文" / "0.摘要.tex").write_text("摘要内容", encoding="utf-8")
+        (root / "论文" / "论文.log").write_text(
+            "Output written on 论文.pdf (18 pages).", encoding="utf-8")
+        (root / "论文" / "论文.aux").write_text(
+            "\newlabel{abstract:end}{{}{2}}", encoding="utf-8")
+        (root / "审稿").mkdir(exist_ok=True)
+        (root / "审稿" / "审计报告.json").write_text("{}", encoding="utf-8")
+        (root / "交接").mkdir(exist_ok=True)
+        (root / "交接" / "需求追踪矩阵.json").write_text("[]", encoding="utf-8")
+        ok, issues = check_g4(root)
+        assert any("摘要不是恰好 1 页" in i for i in issues), issues

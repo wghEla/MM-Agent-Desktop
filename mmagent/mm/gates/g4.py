@@ -84,6 +84,18 @@ def check_g4(workspace_root: Path) -> tuple[bool, list[str]]:
         if pages and pages > thresholds.max_body_pages:
             issues.append(f"正文页数超限: {pages} > {thresholds.max_body_pages}")
 
+    # Abstract must be exactly 1 page (upstream G4 criterion)
+    aux_path = root / "论文" / "论文.aux"
+    if aux_path.is_file():
+        aux_text = aux_path.read_text(encoding="utf-8", errors="replace")
+        m = re.search(r"abstract:end.*?\{(\d+)\}", aux_text)
+        if m:
+            abstract_page = int(m.group(1))
+            if abstract_page != 1:
+                issues.append(f"摘要不是恰好 1 页：aux 记为第 {abstract_page} 页")
+        else:
+            issues.append("论文.aux 未找到 abstract:end 标签")
+
     audit = _load_json(root / "审稿" / "审计报告.json")
     if not isinstance(audit, dict):
         issues.append("审稿/审计报告.json 缺失或不可解析")

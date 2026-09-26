@@ -29,12 +29,12 @@
 | A13 | S3 figure evidence + two-round figure review | MATCH | `s3_figures.py`, adaptive plotter/reviewer waves, plot runtime, `test_s3_figures.py` |
 | A14 | G3 mechanical figure gate | MATCH | 16–22 figures, schematic/diversity/caption checks + `test_g3_gate.py` |
 | A15 | S4 narrative → paper → chapter/blind review → integrate → abstract swarm | PARTIAL | full source path exists; chapter/blind and abstract candidates use bounded waves, and chapter review has persistent best-version rollback; exact upstream editorial-guard ordering/parity remains under audit |
-| A16 | G4 paper gate | PARTIAL | compile/page/audit/src/trace checks exist + `test_g4_gate.py`; not all upstream mechanical clauses proven |
+| A16 | G4 paper gate | MATCH | compile/page/abstract-1-page/audit/src/trace/matrix checks exist + `test_g4_gate.py` + `TestG4AbstractPage` |
 | A17 | S5 18-step review-round semantics | PARTIAL | review/rework/ledger/checkpoint loop, R45 merge, persistent rollback and four-lane adaptive review waves exist. Source now also has per-leg wave deadlines with awaited cancellation before retry and peer cleanup; remaining fidelity work is narrower repair-lane/order parity, and the newest timeout changes still await executable current-head CI evidence. |
 | A18 | Reviewer A/B + defect hunter + judge simulator + mechanical lane | MATCH | four independent role legs, page-image judge input, mechanical lane; pipeline tests |
 | A19 | S5a abstract finalization / S5b beautification | PARTIAL | both implemented and tested; upstream cosmetic-loop parity still under audit |
-| A20 | G5 publication gate | PARTIAL | final compile, G4 reuse, ledger convergence, stale-value/page guards, defect review exist; all R49–R52 paths not yet proven |
-| A21 | S6 final page review / fixes / harvest / retrospective | PARTIAL | implemented with run metrics and resumable legs; installed-product delivery proof pending |
+| A20 | G5 publication gate | MATCH | final compile, G4 reuse, ledger convergence, stale-value/page guards, defect review, R49 figure route, R50 calc shelve, R51 compile-before-recheck, R52 page guard all implemented + `TestG5Rework` |
+| A21 | S6 final page review / fixes / harvest / retrospective | PARTIAL | implemented with run metrics, retrospective schema (`s6_contracts.py`), resumable legs; installed-product delivery proof pending |
 
 ## B. Loops, ledger, and guards
 
