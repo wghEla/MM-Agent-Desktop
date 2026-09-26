@@ -317,13 +317,15 @@ class TestRetrospectiveSchemas:
         assert m.total_legs == 100
 
     def test_run_metrics_negative_rejected(self):
-        from mmagent.mm.contracts.s6_contracts import RunMetrics
         from pydantic import ValidationError
+
+        from mmagent.mm.contracts.s6_contracts import RunMetrics
         with pytest.raises(ValidationError):
             RunMetrics(total_legs=-1)
 
     def test_bottleneck_duration_range(self):
-        from mmagent.mm.contracts.s6_contracts import RetrospectiveBottleneck
         from pydantic import ValidationError
+
+        from mmagent.mm.contracts.s6_contracts import RetrospectiveBottleneck
         with pytest.raises(ValidationError):
             RetrospectiveBottleneck(环节="S3", 次数=1, 耗时占比=1.5)
