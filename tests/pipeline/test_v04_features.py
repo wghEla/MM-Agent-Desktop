@@ -220,7 +220,8 @@ class TestRepairReceiptSchemas:
 
     def test_repair_receipt_empty_change_rejected(self):
         from mmagent.mm.contracts.repair_receipts import RepairReceipt
-        with pytest.raises(Exception):
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
             RepairReceipt(id="审-1-01", 改动="")
 
     def test_beauty_receipt_target(self):
