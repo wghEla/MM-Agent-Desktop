@@ -14,7 +14,7 @@
 
 | # | Mechanism | Status | Current evidence / remaining gap |
 |---|---|---|---|
-| A1 | S0 problem digestion / contract / prediction / trace matrix | MATCH | `s0_s1.py`, resumable role legs, `test_s0_s1.py`; exact upstream seed/health-check decomposition not fully audited |
+| A1 | S0 problem digestion / contract / prediction / trace matrix | PARTIAL | Reader→prediction→mechanical matrix→G0 is implemented, but explicit upstream seed/health-check decomposition is not present/proven. The added fidelity test exercises `check_g0`, not `run_s0`, so it is not sufficient MATCH evidence. |
 | A2 | G0 contract gate | MATCH | `gates/g0.py`, `test_g0_gate.py` |
 | A3 | S1 strategic tournament with real prototypes | PARTIAL | `s1_tournament.py`, adaptive bounded prototype-authoring wave + real prototype execution + `test_s1_tournament.py`; exact upstream route scoring/selection parity remains under audit |
 | A4 | G1 route/plan/prototype evidence gate | MATCH | G1 profile semantics + `test_g1_profile_semantics.py` |
@@ -30,10 +30,10 @@
 | A14 | G3 mechanical figure gate | MATCH | 16–22 figures, schematic/diversity/caption checks + `test_g3_gate.py` |
 | A15 | S4 narrative → paper → chapter/blind review → integrate → abstract swarm | PARTIAL | full source path exists; chapter/blind and abstract candidates use bounded waves, and chapter review has persistent best-version rollback; exact upstream editorial-guard ordering/parity remains under audit |
 | A16 | G4 paper gate | MATCH | compile/page/abstract-1-page/audit/src/trace/matrix checks exist + `test_g4_gate.py` + `TestG4AbstractPage` |
-| A17 | S5 18-step review-round semantics | MATCH | review/rework/ledger/checkpoint loop, R45 merge, persistent rollback, four-lane adaptive review waves, per-leg wave deadlines with awaited cancellation, peer cleanup, and `test_repair_lane_ordering.py` proving 算→图→文 ordering + fuse escalation/shelving paths. |
+| A17 | S5 18-step review-round semantics | PARTIAL | Core review/rework/ledger/checkpoint loop is implemented, including R45 and rollback. However blocking fuse candidates are only appended to `needs_escalation`; no S5 escalation executor consumes them, so the full review-round/fuse semantics are not closed. |
 | A18 | Reviewer A/B + defect hunter + judge simulator + mechanical lane | MATCH | four independent role legs, page-image judge input, mechanical lane; pipeline tests |
 | A19 | S5a abstract finalization / S5b beautification | PARTIAL | both implemented and tested; upstream cosmetic-loop parity still under audit |
-| A20 | G5 publication gate | MATCH | final compile, G4 reuse, ledger convergence, stale-value/page guards, defect review, R49 figure route, R50 calc shelve, R51 compile-before-recheck, R52 page guard all implemented + `TestG5Rework` |
+| A20 | G5 publication gate | PARTIAL | Mechanical `run_g5` gate is fail-closed, but the R49-R52 `run_g5_rework` path is not wired into `PaperFoundryEngine`; its ledger/review closure still needs integration tests before it can be MATCH. |
 | A21 | S6 final page review / fixes / harvest / retrospective | PARTIAL | implemented with run metrics, retrospective schema (`s6_contracts.py`), resumable legs; installed-product delivery proof pending |
 
 ## B. Loops, ledger, and guards
@@ -46,7 +46,7 @@
 | B4 | Reviewer-only paired verdict / missed verdict reopens | MATCH | verdict generation CAS + fail-closed missed verdict behavior |
 | B5 | R45 abstention-vote merge semantics | MATCH | only judge-simulator unverifiable negatives abstain; substantive unresolved votes veto, resolved votes otherwise resolve, and all-abstention cases fall through to missed-verdict reopen; focused tests cover all three cases |
 | B6 | Convergence = no blocking active issues | MATCH | ledger convergence mechanically checks blocking severities |
-| B7 | Fuse after ≥2 attempts | MATCH | fuse candidates at attempt≥2, hard/correctness escalation, narrative/layout shelving with trace; `test_repair_lane_ordering.py` |
+| B7 | Fuse after ≥2 attempts | PARTIAL | Generation-local attempt accounting and narrative/layout shelving are implemented/being hardened. Hard/correctness candidates are currently only recorded in `needs_escalation`; the required one-time escalation is not executed by S5. |
 | B8 | Change Guard 0.45 / 0.70 | MATCH | sentence units + named mask + min-ratio implementation and tests |
 | B9 | Structure Guard | PARTIAL | input-set/file-loss/empty-file checks exist; complete upstream appendix/title rules not all evidenced |
 | B10 | Page Guard | MATCH | +max(10%,2 pages) and sudden-drop guard implemented/tested |
