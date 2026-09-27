@@ -72,6 +72,8 @@ def _harvest(root: Path) -> list[str]:
         ("论文源码", root / "论文"),
         ("求解源码", root / "求解"),
         ("交接", root / "交接"),
+        ("台账", root / "台账"),
+        ("审稿", root / "审稿"),
     ):
         if source.is_dir():
             target = delivery / name
