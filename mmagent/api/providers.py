@@ -196,6 +196,7 @@ def build_provider(
             extra_headers=dict(extra.get("extra_headers") or {}),
             image_input=bool(extra.get("image_input", False)),
             reasoning_effort=bool(extra.get("reasoning_effort", False)),
+            test_model=profile.model,
         )
     else:
         raise ValueError(f"unsupported provider protocol: {profile.protocol}")
