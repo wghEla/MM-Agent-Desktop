@@ -146,15 +146,20 @@ async def _apply_beauty_issues(
 
     if text_issues:
         receipt = f"审稿/回执_美化R{round_num}_文.json"
-        status = await _leg(
+        from mmagent.mm.pipeline.guarded_repair import guarded_text_repair
+        status, _guard_issues = await guarded_text_repair(
             db, provider, registry, policy, run_id,
-            stage="S5b", role_id="writer", node=f"S5b:R{round_num}:文",
+            stage_key="S5b",
+            node_key=f"S5b:R{round_num}:文",
             instructions=(
                 "只处理以下版面文字问题，不能改变模型事实或关键数字："
                 + json.dumps(text_issues, ensure_ascii=False)
                 + f"。写 {receipt} 记录改动证据。"
             ),
-            expected=[ExpectedArtifact(rel_path=receipt)], cancel=cancel,
+            receipt_rel=receipt,
+            receipt_schema=ModelRepairReceiptArtifact,
+            review_items=text_issues,
+            cancel=cancel,
         )
         if status != "SUCCEEDED":
             failures.append("美化文路失败")
@@ -497,6 +502,10 @@ async def run_g5_rework(
                 ),
                 receipt_rel=receipt_rel,
                 receipt_schema=ModelRepairReceiptArtifact,
+                review_items=[
+                    {"问题": x.问题, "指令": x.指令, "定位": x.定位}
+                    for x in text_items
+                ],
                 cancel=cancel,
             )
             if guard_issues:
