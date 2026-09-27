@@ -47,6 +47,18 @@ def _render(root: Path) -> list[Path]:
     return [page]
 
 
+def _seed_terminal_gate(root: Path) -> None:
+    (root / "论文").mkdir(parents=True, exist_ok=True)
+    (root / "交接").mkdir(parents=True, exist_ok=True)
+    (root / "台账").mkdir(parents=True, exist_ok=True)
+    (root / "论文" / "0.摘要.tex").write_text("摘要。", encoding="utf-8")
+    (root / "交接" / "需求追踪矩阵.json").write_text(
+        json.dumps([{"需求号": "1-1", "状态": "已销号"}], ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (root / "台账" / "审稿台账.json").write_text("[]", encoding="utf-8")
+
+
 @pytest.mark.asyncio
 async def test_s6_final_review_harvest_and_retrospective(tmp_path: Path) -> None:
     from mmagent.api.projects import create_project
@@ -55,6 +67,7 @@ async def test_s6_final_review_harvest_and_retrospective(tmp_path: Path) -> None
     try:
         root = handle.workspace.root
         (root / "论文" / "论文.tex").write_text("最终正文", encoding="utf-8")
+        _seed_terminal_gate(root)
         (root / "求解" / "问题1").mkdir(parents=True, exist_ok=True)
         (root / "求解" / "问题1" / "求解_问题1.py").write_text("print(1)", encoding="utf-8")
         (root / "交接" / "结果声明_问题1.json").write_text("{}", encoding="utf-8")
@@ -67,7 +80,7 @@ async def test_s6_final_review_harvest_and_retrospective(tmp_path: Path) -> None
         )
         result = await run_s6(
             handle.workspace.db, MockProvider(script), _registry(), PathPolicy(root), run_id,
-            compile_paper=_compile, render_pages=_render,
+            compile_paper=_compile, render_pages=_render, beauty_baseline_pages=10,
         )
         assert result["pass"] is True, result["issues"]
         assert (root / "交付" / "论文.pdf").is_file()
@@ -93,6 +106,7 @@ async def test_s6_figure_fix_reruns_plot_script(tmp_path: Path) -> None:
     try:
         root = handle.workspace.root
         (root / "论文" / "论文.tex").write_text("最终正文", encoding="utf-8")
+        _seed_terminal_gate(root)
         (root / "求解" / "问题1" / "图片").mkdir(parents=True, exist_ok=True)
         run_id = repositories.create_run(
             handle.workspace.db, project_id=handle.project_id, profile="快速"
@@ -132,7 +146,7 @@ async def test_s6_figure_fix_reruns_plot_script(tmp_path: Path) -> None:
         )
         result = await run_s6(
             handle.workspace.db, MockProvider(script), _registry(), PathPolicy(root), run_id,
-            compile_paper=_compile, render_pages=_render,
+            compile_paper=_compile, render_pages=_render, beauty_baseline_pages=10,
         )
         assert result["pass"] is True, result["issues"]
         assert (root / "求解" / "问题1" / "图片" / "s6-rerun.marker").read_text(
