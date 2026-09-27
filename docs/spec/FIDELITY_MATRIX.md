@@ -25,15 +25,15 @@
 | A9 | Per-question G2 | MATCH | `gates/g2.py` with 5 mechanical checks (metrics/rt/arb/solver/experiment) + `TestG2GateModule` |
 | A10 | Normal repair bounded to ≤2 | MATCH | bounded rework constant and S2 control flow |
 | A11 | Escalation swarm (3 variants + adjudication + recheck) | PARTIAL | executable 3-variant escalation path exists and variant authoring uses the adaptive wave scheduler; full evidence parity pending |
-| A12 | Degraded release with unresolved evidence | PARTIAL | `降级放行.json` carrier and G5 integration exist; full delivery-report parity pending |
+| A12 | Degraded release with unresolved evidence | PARTIAL | Unified typed carrier now governs S2 question-level writes and G5 exact issue-generation checks. Review-level degraded registration still lacks a runtime producer after S5 escalation exhaustion, so the path is fail-closed but incomplete. |
 | A13 | S3 figure evidence + two-round figure review | MATCH | `s3_figures.py`, adaptive plotter/reviewer waves, plot runtime, `test_s3_figures.py` |
 | A14 | G3 mechanical figure gate | MATCH | 16–22 figures, schematic/diversity/caption checks + `test_g3_gate.py` |
 | A15 | S4 narrative → paper → chapter/blind review → integrate → abstract swarm | PARTIAL | full source path exists; chapter/blind and abstract candidates use bounded waves, and chapter review has persistent best-version rollback; exact upstream editorial-guard ordering/parity remains under audit |
 | A16 | G4 paper gate | MATCH | compile/page/abstract-1-page/audit/src/trace/matrix checks exist + `test_g4_gate.py` + `TestG4AbstractPage` |
-| A17 | S5 18-step review-round semantics | PARTIAL | Core review/rework/ledger/checkpoint loop is implemented, including R45 and rollback. However blocking fuse candidates are only appended to `needs_escalation`; no S5 escalation executor consumes them, so the full review-round/fuse semantics are not closed. |
+| A17 | S5 18-step review-round semantics | PARTIAL | Core review/rework/ledger/checkpoint loop is implemented, including R45 and rollback. A fuse escalation role leg now exists, but it has no required repair receipt/verdict transition, records execution without checking status, and final-round fuse processing is still skipped. |
 | A18 | Reviewer A/B + defect hunter + judge simulator + mechanical lane | MATCH | four independent role legs, page-image judge input, mechanical lane; pipeline tests |
 | A19 | S5a abstract finalization / S5b beautification | PARTIAL | both implemented and tested; upstream cosmetic-loop parity still under audit |
-| A20 | G5 publication gate | PARTIAL | Mechanical `run_g5` gate is fail-closed, but the R49-R52 `run_g5_rework` path is not wired into `PaperFoundryEngine`; its ledger/review closure still needs integration tests before it can be MATCH. |
+| A20 | G5 publication gate | PARTIAL | `PaperFoundryEngine` now invokes `run_g5_rework`, and the reviewer added a fresh final `run_g5` defect review. However G5 repair legs still do not create ledger receipts/verdict transitions or durable ledger writeback, so active blockers cannot be mechanically resolved by the rework loop. |
 | A21 | S6 final page review / fixes / harvest / retrospective | PARTIAL | implemented with run metrics, retrospective schema (`s6_contracts.py`), resumable legs; installed-product delivery proof pending |
 
 ## B. Loops, ledger, and guards
@@ -46,7 +46,7 @@
 | B4 | Reviewer-only paired verdict / missed verdict reopens | MATCH | verdict generation CAS + fail-closed missed verdict behavior |
 | B5 | R45 abstention-vote merge semantics | MATCH | only judge-simulator unverifiable negatives abstain; substantive unresolved votes veto, resolved votes otherwise resolve, and all-abstention cases fall through to missed-verdict reopen; focused tests cover all three cases |
 | B6 | Convergence = no blocking active issues | MATCH | ledger convergence mechanically checks blocking severities |
-| B7 | Fuse after ≥2 attempts | PARTIAL | Generation-local attempt accounting and narrative/layout shelving are implemented/being hardened. Hard/correctness candidates are currently only recorded in `needs_escalation`; the required one-time escalation is not executed by S5. |
+| B7 | Fuse after ≥2 attempts | PARTIAL | Generation-local attempt accounting and narrative/layout shelving are implemented. Hard/correctness escalation now launches a role leg, but lacks receipt/verdict state transitions, status-gated durable completion, and final-round execution semantics. |
 | B8 | Change Guard 0.45 / 0.70 | MATCH | sentence units + named mask + min-ratio implementation and tests |
 | B9 | Structure Guard | PARTIAL | input-set/file-loss/empty-file checks exist; complete upstream appendix/title rules not all evidenced |
 | B10 | Page Guard | MATCH | +max(10%,2 pages) and sudden-drop guard implemented/tested |
