@@ -1,8 +1,27 @@
 # CURRENT_STATE — fidelity rebuild on gpt/fidelity-rebuild
 
 Branch: `gpt/fidelity-rebuild`
-HEAD: Round-2 P1 closure implementation (see "External source review Round 2 — closure" below)
-Tests: **locally verified: 416 passed / 0 failed + Ruff clean** (full suite, this HEAD)
+HEAD: Round-2 P1 closure + B9/B14/E8 closure (see "External source review Round 2 — closure" below)
+Tests: **locally verified: 422 passed / 0 failed + Ruff clean** (full suite, this HEAD)
+
+## Round-3 external review — BLOCKED on ChatGPT login
+
+The in-app browser session at chatgpt.com is logged out (login/registration page).
+Round 3 must be submitted to the SAME GPT chat as rounds 1-2 once the user logs in.
+Everything is staged: regenerated packet at `docs/reviews/v1.0.0-rebuild-final-review-packet.md`,
+HEAD `0640079` pushed to `gpt/fidelity-rebuild`.
+
+While blocked, the deterministic PARTIAL items were closed (422-test baseline):
+- **B14 → MATCH**: S2 cascade invalidation — any re-executed upstream question
+  durably drops all downstream checkpoints (`pipeline.s2_downstream_invalidated`)
+  and forces rerun, even when the downstream artifacts still pass their own G2.
+- **E8 → MATCH**: bounded compile-repair protocol (`compile_repair.py`) wired into
+  S4 final compile, S5b initial compile and G5 rework R51: writer leg gets the log
+  errors, must write a repair receipt, paper recompiles; exhaustion fails closed.
+- **B9 → MATCH**: structure guard extended with R38③ appendix lstlisting-inventory,
+  R68⑤ body graphics + receiver flagging, R47 code-chapter detection; new
+  `guarded_repair.py` runs 改前快照 → 腿 → 结构守卫 → 违规整份回退 + 留底 on the G5
+  rework text route; reverted legs cannot resolve ledger issues.
 
 ## Version tags (historical, unchanged)
 
