@@ -5,6 +5,10 @@ from pathlib import Path
 
 import pytest
 
+from mmagent.mm.contracts.degraded_release import (
+    DegradedReviewIssueEntry,
+    write_degraded_release,
+)
 from mmagent.mm.gates.g5 import check_g5
 from mmagent.mm.guards.guards import stale_value_guard
 from mmagent.mm.pipeline.s5_finalize import run_g5, run_s5a, run_s5b
@@ -170,6 +174,51 @@ def test_g5_blocks_unapproved_blocking_shelved_issue(tmp_path: Path) -> None:
     ok, issues = check_g5(root, beauty_baseline_pages=10, current_pages=10)
     assert not ok
     assert any("降级放行" in x for x in issues)
+
+
+def test_g5_degraded_approval_matches_exact_issue_generation(tmp_path: Path) -> None:
+    root = tmp_path / "proj-degraded"
+    _seed_publishable(root)
+    _compile(root)
+    from mmagent.mm.audit import audit_paper
+    audit_paper(root)
+    (root / "台账" / "审稿台账.json").write_text(json.dumps([
+        {
+            "id": "审-1-01",
+            "级别": "正确性",
+            "状态": "搁置",
+            "generation": 2,
+        }
+    ], ensure_ascii=False), encoding="utf-8")
+
+    write_degraded_release(
+        root,
+        review_issue_entries=[
+            DegradedReviewIssueEntry(
+                id="审-1-01",
+                generation=1,
+                severity="正确性",
+                reason="old generation",
+            )
+        ],
+    )
+    ok, issues = check_g5(root, beauty_baseline_pages=10, current_pages=10)
+    assert not ok
+    assert any("generation=2" in x for x in issues)
+
+    write_degraded_release(
+        root,
+        review_issue_entries=[
+            DegradedReviewIssueEntry(
+                id="审-1-01",
+                generation=2,
+                severity="正确性",
+                reason="current generation exhausted",
+            )
+        ],
+    )
+    ok, issues = check_g5(root, beauty_baseline_pages=10, current_pages=10)
+    assert ok, issues
 
 
 @pytest.mark.asyncio
