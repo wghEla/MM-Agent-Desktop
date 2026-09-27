@@ -503,7 +503,19 @@ async def run_s5(
     renderer = render_pages or _default_render
     _write_ledger_view(policy, ledger)
 
-    if converged or start_round > max_rounds:
+    extension_events = events.query_events(
+        db,
+        run_id=run_id,
+        type="checkpoint.s5_escalation_extension",
+        limit=100,
+    )
+    extension_pending = any(
+        event.payload.get("round") == max_rounds
+        for event in extension_events
+    )
+    extension_resume = start_round == max_rounds + 1 and extension_pending
+
+    if converged or (start_round > max_rounds and not extension_resume):
         return {
             "rounds": rounds,
             "converged": converged,
@@ -512,7 +524,9 @@ async def run_s5(
             "ledger": _ledger_view(ledger),
         }
 
-    for round_num in range(start_round, max_rounds + 1):
+    round_limit = max_rounds + (1 if extension_resume else 0)
+    round_num = start_round
+    while round_num <= round_limit:
         snapshot_files = _ensure_paper_snapshot(policy, round_num)
         compile_result = await run_compile(compiler, policy.root, cancel=cancel)
         render_issue: str | None = None
@@ -668,6 +682,12 @@ async def run_s5(
                     # alternative repair was attempted and reviewed.  Never
                     # auto-authorize degraded release from a failed leg.
                     continue
+                if round_num > max_rounds:
+                    # The single extension round exists only to adjudicate
+                    # escalations started in the final normal round.  Do not
+                    # start a fresh escalation that would have no later
+                    # reviewer round.
+                    continue
                 needs_escalation.append(item.id)
                 escalated_this_round = True
                 escalated_count += 1
@@ -781,8 +801,11 @@ async def run_s5(
             )
             break
 
-        if round_num >= max_rounds and escalated_this_round:
-            # Allow one extra round for escalation re-verdict
+        if round_num == max_rounds and escalated_this_round:
+            # Allow exactly one extra reviewer round for escalations started
+            # in the last normal round.  The event also makes this extension
+            # recoverable after a crash.
+            round_limit = max_rounds + 1
             events.append_event(
                 db,
                 "checkpoint.s5_escalation_extension",
@@ -806,6 +829,7 @@ async def run_s5(
             },
             run_id=run_id,
         )
+        round_num += 1
 
     return {
         "rounds": rounds,
