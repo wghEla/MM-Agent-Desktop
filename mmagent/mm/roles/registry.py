@@ -250,7 +250,7 @@ _ROLES: tuple[RoleSpec, ...] = (
             "审稿/硬伤_轮*.json",
             "审稿/裁定_*.json",
             "审稿/G5复核*.json",
-            "审稿/S6终审复核.json",
+            "审稿/S6终审复核*.json",
         ),
         allowed_tools=_FS_RW,
         notes="必查换版清单（P3）；写明依据的 PDF 版本与页（P9）",
