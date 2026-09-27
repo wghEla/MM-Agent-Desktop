@@ -309,6 +309,7 @@ async def _run_escalation(
     run_id: str,
     q: int,
     *,
+    identity: str | None = None,
     cancel=None,
 ) -> tuple[bool, list[str]]:
     """Three independent alternative scripts -> adjudication -> red-team recheck."""
@@ -322,7 +323,10 @@ async def _run_escalation(
             return await _agent_leg(
                 db, provider, registry, policy, run_id,
                 role_id="modeler",
-                node_key=f"S2:问{q}:升格变体{variant_idx}",
+                node_key=(
+                    f"S2:问{q}:升格变体{variant_idx}"
+                    + (f":{identity}" if identity else "")
+                ),
                 question_num=q,
                 instructions=(
                     f"使用与当前失败路线实质不同的方法，为问题{q}编写升格变体 "
@@ -340,7 +344,10 @@ async def _run_escalation(
         run_id,
         variant_jobs,
         cancel=cancel,
-        wave_key=f"S2:问{q}:升格变体",
+        wave_key=(
+            f"S2:问{q}:升格变体"
+            + (f":{identity}" if identity else "")
+        ),
         serial=provider.protocol == "mock",
     )
     variants: list[str] = []
@@ -356,7 +363,10 @@ async def _run_escalation(
     adjudication = await _agent_leg(
         db, provider, registry, policy, run_id,
         role_id="interpreter",
-        node_key=f"S2:问{q}:升格裁决",
+        node_key=(
+            f"S2:问{q}:升格裁决"
+            + (f":{identity}" if identity else "")
+        ),
         question_num=q,
         instructions=(
             f"比较问题{q}的升格变体真实结果 {json.dumps(variants, ensure_ascii=False)}，"
@@ -373,16 +383,76 @@ async def _run_escalation(
         return False, ["升格裁决失败"]
     ok, detail = await _red_team_cycle(
         db, provider, registry, policy, run_id, q,
-        cycle_key="升格复核", cancel=cancel
+        cycle_key=(
+            "升格复核" + (f":{identity}" if identity else "")
+        ),
+        cancel=cancel,
     )
     if not ok:
         return False, [detail]
     if _red_conclusion(policy, q) == "不齐":
         await _arbitrate(
             db, provider, registry, policy, run_id, q,
-            cycle_key="升格复核", cancel=cancel
+            cycle_key=(
+                "升格复核" + (f":{identity}" if identity else "")
+            ),
+            cancel=cancel,
         )
     return check_g2(policy.root, q)
+
+
+async def run_verified_question_recompute(
+    db: Database,
+    provider: BaseProvider,
+    registry: ToolRegistry,
+    policy: PathPolicy,
+    run_id: str,
+    q: int,
+    *,
+    identity: str,
+    cancel=None,
+) -> tuple[bool, list[str]]:
+    """Public verified-recompute primitive reused by late-stage calc repair.
+
+    The same production path as S2 rework is used: model/solver mutation,
+    trusted script execution, interpretation, independent red-team cycle,
+    arbitration/review when required, and the mechanical G2 gate.
+    """
+    return await _normal_attempt(
+        db,
+        provider,
+        registry,
+        policy,
+        run_id,
+        q,
+        attempt_key=identity,
+        rework=True,
+        cancel=cancel,
+    )
+
+
+async def run_verified_question_escalation(
+    db: Database,
+    provider: BaseProvider,
+    registry: ToolRegistry,
+    policy: PathPolicy,
+    run_id: str,
+    q: int,
+    *,
+    identity: str,
+    cancel=None,
+) -> tuple[bool, list[str]]:
+    """Public verified escalation with unique late-stage node identity."""
+    return await _run_escalation(
+        db,
+        provider,
+        registry,
+        policy,
+        run_id,
+        q,
+        identity=identity,
+        cancel=cancel,
+    )
 
 
 def _has_degraded_release(policy: PathPolicy, q: int) -> bool:
