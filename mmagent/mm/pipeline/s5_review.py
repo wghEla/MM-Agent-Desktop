@@ -990,73 +990,215 @@ async def run_s5(
                     # reviewer round.
                     continue
                 needs_escalation.append(item.id)
-                role_id = {"算": "modeler", "图": "plotter", "文": "writer"}.get(item.目标, "writer")
+                role_id = {"算": "calc_cascade", "图": "plotter", "文": "writer"}.get(
+                    item.目标, "writer"
+                )
                 esc_node = f"S5:R{round_num}:升格{item.id}"
-                receipt_path = f"审稿/回执_升格_{item.id}_g{item.generation}.json"
+                receipt_path = (
+                    f"审稿/回执_升格_{item.id}_g{item.generation}.json"
+                )
                 events.append_event(
                     db, "s5.escalation_started",
                     {"issue_id": item.id, "generation": item.generation,
                      "round": round_num, "role": role_id},
                     run_id=run_id,
                 )
-                esc_status = await run_role_leg(
-                    db, provider, registry, policy, run_id,
-                    stage_key="S5", role_id=role_id, node_key=esc_node,
-                    instructions=(
-                        f"【升格】台账条目 {item.id} 两次定向修订仍未消解。"
-                        f"换一种技术路线或上下文重做。不改已通过的指标。"
-                        f"完成后写 {receipt_path}，JSON 数组格式 [{{\"id\": \"{item.id}\", \"改动\": \"...\", \"证据\": \"...\"}}]。"
-                    ),
-                    expected_artifacts=[
-                        ExpectedArtifact(
-                            rel_path=receipt_path,
-                            schema_model=ModelRepairReceiptArtifact,
+
+                receipts: list[dict] = []
+                esc_status = "FAILED"
+
+                if item.目标 == "算":
+                    questions = sorted(_related_questions(item))
+                    if len(questions) == 1:
+                        receipts = await _run_verified_calc_cascade(
+                            db, provider, registry, policy, run_id, round_num,
+                            source_q=questions[0],
+                            items=[item],
+                            escalated=True,
+                            cancel=cancel,
                         )
-                    ],
-                    cancel=cancel,
-                )
-                if esc_status == "SUCCEEDED":
-                    receipt_path_full = policy.root / receipt_path
-                    try:
-                        raw = json.loads(receipt_path_full.read_text(encoding="utf-8"))
-                    except (json.JSONDecodeError, OSError):
-                        raw = []
-                    receipts: list[dict] = []
-                    for candidate in raw if isinstance(raw, list) else []:
-                        if not isinstance(candidate, dict):
-                            continue
-                        if str(candidate.get("id", "")).strip() != item.id:
-                            continue
-                        enriched = dict(candidate)
-                        enriched["generation"] = item.generation
-                        enriched["receipt_id"] = (
-                            f"{esc_node}:{item.id}:g{item.generation}"
-                        )
-                        receipts.append(enriched)
-                    receipt_stats = ledger.收回执(receipts, 腿名=esc_node, 轮次=round_num)
-                    if receipt_stats["受理"] > 0:
-                        escalated_this_round = True
-                        escalated_count += 1
-                        events.append_event(
-                            db, "s5.escalation_succeeded",
-                            {"issue_id": item.id, "generation": item.generation,
-                             "round": round_num, "role": role_id,
-                             "receipts": receipt_stats["受理"]},
-                            run_id=run_id,
-                        )
+                        esc_status = "SUCCEEDED" if receipts else "FAILED"
                     else:
-                        events.append_event(
-                            db, "s5.escalation_failed",
-                            {"issue_id": item.id, "generation": item.generation,
-                             "round": round_num, "role": role_id,
-                             "status": "INVALID_RECEIPT"},
-                            run_id=run_id,
+                        esc_status = "UNROUTABLE_CALC_ISSUE"
+
+                elif item.目标 == "文":
+                    esc_status, _guard_issues = await guarded_text_repair(
+                        db, provider, registry, policy, run_id,
+                        stage_key="S5",
+                        node_key=esc_node,
+                        instructions=(
+                            f"【升格】台账条目 {item.id} 两次定向修订仍未消解。"
+                            "换一种叙事/组织方式做最小修订，不改冻结计算事实。"
+                            f"完成后写 {receipt_path}。"
+                        ),
+                        receipt_rel=receipt_path,
+                        receipt_schema=ModelRepairReceiptArtifact,
+                        review_items=[
+                            {"问题": item.问题, "指令": item.指令, "定位": item.定位}
+                        ],
+                        change_limit=0.70,
+                        cancel=cancel,
+                    )
+                    if esc_status == "SUCCEEDED":
+                        try:
+                            raw = json.loads(
+                                (policy.root / receipt_path).read_text(
+                                    encoding="utf-8"
+                                )
+                            )
+                        except (json.JSONDecodeError, OSError):
+                            raw = []
+                        for candidate in raw if isinstance(raw, list) else []:
+                            if (
+                                isinstance(candidate, dict)
+                                and str(candidate.get("id", "")).strip() == item.id
+                            ):
+                                enriched = dict(candidate)
+                                enriched["generation"] = item.generation
+                                enriched["receipt_id"] = (
+                                    f"{esc_node}:{item.id}:g{item.generation}"
+                                )
+                                receipts.append(enriched)
+
+                else:
+                    esc_status = await run_role_leg(
+                        db, provider, registry, policy, run_id,
+                        stage_key="S5", role_id="plotter", node_key=esc_node,
+                        instructions=(
+                            f"【升格改图】台账条目 {item.id} 两次定向修订仍未消解。"
+                            "换一种绘图实现或视觉表达，只改脚本，不自行执行。"
+                            f"完成后写 {receipt_path}。"
+                        ),
+                        expected_artifacts=[
+                            ExpectedArtifact(
+                                rel_path=receipt_path,
+                                schema_model=ModelRepairReceiptArtifact,
+                            )
+                        ],
+                        question_num=(
+                            next(iter(_related_questions(item)))
+                            if len(_related_questions(item)) == 1
+                            else None
+                        ),
+                        cancel=cancel,
+                    )
+                    questions = sorted(_related_questions(item))
+                    if esc_status == "SUCCEEDED" and len(questions) == 1:
+                        q = questions[0]
+                        try:
+                            raw = json.loads(
+                                (policy.root / receipt_path).read_text(
+                                    encoding="utf-8"
+                                )
+                            )
+                        except (json.JSONDecodeError, OSError):
+                            raw = []
+                        plot_receipt = next(
+                            (
+                                row for row in (
+                                    raw if isinstance(raw, list) else []
+                                )
+                                if isinstance(row, dict)
+                                and str(row.get("id", "")).strip() == item.id
+                            ),
+                            None,
                         )
+                        plot_issues = await run_question_plot_scripts(
+                            registry, policy, q, cancel=cancel
+                        )
+                        if plot_receipt is not None and not plot_issues:
+                            sync_rel = (
+                                f"审稿/回执_升格图同步_{item.id}_"
+                                f"g{item.generation}.json"
+                            )
+                            sync_status, _guard_issues = await guarded_text_repair(
+                                db, provider, registry, policy, run_id,
+                                stage_key="S5",
+                                node_key=f"{esc_node}:正文同步",
+                                instructions=(
+                                    f"升格图条目 {item.id} 已由 Runtime 重跑成功。"
+                                    f"只同步问题{q}依赖该图的图题、正文引用、数字引用"
+                                    f"与解释，并写 {sync_rel}。"
+                                ),
+                                receipt_rel=sync_rel,
+                                receipt_schema=ModelRepairReceiptArtifact,
+                                review_items=[{
+                                    "问题": item.问题,
+                                    "指令": item.指令,
+                                    "定位": item.定位,
+                                }],
+                                change_limit=0.70,
+                                question_num=q,
+                                cancel=cancel,
+                            )
+                            if sync_status == "SUCCEEDED":
+                                try:
+                                    sync_raw = json.loads(
+                                        (policy.root / sync_rel).read_text(
+                                            encoding="utf-8"
+                                        )
+                                    )
+                                except (json.JSONDecodeError, OSError):
+                                    sync_raw = []
+                                sync_receipt = next(
+                                    (
+                                        row for row in (
+                                            sync_raw
+                                            if isinstance(sync_raw, list)
+                                            else []
+                                        )
+                                        if isinstance(row, dict)
+                                        and str(row.get("id", "")).strip()
+                                        == item.id
+                                    ),
+                                    None,
+                                )
+                                if sync_receipt is not None:
+                                    receipts.append({
+                                        "id": item.id,
+                                        "generation": item.generation,
+                                        "receipt_id": (
+                                            f"{esc_node}:图事务:{item.id}:"
+                                            f"g{item.generation}"
+                                        ),
+                                        "改动": (
+                                            f"图={str(plot_receipt.get('改动', ''))[:140]}; "
+                                            f"文={str(sync_receipt.get('改动', ''))[:140]}"
+                                        ),
+                                        "证据": f"{receipt_path}; {sync_rel}",
+                                    })
+                                else:
+                                    esc_status = "INVALID_SYNC_RECEIPT"
+                            else:
+                                esc_status = sync_status
+                        else:
+                            esc_status = "PLOT_RUNTIME_FAILED"
+                    elif esc_status == "SUCCEEDED":
+                        esc_status = "UNROUTABLE_FIGURE_ISSUE"
+
+                receipt_stats = ledger.收回执(
+                    receipts, 腿名=esc_node, 轮次=round_num
+                )
+                if esc_status == "SUCCEEDED" and receipt_stats["受理"] > 0:
+                    escalated_this_round = True
+                    escalated_count += 1
+                    events.append_event(
+                        db, "s5.escalation_succeeded",
+                        {"issue_id": item.id, "generation": item.generation,
+                         "round": round_num, "role": role_id,
+                         "receipts": receipt_stats["受理"]},
+                        run_id=run_id,
+                    )
                 else:
                     events.append_event(
                         db, "s5.escalation_failed",
                         {"issue_id": item.id, "generation": item.generation,
-                         "round": round_num, "role": role_id, "status": esc_status},
+                         "round": round_num, "role": role_id,
+                         "status": (
+                             esc_status
+                             if esc_status != "SUCCEEDED"
+                             else "INVALID_RECEIPT"
+                         )},
                         run_id=run_id,
                     )
                 continue
