@@ -41,6 +41,18 @@ def _default_render(root: Path) -> list[Path]:
     return render_pdf_pages(root)
 
 
+def _sample_pages(pages: list[Path], limit: int = 8) -> list[Path]:
+    if len(pages) <= limit:
+        return pages
+    if limit <= 1:
+        return [pages[0]]
+    indices = {
+        round(i * (len(pages) - 1) / (limit - 1))
+        for i in range(limit)
+    }
+    return [pages[i] for i in sorted(indices)]
+
+
 async def _leg(
     db: Database, provider: BaseProvider, registry: ToolRegistry, policy: PathPolicy,
     run_id: str, *, stage: str, role_id: str, node: str, instructions: str,
@@ -263,10 +275,12 @@ async def run_s5b(
 async def run_g5(
     db: Database, provider: BaseProvider, registry: ToolRegistry, policy: PathPolicy,
     run_id: str, *, beauty_baseline_pages: int, compile_paper: CompileFn | None = None,
+    render_pages: RenderFn | None = None,
     cancel=None,
 ) -> dict[str, Any]:
     """Final publication gate. R51 semantics: compile immediately before final defect review."""
     compiler = compile_paper or _default_compile
+    renderer = render_pages or _default_render
     compiled = await run_compile(compiler, policy.root, cancel=cancel)
     audit_paper(policy.root)
     pages = int(compiled.get("pages") or 0)
@@ -277,26 +291,53 @@ async def run_g5(
         ok = False
         issues = list(issues) + [f"G5 复核前编译失败: {compiled.get('errors')}"]
 
-    review_rel = "审稿/G5复核.json"
-    status = await _leg(
-        db, provider, registry, policy, run_id,
-        stage="G5", role_id="defect_hunter", node="G5:硬伤复核",
-        instructions=(
-            f"只基于刚刚编译的当前 PDF 做出版前硬伤复核，写 {review_rel}。"
-            "顶层给出 通过(boolean)，并注明依据版本/页码。不得用旧 PDF 判断。"
-        ),
-        expected=[ExpectedArtifact(rel_path=review_rel, schema_model=PublicationReviewVerdict)], cancel=cancel,
-    )
-    final_pass = False
-    if status == "SUCCEEDED":
-        try:
-            data = json.loads((policy.root / review_rel).read_text(encoding="utf-8"))
-            final_pass = isinstance(data, dict) and bool(data.get("通过", False))
-        except (OSError, json.JSONDecodeError):
-            final_pass = False
-    if not final_pass:
+    try:
+        review_pages = renderer(policy.root)
+    except (OSError, RuntimeError, ValueError) as exc:
+        review_pages = []
         ok = False
-        issues = list(issues) + ["G5 硬伤猎手复核未通过"]
+        issues = list(issues) + [f"G5 当前 PDF 页图渲染失败: {exc}"]
+    if not review_pages:
+        ok = False
+        issues = list(issues) + ["G5 当前 PDF 页图缺失，不能执行硬伤复核"]
+
+    review_batches = [
+        review_pages[i:i + 8] for i in range(0, len(review_pages), 8)
+    ]
+    for batch_index, batch in enumerate(review_batches, 1):
+        suffix = "" if len(review_batches) == 1 else f"_B{batch_index}"
+        review_rel = f"审稿/G5复核{suffix}.json"
+        rel_images = [p.relative_to(policy.root).as_posix() for p in batch]
+        status = await _leg(
+            db, provider, registry, policy, run_id,
+            stage="G5", role_id="defect_hunter", node=f"G5:硬伤复核{suffix}",
+            instructions=(
+                f"只基于随任务附带的当前 PDF 页图做出版前硬伤复核，写 {review_rel}。"
+                "顶层给出 通过(boolean)，并注明依据版本/页码。不得用旧 PDF 判断。"
+            ),
+            expected=[
+                ExpectedArtifact(
+                    rel_path=review_rel,
+                    schema_model=PublicationReviewVerdict,
+                )
+            ],
+            image_paths=rel_images,
+            cancel=cancel,
+        )
+        batch_pass = False
+        if status == "SUCCEEDED":
+            try:
+                data = json.loads(
+                    (policy.root / review_rel).read_text(encoding="utf-8")
+                )
+                batch_pass = isinstance(data, dict) and bool(data.get("通过", False))
+            except (OSError, json.JSONDecodeError):
+                batch_pass = False
+        if not batch_pass:
+            ok = False
+            issues = list(issues) + [
+                f"G5 硬伤猎手复核未通过 batch={batch_index}"
+            ]
 
     events.append_event(
         db, "gate.result", {"gate": "G5", "pass": bool(ok), "issues": issues}, run_id=run_id
@@ -307,6 +348,7 @@ async def run_g5(
 async def run_g5_rework(
     db: Database, provider: BaseProvider, registry: ToolRegistry, policy: PathPolicy,
     run_id: str, *, beauty_baseline_pages: int, compile_paper: CompileFn | None = None,
+    render_pages: RenderFn | None = None,
     max_rework: int = 3, cancel=None,
 ) -> dict[str, Any]:
     """G5 rework loop implementing R49/R50/R51/R52.
@@ -329,6 +371,7 @@ async def run_g5_rework(
         阻塞级别,
     )
     compiler = compile_paper or _default_compile
+    renderer = render_pages or _default_render
     rework_count = 0
 
     # Load the S5 ledger carrier. S5 writes a top-level issue list.
@@ -508,19 +551,25 @@ async def run_g5_rework(
 
         # Defect hunter re-check on new PDF + per-issue ledger verdicts
         review_rel = f"审稿/G5复核{rework_n}.json"
+        try:
+            current_pages = renderer(policy.root)
+        except (OSError, RuntimeError, ValueError):
+            current_pages = []
+        review_images = _sample_pages(current_pages)
         status = await _leg(
             db, provider, registry, policy, run_id,
             stage="G5", role_id="defect_hunter", node=f"G5:R{rework_n}:复核",
             instructions=(
-                f"G5 复核（第{rework_n}次）。只基于刚编译的当前 PDF，写 {review_rel}。"
+                f"G5 复核（第{rework_n}次）。只基于随任务附带的当前 PDF 代表页，写 {review_rel}。"
                 "顶层给出 通过(boolean)。"
                 "同时逐条裁定原台账条目："
                 'JSON {"通过": bool, "逐项": [{"id": "...", "generation": N, "裁定": "已消解|未消解", "理由": "..."}]}。'
             ),
             expected=[ExpectedArtifact(rel_path=review_rel,
                                        schema_model=PublicationReviewVerdict)],
+            image_paths=[p.relative_to(policy.root).as_posix() for p in review_images],
             cancel=cancel,
-        )
+        ) if review_images else "FAILED"
         new_pass = False
         if status == "SUCCEEDED":
             try:
@@ -586,6 +635,7 @@ async def run_g5_rework(
         run_id,
         beauty_baseline_pages=beauty_baseline_pages,
         compile_paper=compiler,
+        render_pages=renderer,
         cancel=cancel,
     )
     return {
