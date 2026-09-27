@@ -287,3 +287,37 @@ ZCode pulled `f17d248..902abe2` (GPT Round-4 source-only fixes) and validated lo
 A17/A20 remain PARTIAL (per Round-4 protocol: full Master-Plan ordering/parity audit still
 pending); B9 remains PARTIAL for the P2-1 structural invariants. No tag, no merge.
 Next: GPT-5.6 Sol final source/release-gate review.
+
+## Final Source / Release Gate — post Round-4
+
+Review:
+`docs/reviews/v1.0.0-rebuild-final-source-release-gate.md`
+
+Last fully locally verified baseline:
+
+`c4a38cbfa468a7d406306b36d16dcf49720368ca`
+
+Evidence at that baseline:
+- focused regression 90 passed;
+- full pytest 448 passed / 0 failed;
+- Ruff clean;
+- frontend build green;
+- secret scan clean;
+- known open source-level P0/P1 after Rounds 1–4: 0.
+
+Final source-gate patches after `c4a38cb`:
+- S6 final figure repair now requires guarded dependent-text synchronization after Runtime
+  plot execution and before final compile/harvest.
+- Runtime now writes `交付/交付报告.md` with mechanically disclosed degraded/unresolved
+  state and run metrics.
+- OpenAI-compatible Test Connection now falls back from a missing/unsupported `/models`
+  endpoint to a real minimal chat request using the configured model.
+
+Focused behavior tests for these patches are source-added. Current remote HEAD is therefore
+**micro-regression pending** and must not yet be called current-head green.
+
+Gate decisions:
+- Source/Pipeline: CONDITIONAL GO pending this final micro-regression.
+- Product Release: HOLD until current-head MSVC/Tauri/NSIS installed validation,
+  installed live cancellation proof, real-provider smoke, and the repository's CI
+  acceptance requirement (or an explicit ADR changing that rule) are satisfied.
