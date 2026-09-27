@@ -440,26 +440,130 @@ async def run_g5_rework(
                     ],
                     cancel=cancel,
                 )
-                if status == "SUCCEEDED":
-                    receipt_full = policy.root / receipt_rel
-                    try:
-                        raw = json.loads(receipt_full.read_text(encoding="utf-8"))
-                    except (json.JSONDecodeError, OSError):
-                        raw = []
-                    for candidate in raw if isinstance(raw, list) else []:
-                        if not isinstance(candidate, dict):
-                            continue
-                        if str(candidate.get("id", "")).strip() != item.id:
-                            continue
-                        enriched = dict(candidate)
-                        enriched["generation"] = item.generation
-                        enriched["receipt_id"] = (
-                            f"{node_key}:{item.id}:g{item.generation}"
-                        )
-                        figure_receipts.append(enriched)
-                    await run_question_plot_scripts(
-                        registry, policy, q, cancel=cancel
+                if status != "SUCCEEDED":
+                    continue
+
+                receipt_full = policy.root / receipt_rel
+                try:
+                    raw = json.loads(receipt_full.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    raw = []
+                plot_receipt = next(
+                    (
+                        candidate
+                        for candidate in (raw if isinstance(raw, list) else [])
+                        if isinstance(candidate, dict)
+                        and str(candidate.get("id", "")).strip() == item.id
+                    ),
+                    None,
+                )
+                if plot_receipt is None:
+                    continue
+
+                execute_issues = await run_question_plot_scripts(
+                    registry, policy, q, cancel=cancel
+                )
+                if execute_issues:
+                    events.append_event(
+                        db,
+                        "gate.g5_figure_transaction_failed",
+                        {
+                            "rework": rework_n,
+                            "issue_id": item.id,
+                            "question": q,
+                            "step": "plot_runtime",
+                            "issues": execute_issues,
+                        },
+                        run_id=run_id,
                     )
+                    continue
+
+                # R49 transaction: a regenerated figure is not a complete
+                # repair until dependent captions/textual references are
+                # synchronized.  Only the combined transaction may create a
+                # ledger repair receipt.
+                from mmagent.mm.pipeline.guarded_repair import guarded_text_repair
+
+                sync_rel = (
+                    f"审稿/回执_G5R{rework_n}_图同步问{q}_{safe_issue}.json"
+                )
+                sync_node = f"G5:R{rework_n}:图同步问{q}:{item.id}"
+                sync_status, _guard_issues = await guarded_text_repair(
+                    db, provider, registry, policy, run_id,
+                    stage_key="G5",
+                    node_key=sync_node,
+                    instructions=(
+                        f"图类台账条目 {item.id} 的绘图脚本已经由 Runtime 重跑成功。"
+                        f"只同步问题{q}中依赖该图的图题、正文引用、数字引用和解释，"
+                        "不得修改冻结计算事实。优先读取当前结果声明、图注素材和台账定位。"
+                        f"完成后写 {sync_rel}，JSON 数组仅包含该 id 的改动与证据。"
+                    ),
+                    receipt_rel=sync_rel,
+                    receipt_schema=ModelRepairReceiptArtifact,
+                    review_items=[
+                        {"问题": item.问题, "指令": item.指令, "定位": item.定位}
+                    ],
+                    question_num=q,
+                    cancel=cancel,
+                )
+                if sync_status != "SUCCEEDED":
+                    events.append_event(
+                        db,
+                        "gate.g5_figure_transaction_failed",
+                        {
+                            "rework": rework_n,
+                            "issue_id": item.id,
+                            "question": q,
+                            "step": "writer_sync",
+                            "status": sync_status,
+                        },
+                        run_id=run_id,
+                    )
+                    continue
+
+                try:
+                    sync_raw = json.loads(
+                        (policy.root / sync_rel).read_text(encoding="utf-8")
+                    )
+                except (json.JSONDecodeError, OSError):
+                    sync_raw = []
+                sync_receipt = next(
+                    (
+                        candidate
+                        for candidate in (
+                            sync_raw if isinstance(sync_raw, list) else []
+                        )
+                        if isinstance(candidate, dict)
+                        and str(candidate.get("id", "")).strip() == item.id
+                    ),
+                    None,
+                )
+                if sync_receipt is None:
+                    continue
+
+                figure_receipts.append({
+                    "id": item.id,
+                    "generation": item.generation,
+                    "receipt_id": (
+                        f"G5:R{rework_n}:图事务:{item.id}:g{item.generation}"
+                    ),
+                    "改动": (
+                        f"图={str(plot_receipt.get('改动', ''))[:140]}; "
+                        f"文={str(sync_receipt.get('改动', ''))[:140]}"
+                    ),
+                    "证据": f"{receipt_rel}; {sync_rel}",
+                })
+                events.append_event(
+                    db,
+                    "gate.g5_figure_transaction_succeeded",
+                    {
+                        "rework": rework_n,
+                        "issue_id": item.id,
+                        "generation": item.generation,
+                        "question": q,
+                    },
+                    run_id=run_id,
+                )
         if figure_receipts:
             ledger.收回执(figure_receipts, 腿名=f"G5返工图{rework_n}")
 
