@@ -10,8 +10,10 @@ from typing import Any
 
 from mmagent.mm.audit import audit_paper
 from mmagent.mm.contracts.final_contracts import PageReviewArtifact, PublicationReviewVerdict
+from mmagent.mm.contracts.repair_receipts import ModelRepairReceiptArtifact
 from mmagent.mm.gates.g5 import check_g5
 from mmagent.mm.pipeline.compile_runtime import run_compile
+from mmagent.mm.pipeline.guarded_repair import guarded_text_repair
 from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
 from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.base import BaseProvider
@@ -147,15 +149,19 @@ async def run_s6(
     ]
     if text_issues:
         receipt = "审稿/回执_S6_文.json"
-        fix = await _leg(
+        fix, _guard_issues = await guarded_text_repair(
             db, provider, registry, policy, run_id,
-            role_id="writer", node="S6:终审整改",
+            stage_key="S6",
+            node_key="S6:终审整改",
             instructions=(
                 "只修下面终审点名的文字/排版问题，不改冻结事实："
                 + json.dumps(text_issues, ensure_ascii=False)
                 + f"。写 {receipt}。"
             ),
-            expected=[ExpectedArtifact(rel_path=receipt)], cancel=cancel,
+            receipt_rel=receipt,
+            receipt_schema=ModelRepairReceiptArtifact,
+            review_items=text_issues,
+            cancel=cancel,
         )
         if fix != "SUCCEEDED":
             return {"pass": False, "issues": ["S6 终审整改失败"]}
