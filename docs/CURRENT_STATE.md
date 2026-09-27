@@ -179,9 +179,9 @@ release-level Round-3 P1s are **source-closed but regression-pending**:
 Detailed handoff:
 `docs/reviews/v1.0.0-rebuild-round3-source-closure-handoff.md`
 
-**Important:** the last locally verified baseline is still `33544ec` (422 passed / Ruff
-clean). All Round-3 reviewer/source-closure commits after that baseline remain unverified
-until ZCode runs focused + full local regression.
+**Round-3 local verification supersedes the earlier evidence boundary.**
+`f17d248e43cb3e21871e1455cda2334eec66c9c0` is the last locally verified green baseline:
+439 passed / 0 failed, Ruff clean, frontend build green.
 
 
 ## Round-3 local validation — 2026-09-27 — COMPLETE
@@ -220,3 +220,32 @@ FIDELITY_MATRIX); B9 stays PARTIAL only for the P2-1 master-plan structural inva
 ordering/parity audits.
 
 No tag, no merge, per Round-3 protocol. Next: Round-4 external source review.
+
+
+## Round-4 external source review — source fixes pending local regression
+
+Report:
+`docs/reviews/v1.0.0-rebuild-external-review-round4.md`
+
+Last locally verified HEAD:
+`f17d248e43cb3e21871e1455cda2334eec66c9c0`
+(439 passed / Ruff clean / frontend build green).
+
+Current remote HEAD contains Round-4 source-only fixes after that baseline and is therefore
+**not yet current-head green**.
+
+Round-4 source findings/fixes:
+- **P1 fixed in source:** a failed G5 figure transaction could fall through to the
+  Writer-only G5 text route because it selected every non-calc Issue. Text repair is now
+  strictly `目标 == "文"`; figure Issues can advance only through the full figure transaction.
+- S5 calc/figure Issue routing now requires exactly one related question so one
+  `(id,generation)` cannot be consumed by multiple question transactions in one round.
+- S5 non-final rework now performs bounded guarded compile/fix before writing its round
+  checkpoint; unresolved compile errors are merged back as a hard mechanical Issue.
+- G5 per-round success now requires both Page Guard and Defect Hunter PASS.
+- OpenAI-compatible 4xx error text is secret-redacted.
+- OpenAI-compatible `reasoning_effort` is no longer sent by default; it requires an
+  explicit provider capability flag exposed in Provider Settings.
+
+Next action: local focused regression + full pytest/Ruff/frontend build. Do not tag/merge
+or start MSVC/real-provider smoke until this regression is green.
