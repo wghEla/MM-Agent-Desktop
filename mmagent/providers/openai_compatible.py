@@ -13,7 +13,7 @@ from mmagent.providers import redact_secret
 from mmagent.providers._http_util import parse_retry_after
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
-from mmagent.providers.normalized import NormalizedMessage, NormalizedResponse, NormalizedTool
+from mmagent.providers.normalized import NormalizedMessage, NormalizedResponse, NormalizedTool, TextPart
 from mmagent.providers.openai_chat import (
     build_chat_payload,
     parse_chat_response,
@@ -41,6 +41,7 @@ class OpenAICompatibleProvider(BaseProvider):
         extra_headers: dict[str, str] | None = None,
         image_input: bool = False,
         reasoning_effort: bool = False,
+        test_model: str | None = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.completions_path = completions_path
@@ -50,6 +51,7 @@ class OpenAICompatibleProvider(BaseProvider):
         self._extra_headers = extra_headers or {}
         self._image_input = bool(image_input)
         self._reasoning_effort = bool(reasoning_effort)
+        self._test_model = (test_model or "").strip()
 
     def capabilities(self) -> CapabilitySet:
         return CapabilitySet(
@@ -115,8 +117,52 @@ class OpenAICompatibleProvider(BaseProvider):
         return parse_chat_response(resp.json(), self.protocol)
 
     async def test_connection(self) -> dict:
+        models_detail = ""
         try:
-            resp = await self._client.get(f"{self.base_url}/models", headers=self._headers(), timeout=15.0)
-            return {"ok": resp.status_code == 200, "detail": f"models 端点 {resp.status_code}"}
-        except httpx.HTTPError as e:
-            return {"ok": False, "detail": str(e)[:200]}
+            resp = await self._client.get(
+                f"{self.base_url}/models",
+                headers=self._headers(),
+                timeout=15.0,
+            )
+            if resp.status_code == 200:
+                return {"ok": True, "detail": "models 端点 200"}
+            models_detail = f"models 端点 {resp.status_code}"
+        except httpx.HTTPError as exc:
+            models_detail = f"models 探测失败: {str(exc)[:120]}"
+
+        # Many otherwise valid OpenAI-compatible relays do not implement
+        # /models.  Fall back to the actual configured chat path/model rather
+        # than reporting a false negative.  This is a real, minimal API call.
+        if not self._test_model:
+            return {
+                "ok": False,
+                "detail": f"{models_detail}; 未配置 test_model，无法执行 chat fallback",
+            }
+        try:
+            await self.generate(
+                [
+                    NormalizedMessage(
+                        role="user",
+                        content=[TextPart(text="Reply with OK.")],
+                    )
+                ],
+                [],
+                model=self._test_model,
+                reasoning=None,
+                max_output_tokens=1,
+                timeout_s=15.0,
+            )
+            return {
+                "ok": True,
+                "detail": f"{models_detail}; chat fallback 成功",
+            }
+        except ProviderError as exc:
+            return {
+                "ok": False,
+                "detail": f"{models_detail}; chat fallback 失败: {str(exc)[:160]}",
+            }
+        except httpx.HTTPError as exc:
+            return {
+                "ok": False,
+                "detail": f"{models_detail}; chat fallback 网络失败: {str(exc)[:160]}",
+            }
