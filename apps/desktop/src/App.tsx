@@ -312,12 +312,16 @@ function ProviderPanel({
   const [apiKey, setApiKey] = useState("");
   const [reasoning, setReasoning] = useState("high");
   const [compatibleImageInput, setCompatibleImageInput] = useState(false);
+  const [compatibleReasoningEffort, setCompatibleReasoningEffort] = useState(false);
   const [testResult, setTestResult] = useState("");
 
   function changeProtocol(value: string) {
     setProtocol(value);
     setBaseUrl(protocolDefaults[value] ?? "");
-    if (value !== "openai_compatible") setCompatibleImageInput(false);
+    if (value !== "openai_compatible") {
+      setCompatibleImageInput(false);
+      setCompatibleReasoningEffort(false);
+    }
   }
 
   async function submit(e: FormEvent) {
@@ -332,7 +336,10 @@ function ProviderPanel({
         reasoning: reasoning || null,
         timeout_s: 300,
         extra: protocol === "openai_compatible"
-          ? { image_input: compatibleImageInput }
+          ? {
+              image_input: compatibleImageInput,
+              reasoning_effort: compatibleReasoningEffort,
+            }
           : {},
       });
       setApiKey("");
@@ -409,16 +416,28 @@ function ProviderPanel({
           <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
         </div>
         {protocol === "openai_compatible" && (
-          <div className="field">
-            <label>
-              <input
-                type="checkbox"
-                checked={compatibleImageInput}
-                onChange={(e) => setCompatibleImageInput(e.target.checked)}
-              />
-              {" "}该兼容渠道支持图片输入（用于 G5/S6 PDF 页图终审）
-            </label>
-          </div>
+          <>
+            <div className="field">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={compatibleImageInput}
+                  onChange={(e) => setCompatibleImageInput(e.target.checked)}
+                />
+                {" "}该兼容渠道支持图片输入（用于 G5/S6 PDF 页图终审）
+              </label>
+            </div>
+            <div className="field">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={compatibleReasoningEffort}
+                  onChange={(e) => setCompatibleReasoningEffort(e.target.checked)}
+                />
+                {" "}该兼容渠道支持 reasoning_effort 参数
+              </label>
+            </div>
+          </>
         )}
         <div className="field">
           <label>Reasoning</label>
