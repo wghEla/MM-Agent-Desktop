@@ -10,7 +10,26 @@
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, RootModel, field_validator
+
+
+class ModelRepairReceipt(BaseModel):
+    """Model-authored repair receipt before runtime identity enrichment."""
+
+    id: str = Field(min_length=1)
+    改动: str = Field(min_length=1, max_length=400)
+    证据: str = Field(default="", max_length=300)
+
+
+class ModelRepairReceiptArtifact(RootModel[list[ModelRepairReceipt]]):
+    """Repair artifact must contain at least one model-authored receipt."""
+
+    @field_validator("root")
+    @classmethod
+    def nonempty(cls, value: list[ModelRepairReceipt]) -> list[ModelRepairReceipt]:
+        if not value:
+            raise ValueError("repair receipt list must not be empty")
+        return value
 
 
 class RepairReceipt(BaseModel):
