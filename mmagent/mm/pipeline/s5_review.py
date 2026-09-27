@@ -568,6 +568,9 @@ async def run_s5(
             review.channel_verdicts
         )
         verdict_stats = ledger.收裁定(merged_verdicts, 轮次=round_num)
+        missed_verdict_ids = {
+            item.id for item in ledger.条目 if item.状态 == "待复核"
+        }
         missed_verdicts = ledger.待复核未裁()
 
         previous_score = None
@@ -658,9 +661,14 @@ async def run_s5(
             ek = f"{item.id}:{item.generation}"
             if item.级别 in ("硬伤", "正确性"):
                 if ek in prior_successful_escalations:
+                    # A missing verdict is not an unresolved verdict.  Only an
+                    # explicit reviewer "未消解" after a successful escalation
+                    # can exhaust the single escalation chance.
+                    if item.id in missed_verdict_ids:
+                        continue
                     # A successful escalation produced a valid repair receipt,
-                    # and the reviewer still left this generation unresolved:
-                    # the single escalation chance is genuinely exhausted.
+                    # and the reviewer explicitly left this generation
+                    # unresolved: the single escalation chance is exhausted.
                     upsert_degraded_review_issue(
                         policy.root,
                         issue_id=item.id,
