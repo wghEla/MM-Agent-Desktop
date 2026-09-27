@@ -38,6 +38,7 @@ class OpenAICompatibleProvider(BaseProvider):
         auth_style: str = "bearer",  # bearer | x-api-key | none
         client: httpx.AsyncClient | None = None,
         extra_headers: dict[str, str] | None = None,
+        image_input: bool = False,
     ):
         self.base_url = base_url.rstrip("/")
         self.completions_path = completions_path
@@ -45,12 +46,13 @@ class OpenAICompatibleProvider(BaseProvider):
         self._key_getter = api_key_getter
         self._client = client or httpx.AsyncClient(timeout=600.0)
         self._extra_headers = extra_headers or {}
+        self._image_input = bool(image_input)
 
     def capabilities(self) -> CapabilitySet:
         return CapabilitySet(
             protocol=self.protocol,
             tool_calling=True,
-            image_input=False,  # 兼容渠道能力不一：默认保守关闭，用户可按渠道声明
+            image_input=self._image_input,  # 默认保守关闭；profile 可显式声明
             streaming=False,    # v0.3.x 引入流式后按渠道探测
             reasoning_levels=frozenset(),
         )
