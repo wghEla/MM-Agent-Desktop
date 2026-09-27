@@ -234,7 +234,7 @@ async def test_g5_compiles_before_defect_hunter_and_passes(tmp_path: Path) -> No
         )
         result = await run_g5(
             handle.workspace.db, MockProvider(script), _registry(), PathPolicy(root), run_id,
-            beauty_baseline_pages=10, compile_paper=_compile,
+            beauty_baseline_pages=10, compile_paper=_compile, render_pages=_render,
         )
         assert result["pass"] is True, result["issues"]
     finally:
@@ -288,7 +288,7 @@ async def test_g5_rework_figure_receipt_then_verdict_resolves_issue(tmp_path: Pa
         )
         result = await run_g5_rework(
             db, MockProvider(script), _registry(), PathPolicy(root), run_id,
-            beauty_baseline_pages=10, compile_paper=_compile,
+            beauty_baseline_pages=10, compile_paper=_compile, render_pages=_render,
         )
         assert result["pass"] is True, result["issues"]
         assert result["rework_rounds"] == 1
@@ -341,7 +341,7 @@ async def test_g5_rework_calc_upsert_preserves_s2_entries(tmp_path: Path) -> Non
         )
         result = await run_g5_rework(
             db, MockProvider(script), _registry(), PathPolicy(root), run_id,
-            beauty_baseline_pages=10, compile_paper=_compile,
+            beauty_baseline_pages=10, compile_paper=_compile, render_pages=_render,
         )
         assert result["pass"] is True, result["issues"]
         carrier = read_degraded_release(root)
@@ -383,7 +383,7 @@ async def test_g5_rework_stale_verdict_generation_is_rejected(tmp_path: Path) ->
         )
         result = await run_g5_rework(
             db, MockProvider(script), _registry(), PathPolicy(root), run_id,
-            beauty_baseline_pages=10, compile_paper=_compile,
+            beauty_baseline_pages=10, compile_paper=_compile, render_pages=_render,
         )
         # Receipt moved the issue to 待复核; the stale verdict must not have
         # resolved it.  At loop end the missed-verdict path honestly marks it
@@ -557,7 +557,7 @@ async def test_g5_rework_text_leg_violating_guard_is_reverted(tmp_path: Path) ->
         )
         result = await run_g5_rework(
             db, MockProvider(script), _registry(), PathPolicy(root), run_id,
-            beauty_baseline_pages=10, compile_paper=_compile,
+            beauty_baseline_pages=10, compile_paper=_compile, render_pages=_render,
         )
         # Guard rolled the paper back to the snapshot with the figure intact.
         assert "\\includegraphics{a.png}" in body.read_text(encoding="utf-8")
@@ -604,7 +604,7 @@ async def test_g5_calc_blocker_without_prior_degraded_approval_fails_closed(
         )
         result = await run_g5_rework(
             db, MockProvider(script), _registry(), PathPolicy(root), run_id,
-            beauty_baseline_pages=10, compile_paper=_compile,
+            beauty_baseline_pages=10, compile_paper=_compile, render_pages=_render,
         )
         assert result["pass"] is False
         rows = json.loads(
