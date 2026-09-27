@@ -18,6 +18,7 @@ from mmagent.mm.ledger.issue_ledger import (
     IssueLedger,
     merge_channel_verdicts,
 )
+from mmagent.mm.pipeline.compile_repair import run_compile_repair
 from mmagent.mm.pipeline.compile_runtime import run_compile
 from mmagent.mm.pipeline.guarded_repair import guarded_text_repair
 from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
@@ -1376,6 +1377,46 @@ async def run_s5(
         round_info["rework"] = await _run_rework(
             db, provider, registry, policy, run_id, round_num, ledger, cancel=cancel
         )
+
+        # Master-plan step 17: the round checkpoint must describe a carrier
+        # that has already survived compile/fix, not an uncompiled intermediate
+        # revision that will only be checked on the next round.
+        post_compile = await run_compile_repair(
+            db,
+            provider,
+            registry,
+            policy,
+            run_id,
+            compiler,
+            stage_key=f"S5R{round_num}",
+            cancel=cancel,
+        )
+        post_compile_ok = (
+            post_compile.get("rc") in (0, None)
+            and not post_compile.get("errors")
+        )
+        round_info["post_rework_compile"] = {
+            "pass": post_compile_ok,
+            "rc": post_compile.get("rc"),
+            "errors": list(post_compile.get("errors") or [])[:5],
+        }
+        if not post_compile_ok:
+            ledger.并入(
+                [{
+                    "级别": "硬伤",
+                    "目标": "文",
+                    "定位": "编译",
+                    "问题": (
+                        "S5 返工后编译仍失败: "
+                        + str(post_compile.get("errors") or [])[:500]
+                    ),
+                    "指令": "修复编译错误后重新进入审稿轮。",
+                    "验收": "XeLaTeX 编译成功且 E=0",
+                    "来源": "机械门",
+                }],
+                round_num,
+            )
+
         _write_ledger_view(policy, ledger)
         events.append_event(
             db,
