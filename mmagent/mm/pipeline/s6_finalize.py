@@ -196,6 +196,25 @@ async def run_s6(
     if not (policy.root / "论文" / "论文.pdf").is_file():
         return {"pass": False, "issues": ["S6 final compile 后论文.pdf 缺失"]}
 
+    # Terminal publication verification (外审 round1 P1-5: TOCTOU fix)
+    # After S6 writer/plotter fixes, verify that the fixes did not introduce
+    # stale values or structural damage. Focused on S6-relevant checks only.
+    from mmagent.mm.guards.guards import stale_value_guard as _svg
+    terminal_issues: list[str] = []
+    stale_ok, stale_issues = _svg(policy.root)
+    if not stale_ok:
+        terminal_issues.extend(stale_issues)
+    # Structural integrity: key delivery files must exist and be non-empty
+    for rel in ("论文/论文.tex", "论文/论文.pdf"):
+        fp = policy.root / rel
+        if not fp.is_file() or fp.stat().st_size == 0:
+            terminal_issues.append(f"S6 terminal: {rel} 缺失或为空")
+    if terminal_issues:
+        events.append_event(
+            db, "s6.terminal_verify_failed", {"issues": terminal_issues}, run_id=run_id
+        )
+        return {"pass": False, "issues": [f"S6 terminal verify 失败: {terminal_issues}"]}
+
     metrics = _run_metrics(db, run_id)
     metrics_path = policy.root / "审稿" / "回流账.json"
     metrics_path.write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
