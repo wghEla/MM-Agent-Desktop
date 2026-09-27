@@ -423,16 +423,28 @@ async def run_s2(
     layers = topological_layers(graph)
     results: dict[str, Any] = {"layers": layers, "gates": {}, "downgraded": []}
 
+    # Replay checkpoint + invalidation events in event-id order.  The
+    # invalidation event is a durable tombstone: after a crash/restart an old
+    # downstream checkpoint must not resurrect merely because events are
+    # append-only.
     question_checkpoints: dict[int, dict[str, Any]] = {}
-    for event in events.query_events(
-        db,
-        run_id=run_id,
-        type="checkpoint.s2_question",
-        limit=1000,
-    ):
-        value = event.payload.get("question")
-        if isinstance(value, int):
-            question_checkpoints[value] = dict(event.payload)
+    after_id = 0
+    while True:
+        batch = events.query_events(
+            db, run_id=run_id, after_id=after_id, limit=1000
+        )
+        if not batch:
+            break
+        for event in batch:
+            if event.type == "checkpoint.s2_question":
+                value = event.payload.get("question")
+                if isinstance(value, int):
+                    question_checkpoints[value] = dict(event.payload)
+            elif event.type == "pipeline.s2_downstream_invalidated":
+                for value in event.payload.get("downstream") or []:
+                    if isinstance(value, int):
+                        question_checkpoints.pop(value, None)
+        after_id = batch[-1].id
 
     for layer in layers:
         for q in layer:
