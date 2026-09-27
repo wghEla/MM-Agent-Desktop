@@ -48,12 +48,12 @@
 | B6 | Convergence = no blocking active issues | MATCH | ledger convergence mechanically checks blocking severities |
 | B7 | Fuse after ≥2 attempts | MATCH | Generation-local attempt accounting, narrative/layout shelving, and hard/correctness escalation via a real role leg with required receipt and status-gated events. Escalation is once per (issue, generation); exhaustion registers a Runtime-owned exact degraded-release record and shelves the issue (`s5.degraded_release_registered`). Real-path tests: `test_s5_review.py::test_s5_escalation_runs_real_leg_then_degrades_after_exhaustion` and `::test_s5_escalation_leg_without_receipt_fails_and_degrades_later`. |
 | B8 | Change Guard 0.45 / 0.70 | MATCH | sentence units + named mask + min-ratio implementation and tests |
-| B9 | Structure Guard | PARTIAL | input-set/file-loss/empty-file checks exist; complete upstream appendix/title rules not all evidenced |
+| B9 | Structure Guard | MATCH | R38 rules implemented and guard-wired: \input set reduction, emptied chapters, appendix lstlisting-inventory reduction (R38③), body-chapter \includegraphics reduction with receiver flagging (R68⑤), code-chapter detection (R47); G5 rework text route runs 改前快照 → 腿 → 结构守卫 → 违规整份回退 + 留底 审稿/回退稿/ via `guarded_repair.py`; tests in `test_s5_finalize.py::test_structure_guard_*` and `::test_g5_rework_text_leg_violating_guard_is_reverted`. Title rules live in the G4/page gates. |
 | B10 | Page Guard | MATCH | +max(10%,2 pages) and sudden-drop guard implemented/tested |
 | B11 | Integrator/frozen-fact guard | PARTIAL | editorial/frozen-input protections exist, but complete per-file fingerprint parity not proven |
 | B12 | Version-change manifest / stale-value guard | PARTIAL | stale-value scan exists and is wired into G5; full calc→figure→text propagation proof pending |
 | B13 | Best-retention / rollback package / 0.5 noise band | MATCH | shared retention runtime persists pre-review TeX snapshots for S4/S5; relative verdict wins, 0.5 score drop is the fallback, prior files are restored, and S4/S5 integration tests prove rollback behavior |
-| B14 | Cascade recomputation / downstream invalidation | PARTIAL | DAG primitives exist; full durable invalidation-and-rerun behavior not yet proven |
+| B14 | Cascade recomputation / downstream invalidation | MATCH | DAG primitives + S2 checkpoint reuse; any re-executed upstream question (invalidated checkpoint or missing checkpoint after crash) durably cascade-invalidates all downstream checkpoints (`pipeline.s2_downstream_invalidated`) and forces their rerun. Real-path test: `test_s2_pipeline.py::test_s2_reexecuted_upstream_cascade_invalidates_downstream_checkpoints`. |
 
 ## C. Roles and legs
 

@@ -11,7 +11,11 @@ from mmagent.mm.contracts.degraded_release import (
     upsert_degraded_question,
 )
 from mmagent.mm.gates.g2 import check_g2, normalize_red_team_report
-from mmagent.orchestration.dag import build_dependency_graph, topological_layers
+from mmagent.orchestration.dag import (
+    all_downstreams,
+    build_dependency_graph,
+    topological_layers,
+)
 from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.orchestration.wave import WaveJob, run_status_wave
 from mmagent.providers.base import BaseProvider
@@ -433,10 +437,12 @@ async def run_s2(
     for layer in layers:
         for q in layer:
             checkpoint = question_checkpoints.get(q)
+            reuse = False
             if checkpoint is not None:
                 downgraded = bool(checkpoint.get("downgraded", False))
                 checkpoint_issues = list(checkpoint.get("issues") or [])
                 if downgraded and _has_degraded_release(policy, q):
+                    reuse = True
                     results["downgraded"].append(q)
                     results["gates"][f"问{q}"] = {
                         "pass": bool(checkpoint.get("pass", False)),
@@ -449,8 +455,7 @@ async def run_s2(
                         {"question": q, "downgraded": True},
                         run_id=run_id,
                     )
-                    continue
-                if downgraded:
+                elif downgraded:
                     events.append_event(
                         db,
                         "pipeline.s2_question_invalidated",
@@ -463,6 +468,7 @@ async def run_s2(
                 else:
                     still_valid, current_issues = check_g2(policy.root, q)
                     if still_valid:
+                        reuse = True
                         results["gates"][f"问{q}"] = {
                             "pass": True,
                             "issues": checkpoint_issues,
@@ -474,13 +480,32 @@ async def run_s2(
                             {"question": q},
                             run_id=run_id,
                         )
-                        continue
-                    events.append_event(
-                        db,
-                        "pipeline.s2_question_invalidated",
-                        {"question": q, "issues": current_issues},
-                        run_id=run_id,
-                    )
+                    else:
+                        events.append_event(
+                            db,
+                            "pipeline.s2_question_invalidated",
+                            {"question": q, "issues": current_issues},
+                            run_id=run_id,
+                        )
+            if reuse:
+                continue
+
+            # B14: q is about to (re-)execute — no checkpoint (fresh or crash
+            # recovery) or an invalidated one.  Every downstream question that
+            # still holds a checkpoint is derived from the now-stale upstream
+            # results and must be durably invalidated for rerun.
+            downstream = [
+                d for d in all_downstreams(graph, q) if d in question_checkpoints
+            ]
+            for d in downstream:
+                del question_checkpoints[d]
+            if downstream:
+                events.append_event(
+                    db,
+                    "pipeline.s2_downstream_invalidated",
+                    {"question": q, "downstream": downstream},
+                    run_id=run_id,
+                )
 
             ok, issues = await _normal_attempt(
                 db, provider, registry, policy, run_id, q,

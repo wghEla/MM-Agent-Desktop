@@ -185,7 +185,11 @@ async def run_s5b(
     cfg = get_profile(profile)
     compiler = compile_paper or _default_compile
     renderer = render_pages or _default_render
-    initial = await run_compile(compiler, policy.root, cancel=cancel)
+    from mmagent.mm.pipeline.compile_repair import run_compile_repair
+    initial = await run_compile_repair(
+        db, provider, registry, policy, run_id, compiler,
+        stage_key="S5", cancel=cancel,
+    )
     if initial.get("rc") not in (0, None) or initial.get("errors"):
         return {"pass": False, "issues": ["美化前编译失败"], "rounds": []}
     baseline = int(initial.get("pages") or 0)
@@ -409,23 +413,31 @@ async def run_g5_rework(
                 )
                 ledger.搁置条目(x.id, "G5 无算路（出版前重算风险大），交复盘/人工")
 
-        # Text route → writer with required receipts
+        # Text route → writer with required receipts + R38 structure guard
         text_items = [x for x in ledger.待改条目(级别们=list(阻塞级别)) if x.目标 != "算"]
         text_receipts: list[dict] = []
         if text_items:
+            from mmagent.mm.pipeline.guarded_repair import guarded_text_repair
             receipt_rel = f"审稿/回执_G5R{rework_n}_文.json"
             issue_ids = ",".join(x.id for x in text_items)
-            status = await _leg(
+            status, guard_issues = await guarded_text_repair(
                 db, provider, registry, policy, run_id,
-                stage="G5", role_id="writer", node=f"G5:R{rework_n}:文",
+                stage_key="G5", node_key=f"G5:R{rework_n}:文",
                 instructions=(
                     f"【G5返工】第{rework_n}次返工。只改编号点名处（{issue_ids}），"
                     "不许删除 \\cite，不许整章移附录，"
                     f"共 {len(text_items)} 条。完成后写 {receipt_rel}，"
                     f'JSON 数组格式 [{{"id": "...", "改动": "...", "证据": "..."}}]。'
                 ),
-                expected=[ExpectedArtifact(rel_path=receipt_rel)], cancel=cancel,
+                receipt_rel=receipt_rel, cancel=cancel,
             )
+            if guard_issues:
+                for issue in guard_issues:
+                    events.append_event(
+                        db, "gate.g5_rework_guard",
+                        {"rework": rework_n, "issue": issue},
+                        run_id=run_id,
+                    )
             if status == "SUCCEEDED":
                 receipt_full = policy.root / receipt_rel
                 if receipt_full.is_file():
@@ -444,8 +456,13 @@ async def run_g5_rework(
         if text_receipts:
             ledger.收回执(text_receipts, 腿名=f"G5返工文{rework_n}")
 
-        # R51: Compile before re-check
-        compiled = await run_compile(compiler, policy.root, cancel=cancel)
+        # R51: Compile before re-check (with bounded repair — the repairs
+        # above may have broken LaTeX)
+        from mmagent.mm.pipeline.compile_repair import run_compile_repair
+        compiled = await run_compile_repair(
+            db, provider, registry, policy, run_id, compiler,
+            stage_key="G5", cancel=cancel,
+        )
         pages = int(compiled.get("pages") or 0)
 
         # R52: Page guard against beauty baseline

@@ -17,7 +17,6 @@ from mmagent.mm.contracts.s4_contracts import (
     RequirementCoverageDocument,
 )
 from mmagent.mm.gates.g4 import check_g4, check_narrative
-from mmagent.mm.pipeline.compile_runtime import run_compile
 from mmagent.mm.retention import (
     ensure_paper_snapshot,
     restore_paper_snapshot,
@@ -447,7 +446,14 @@ async def run_s4(
 
     audit_paper(policy.root)
     compiler = compile_paper or _default_compile
-    compile_result = await run_compile(compiler, policy.root, cancel=cancel)
+    # E8: bounded compile-repair protocol before the final gate — the writer
+    # gets the log errors and must fix 论文/*.tex (with receipt), then the
+    # paper is recompiled; exhaustion still fails closed below.
+    from mmagent.mm.pipeline.compile_repair import run_compile_repair
+    compile_result = await run_compile_repair(
+        db, provider, registry, policy, run_id, compiler,
+        stage_key="S4", cancel=cancel,
+    )
     if compile_result.get("rc") not in (0, None) or compile_result.get("errors"):
         return {
             "g4_pass": False, "g4_issues": [f"论文编译失败: {compile_result.get('errors')}"],

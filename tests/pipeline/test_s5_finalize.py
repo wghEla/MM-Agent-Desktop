@@ -13,7 +13,7 @@ from mmagent.mm.gates.g5 import check_g5
 from mmagent.mm.guards.guards import stale_value_guard
 from mmagent.mm.pipeline.s5_finalize import run_g5, run_s5a, run_s5b
 from mmagent.providers.mock import MockProvider, MockScript, MockTurn
-from mmagent.state import repositories
+from mmagent.state import events, repositories
 from mmagent.tools.filesystem import FsReadTool, FsWriteTool
 from mmagent.tools.python import PythonRunTool
 from mmagent.tools.registry import ToolRegistry
@@ -385,5 +385,184 @@ async def test_g5_rework_stale_verdict_generation_is_rejected(tmp_path: Path) ->
         assert rows[0]["状态"] != "已消解"
         assert any(h.get("裁定") == "评审未裁" for h in rows[0]["历史"])
         assert result["pass"] is False
+    finally:
+        handle.workspace.db.close()
+
+
+# ==================== E8: bounded compile-repair protocol ====================
+
+@pytest.mark.asyncio
+async def test_compile_repair_uses_writer_leg_then_recovers(tmp_path: Path) -> None:
+    """E8: compile failure → writer leg with log errors + REQUIRED receipt →
+    recompile succeeds.  A successful initial compile runs no legs at all."""
+    from mmagent.api.projects import create_project
+    from mmagent.mm.pipeline.compile_repair import run_compile_repair
+
+    handle = create_project(tmp_path / "proj-fix", name="cfix", profile="快速")
+    try:
+        root = handle.workspace.root
+        (root / "论文").mkdir(parents=True, exist_ok=True)
+        (root / "论文" / "论文.tex").write_text("正文", encoding="utf-8")
+        db = handle.workspace.db
+        run_id = repositories.create_run(db, project_id=handle.project_id, profile="快速")
+
+        calls: list[dict] = []
+
+        def flaky_compiler(root_: Path) -> dict:
+            calls.append({"n": len(calls)})
+            if len(calls) == 1:
+                (root_ / "论文" / "论文.log").write_text(
+                    "! LaTeX Error: File missing.sty not found.", encoding="utf-8"
+                )
+                return {"rc": 1, "errors": ["! LaTeX Error: File missing.sty not found."],
+                        "pages": 0}
+            return {"rc": 0, "errors": [], "pages": 10}
+
+        script = MockScript(
+            _write("fix", "审稿/回执_编译修复1.json",
+                   [{"改动": "补上缺失宏包", "证据": "论文/论文.tex"}])
+        )
+        result = await run_compile_repair(
+            db, MockProvider(script), _registry(), PathPolicy(root), run_id,
+            flaky_compiler, stage_key="S4",
+        )
+        assert result["rc"] == 0 and result["pages"] == 10
+        assert len(calls) == 2
+        evs = events.query_events(
+            db, run_id=run_id, type="compile.repair_attempt"
+        )
+        assert len(evs) == 1 and evs[0].payload["attempt"] == 1
+
+        # Clean compile → no repair legs, no new events.
+        before = len(events.query_events(
+            db, run_id=run_id, type="compile.repair_attempt"
+        ))
+        script2 = MockScript([])
+        result2 = await run_compile_repair(
+            db, MockProvider(script2), _registry(), PathPolicy(root), run_id,
+            lambda _r: {"rc": 0, "errors": [], "pages": 10}, stage_key="S4",
+        )
+        assert result2["rc"] == 0
+        after = len(events.query_events(
+            db, run_id=run_id, type="compile.repair_attempt"
+        ))
+        assert after == before == 1
+    finally:
+        handle.workspace.db.close()
+
+
+@pytest.mark.asyncio
+async def test_compile_repair_without_receipt_stops_bounded(tmp_path: Path) -> None:
+    """E8: a repair leg that writes no receipt ends the loop immediately and
+    the last failing compile result is returned (fail-closed)."""
+    from mmagent.api.projects import create_project
+    from mmagent.mm.pipeline.compile_repair import run_compile_repair
+
+    handle = create_project(tmp_path / "proj-nofix", name="cnofix", profile="快速")
+    try:
+        root = handle.workspace.root
+        (root / "论文").mkdir(parents=True, exist_ok=True)
+        (root / "论文" / "论文.tex").write_text("正文", encoding="utf-8")
+        db = handle.workspace.db
+        run_id = repositories.create_run(db, project_id=handle.project_id, profile="快速")
+
+        def broken_compiler(_root: Path) -> dict:
+            return {"rc": 1, "errors": ["! Emergency stop."], "pages": 0}
+
+        # Text-only turns: the leg completes but writes no receipt → FAILED
+        # (initial attempt + the wave's single retry).
+        script = MockScript([MockTurn(text="我不改"), MockTurn(text="我不改")])
+        result = await run_compile_repair(
+            db, MockProvider(script), _registry(), PathPolicy(root), run_id,
+            broken_compiler, stage_key="S4", max_attempts=2,
+        )
+        assert result["rc"] == 1
+        evs = events.query_events(db, run_id=run_id, type="compile.repair_attempt")
+        assert len(evs) == 1 and evs[0].payload["status"] != "SUCCEEDED"
+    finally:
+        handle.workspace.db.close()
+
+
+# ==================== B9: structure guard R38③/R68⑤ + guard rollback ====================
+
+def test_structure_guard_appendix_lstlisting_shrink_detected() -> None:
+    from mmagent.mm.guards.guards import structure_guard
+    lst = "\\begin{lstlisting}"
+    endlst = "\\end{lstlisting}"
+    old = {
+        "论文/8.1.问题1源码.tex": (
+            f"{lst}\ndef a():\n    pass\n{endlst}\n"
+            f"{lst}\ndef b():\n    pass\n{endlst}\n"
+        ),
+    }
+    new = {"论文/8.1.问题1源码.tex": f"{lst}\ndef a():\n{endlst}\n"}
+    ok, issues = structure_guard(old, new)
+    assert not ok
+    assert any("附录源码清单减少" in x for x in issues)
+
+
+def test_structure_guard_body_graphics_move_detected() -> None:
+    from mmagent.mm.guards.guards import structure_guard
+    old = {
+        "论文/4.模型求解.tex": "\\includegraphics{a.png}\n\\includegraphics{b.png}\n",
+        "论文/8.7.补充验证.tex": "补充。\n",
+    }
+    moved = {
+        "论文/4.模型求解.tex": "\\includegraphics{a.png}\n",
+        "论文/8.7.补充验证.tex": "\\includegraphics{b.png}\n补充。\n",
+    }
+    ok, issues = structure_guard(old, moved)
+    assert not ok
+    assert any("正文插图减少" in x for x in issues)
+    assert any("接收挪入插图" in x for x in issues)
+
+
+@pytest.mark.asyncio
+async def test_g5_rework_text_leg_violating_guard_is_reverted(tmp_path: Path) -> None:
+    """R38: a G5 text repair leg that deletes body graphics gets rolled back,
+    its receipt must not resolve the issue, and the final gate fails closed."""
+    from mmagent.api.projects import create_project
+    from mmagent.mm.pipeline.s5_finalize import run_g5_rework
+
+    handle = create_project(tmp_path / "proj-guard", name="g5guard", profile="快速")
+    try:
+        root = handle.workspace.root
+        _seed_publishable(root)
+        _seed_ledger(root, [{
+            "级别": "硬伤", "目标": "文", "定位": "论文/论文.tex",
+            "问题": "表述与结果不一致",
+        }])
+        body = root / "论文" / "4.模型.tex"
+        body.write_text(
+            "\\includegraphics{a.png}\n正文没有统计数字。\n", encoding="utf-8"
+        )
+        db = handle.workspace.db
+        run_id = repositories.create_run(db, project_id=handle.project_id, profile="快速")
+        script = MockScript(
+            # The repair leg "fixes" the wording but illegally removes the figure.
+            _write("w", "论文/4.模型.tex", "改正后的表述。\n")
+            + _write("p", "审稿/回执_G5R1_文.json",
+                     [{"id": "审-1-01", "改动": "改正表述", "证据": "论文/4.模型.tex"}])
+            + _write("h", "审稿/G5复核1.json", {"通过": True, "依据版本": "当前PDF"})
+            + _write("f", "审稿/G5复核.json", {"通过": True, "依据版本": "当前PDF"})
+        )
+        result = await run_g5_rework(
+            db, MockProvider(script), _registry(), PathPolicy(root), run_id,
+            beauty_baseline_pages=10, compile_paper=_compile,
+        )
+        # Guard rolled the paper back to the snapshot with the figure intact.
+        assert "\\includegraphics{a.png}" in body.read_text(encoding="utf-8")
+        assert not (root / "论文" / "4.模型.tex").read_text(
+            encoding="utf-8"
+        ).startswith("改正后")
+        rows = json.loads(
+            (root / "台账" / "审稿台账.json").read_text(encoding="utf-8")
+        )
+        assert rows[0]["状态"] != "已消解"
+        assert result["pass"] is False
+        reverts = events.query_events(
+            db, run_id=run_id, type="guard.structure_revert"
+        )
+        assert len(reverts) == 1
     finally:
         handle.workspace.db.close()

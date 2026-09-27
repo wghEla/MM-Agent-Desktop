@@ -294,3 +294,107 @@ async def test_s2_downgraded_checkpoint_without_carrier_is_rerun(
         assert "降级放行" in invalidated[0].payload["issues"][0]
     finally:
         handle.workspace.db.close()
+
+
+# ==================== B14: durable downstream cascade invalidation ====================
+
+def _seed_g2_artifacts(root: Path, questions: list[int]) -> None:
+    for q in questions:
+        decl = root / "交接" / f"结果声明_问题{q}.json"
+        decl.parent.mkdir(parents=True, exist_ok=True)
+        decl.write_text(
+            json.dumps({"问题编号": q, "核心指标": {"厚度": 2.17}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        rt = root / "交接" / f"红队_问题{q}.json"
+        rt.write_text(
+            json.dumps(
+                {"问题编号": q, "结论": "对齐", "机械复核": {"通过": True}},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        solver = root / "求解" / f"问题{q}" / f"求解_问题{q}.py"
+        solver.parent.mkdir(parents=True, exist_ok=True)
+        solver.write_text("print(1)", encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_s2_reexecuted_upstream_cascade_invalidates_downstream_checkpoints(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """B14: 问题1 重算 → 下游 2/3/4 的 checkpoint 必须级联失效并重算，
+    即使它们自身的 G2 仍然通过。"""
+    import mmagent.mm.pipeline.s2_model as s2
+    from mmagent.api.projects import create_project
+
+    handle = create_project(tmp_path / "proj-cascade", name="s2-cascade", profile="快速")
+    try:
+        root = handle.workspace.root
+        plan = {
+            "问题清单": [
+                {"编号": 1, "依赖问题": [], "主方法": "A"},
+                {"编号": 2, "依赖问题": [1], "主方法": "B"},
+                {"编号": 3, "依赖问题": [2], "主方法": "C"},
+                {"编号": 4, "依赖问题": [1], "主方法": "D"},
+            ]
+        }
+        plan_path = root / "交接" / "计划.json"
+        plan_path.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+        run_id = repositories.create_run(
+            handle.workspace.db, project_id=handle.project_id, profile="快速"
+        )
+        policy = PathPolicy(root)
+        _seed_g2_artifacts(root, [1, 2, 3, 4])
+
+        executed: list[int] = []
+
+        async def fake_attempt(db, provider, registry, policy_, run_id_, q, **kwargs):
+            executed.append(q)
+            return True, []
+
+        monkeypatch.setattr(s2, "_normal_attempt", fake_attempt)
+
+        first = await run_s2(
+            handle.workspace.db, None, None,  # type: ignore[arg-type]
+            policy, run_id, plan_path,
+        )
+        assert executed == [1, 2, 4, 3]
+        assert first["gates"]["问1"]["pass"] is True
+
+        # Corrupt ONLY question 1's own artifacts; downstream artifacts stay
+        # G2-valid.  Without the cascade, only q1 would re-execute.
+        (root / "交接" / "结果声明_问题1.json").write_text(
+            json.dumps({"问题编号": 1, "核心指标": {}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        executed.clear()
+        second = await run_s2(
+            handle.workspace.db, None, None,  # type: ignore[arg-type]
+            policy, run_id, plan_path,
+        )
+        assert executed == [1, 2, 4, 3], second
+        cascades = events.query_events(
+            handle.workspace.db, run_id=run_id,
+            type="pipeline.s2_downstream_invalidated",
+        )
+        assert len(cascades) == 1
+        assert cascades[0].payload["question"] == 1
+        assert sorted(cascades[0].payload["downstream"]) == [2, 3, 4]
+
+        # Repair q1 and rerun: nothing is invalidated any more.
+        _seed_g2_artifacts(root, [1])
+        executed.clear()
+        await run_s2(
+            handle.workspace.db, None, None,  # type: ignore[arg-type]
+            policy, run_id, plan_path,
+        )
+        assert executed == []
+        reused = events.query_events(
+            handle.workspace.db, run_id=run_id,
+            type="pipeline.s2_question_reused",
+        )
+        assert len(reused) >= 4
+    finally:
+        handle.workspace.db.close()

@@ -55,3 +55,15 @@
 - 09-27 删手工 append 事件的伪测试，换 run_s5/run_g5_rework/run_s6 真实路径行为测试 8 条。
 - 09-27 全量回归 416 passed / 0 failed，Ruff clean。FIDELITY_MATRIX A17/A20/B7/A21 证据更新。
 - 09-27 下一步：重生成 review packet → Round 3 外审。
+- 09-27 外审阻塞：ChatGPT 会话登出（登录页），Round 3 外审待用户登录后同会话提交。
+  转入 PARTIAL 项收口：
+- 09-27 B14：S2 checkpoint 重用补下游级联失效——上游问题因任何原因重算（checkpoint 失效或
+  崩溃后缺失）时，all_downstreams 闭包内的下游 checkpoint 一律删除并强制重算
+  （pipeline.s2_downstream_invalidated 事件）。真实路径测试：仅损坏问题1声明，
+  下游自身 G2 仍过也必须重算。
+- 09-27 E8：有界编译修复协议 compile_repair.py——编译失败→撰稿腿拿日志改 tex（必须回执）→
+  重编译；腿失败或耗尽即 fail-closed。接入 S4 终编译、S5b 初始编译、G5 返工 R51 编译。
+- 09-27 B9：结构守卫补 R38③（附录 lstlisting 清单减少）+ R68⑤（正文插图减少且接收章联动）
+  + R47 代码章判定；guarded_repair.py 实现 改前快照→腿→结构守卫→违规整份回退+留底
+  审稿/回退稿/，接入 G5 返工文路（REVERTED 腿的回执不被受理）。
+- 09-27 全量回归 422 passed / 0 failed，Ruff clean。B9/B14/E8 升 MATCH。
