@@ -12,7 +12,7 @@ from collections.abc import Callable
 from typing import Any
 
 from mmagent.mm.pipeline.compile_runtime import run_compile
-from mmagent.orchestration.role_leg import run_role_leg
+from mmagent.mm.pipeline.guarded_repair import guarded_text_repair
 from mmagent.providers.base import BaseProvider
 from mmagent.state import events
 from mmagent.state.db import Database
@@ -53,25 +53,31 @@ async def run_compile_repair(
         if not _failed(result):
             return result
         errors = [str(x) for x in (result.get("errors") or [])][:_MAX_ERROR_LINES]
-        receipt_rel = f"审稿/回执_编译修复{attempt}.json"
-        status = await run_role_leg(
+        safe_stage = "".join(ch if ch.isalnum() else "_" for ch in stage_key)
+        receipt_rel = f"审稿/回执_编译修复_{safe_stage}_{attempt}.json"
+        status, guard_issues = await guarded_text_repair(
             db, provider, registry, policy, run_id,
             stage_key=stage_key,
-            role_id="writer",
-            node_key=f"编译修复{attempt}",
+            node_key=f"{stage_key}:编译修复{attempt}",
             instructions=(
                 f"编译失败（第{attempt}次修复机会）。根据以下 XeLaTeX 错误修复 论文/*.tex，"
                 "不许删除 \\cite，不许整章移附录，不许改动求解事实：\n"
                 + json.dumps(errors, ensure_ascii=False)
                 + f"\n完成后写 {receipt_rel} 说明改动。"
             ),
-            expected_artifacts=[ExpectedArtifact(rel_path=receipt_rel)],
+            receipt_rel=receipt_rel,
             cancel=cancel,
         )
         events.append_event(
             db,
             "compile.repair_attempt",
-            {"attempt": attempt, "status": status, "errors": errors[:5]},
+            {
+                "attempt": attempt,
+                "stage": stage_key,
+                "status": status,
+                "errors": errors[:5],
+                "guard_issues": guard_issues,
+            },
             run_id=run_id,
         )
         if status != "SUCCEEDED":
