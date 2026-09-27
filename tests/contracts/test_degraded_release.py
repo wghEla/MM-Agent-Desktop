@@ -8,7 +8,10 @@ from mmagent.mm.contracts.degraded_release import (
     DegradedQuestionEntry,
     DegradedReviewIssueEntry,
     is_issue_degraded,
+    is_question_degraded,
     read_degraded_release,
+    upsert_degraded_question,
+    upsert_degraded_review_issue,
     write_degraded_release,
 )
 
@@ -84,3 +87,47 @@ class TestDegradedReleaseContract:
         final = read_degraded_release(tmp_path)
         assert len(final.questions) == 1  # S2 entry preserved
         assert len(final.review_issues) == 1  # S5 entry added
+
+
+    def test_runtime_upserts_preserve_both_namespaces(self, tmp_path: Path):
+        upsert_degraded_question(
+            tmp_path,
+            question=1,
+            issues=["escalation exhausted"],
+            reason="S2 exhausted",
+        )
+        upsert_degraded_review_issue(
+            tmp_path,
+            issue_id="审-2-01",
+            generation=3,
+            severity="正确性",
+            reason="S5 exhausted",
+        )
+
+        carrier = read_degraded_release(tmp_path)
+        assert carrier is not None
+        assert is_question_degraded(tmp_path, 1)
+        assert is_issue_degraded(tmp_path, "审-2-01", 3)
+        assert not is_issue_degraded(tmp_path, "审-2-01", 2)
+        assert len(carrier.questions) == 1
+        assert len(carrier.review_issues) == 1
+
+    def test_malformed_legacy_question_fails_closed(self, tmp_path: Path):
+        (tmp_path / "交接").mkdir(parents=True)
+        (tmp_path / "交接" / "降级放行.json").write_text(
+            json.dumps({"问题": [{"issues": ["missing question id"]}]}),
+            encoding="utf-8",
+        )
+        assert read_degraded_release(tmp_path) is None
+
+    def test_upsert_refuses_to_overwrite_malformed_existing_carrier(self, tmp_path: Path):
+        import pytest
+
+        (tmp_path / "交接").mkdir(parents=True)
+        (tmp_path / "交接" / "降级放行.json").write_text("{bad", encoding="utf-8")
+        with pytest.raises(ValueError):
+            upsert_degraded_question(
+                tmp_path,
+                question=1,
+                issues=["must not erase malformed evidence"],
+            )
