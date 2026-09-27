@@ -396,12 +396,12 @@ async def test_s5_escalation_runs_real_leg_then_degrades_after_exhaustion(
 
 
 @pytest.mark.asyncio
-async def test_s5_escalation_leg_without_receipt_fails_and_degrades_later(
+async def test_s5_escalation_leg_without_receipt_fails_closed(
     tmp_path: Path,
 ) -> None:
     """A failed escalation leg must be recorded as failed (never 'executed'),
-    must not resolve the issue, and must not register a degraded release
-    before exhaustion is actually observed."""
+    must not resolve the issue, must not grant the extension round, and must
+    never authorize a degraded release (R3-F1)."""
     from mmagent.mm.contracts.degraded_release import read_degraded_release
 
     handle, run_id = _seed_s5_workspace(tmp_path, "s5-esc-fail")
@@ -421,16 +421,19 @@ async def test_s5_escalation_leg_without_receipt_fails_and_degrades_later(
         )
         # The required escalation receipt was never written.
         assert not (root / "审稿" / "回执_升格_审-1-01_g0.json").is_file()
-        # Exhaustion was not observed in a later fuse pass → no degraded record.
+        # A failed leg is never exhaustion evidence → no degraded record.
         carrier = read_degraded_release(root)
         assert carrier is None or not carrier.review_issues
-        # The issue was not silently resolved; the post-failure rework receipt
-        # moved it to 待复核 (still an active blocking state).
+        # No accepted escalation → no extension round → the rework receipt the
+        # mock still carries is never consumed, and the issue stays active.
+        assert not events.query_events(
+            db, run_id=run_id, type="checkpoint.s5_escalation_extension"
+        )
         assert result["converged"] is False
         rows = json.loads(
             (root / "台账" / "审稿台账.json").read_text(encoding="utf-8")
         )
-        assert rows[0]["状态"] == "待复核"
+        assert rows[0]["状态"] == "未消解"
     finally:
         handle.workspace.db.close()
 

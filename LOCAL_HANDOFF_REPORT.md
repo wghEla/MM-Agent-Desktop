@@ -7,8 +7,8 @@
 | Repo | https://github.com/wghEla/MM-Agent-Desktop |
 | Branch | `gpt/fidelity-rebuild` |
 | Starting SHA | `fe6e16b` (before GPT external review round 1) |
-| Last locally verified code SHA | `33544eca0b950edc68f0481dd0237b0371be5ced` (422 passed, Ruff clean) |
-| Current remote state | GPT Round 3 source-only patches after `33544ec`; local regression required before claiming current-head green |
+| Last locally verified code SHA | **`f94d08e603c6ae983c64552c3ca7206a1d0abe77`** (439 passed, Ruff clean, frontend build OK) |
+| Prior verified baseline | `33544eca0b950edc68f0481dd0237b0371be5ced` (422 passed) — GPT Round-3 source-only closure landed between the two, now locally validated |
 | Windows version | 11 (10.0.26200 x64) |
 | Python | 3.11.9 (uv managed .venv) |
 | Node/npm | v24.18.0 / 11.16.0 |
@@ -22,7 +22,7 @@
 | Command | Result | Passed | Failed | Duration |
 |---|---|---|---|---|
 | `uv run ruff check .` | exit 0 | — | — | <1s |
-| `uv run pytest -q` | exit 0 | **408** | 0 | 104s |
+| `uv run pytest -q` | exit 0 | **439** | 0 | 118s |
 
 ### Test breakdown
 - unit: 33+ files (state/ledger/guards/dag/tool_env/providers) — all green

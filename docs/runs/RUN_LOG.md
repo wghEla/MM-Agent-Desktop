@@ -67,3 +67,18 @@
   + R47 代码章判定；guarded_repair.py 实现 改前快照→腿→结构守卫→违规整份回退+留底
   审稿/回退稿/，接入 G5 返工文路（REVERTED 腿的回执不被受理）。
 - 09-27 全量回归 422 passed / 0 failed，Ruff clean。B9/B14/E8 升 MATCH。
+- 09-27 Round 3 本地收口：同步 GPT source-only closure 到 f94d08e（33544ec 之后 54 提交），
+  按 handoff 执行本地验证。Stage A focused：修 4 个 fixture（S4 定向修订回执、G5 图事务
+  writer-sync 腿、S5 升格失败不再给扩展轮、裁定 generation 不再由 Runtime 代填），149 passed。
+- 09-27 Stage B：新增 tests/pipeline/test_round3_closures.py 12 条区分性真实路径测试——
+  S5 算级联（solver→红队→G2→下游重算→换版清单→绘图→guarded 同步→才收回执）、算失败无回执、
+  清单先于同步且同步失败仍留痕、算升格获胜变体 Runtime 晋升为正典真值、图/算回执自证被拒
+  （S5+G5）、G5 writer-sync 失败保持 active、Change Guard 整份回退、0.45/0.70 区分、
+  守卫快照崩溃恢复、回退即删陈旧回执。调试要点：run_s5 台账只从 checkpoint 事件恢复
+  （磁盘 seed 不可见）；终轮不跑返工；红队脚本必须写 复算.json；叙事级问题不阻塞收敛。
+- 09-27 Stage C：openai_compatible extra.image_input 三态后端 round-trip 测试
+  （True/False/默认 False）+ 前端 checkbox「该兼容渠道支持图片输入」确认存在。
+- 09-27 Stage D：全量 439 passed / 0 failed，Ruff clean，前端 vite build 158KB 通过。
+- 09-27 FIDELITY_MATRIX：B7/B8/B14/E8 → MATCH（含 HEAD 证据），B9 保持 PARTIAL
+  （P2-1 核心结构文件/问题章节数不变量未做），A17/A20 证据刷新仍 PARTIAL。
+  提交推送，不 tag，不 merge。下一步 Round 4 外审。

@@ -121,7 +121,10 @@ def _rollback_script() -> MockScript:
     ]
     turns += [
         MockTurn(tool_calls=[
-            ("d1", "fs.write", {"path": "论文/论文.tex", "content": "BASE"}),
+            ("d1", "fs.write", {
+                "path": "论文/论文.tex",
+                "content": "第一段内容完整。第二段内容完整。第三段内容完整。",
+            }),
             ("d2", "fs.write", {
                 "path": "交接/需求覆盖.json",
                 "content": json.dumps([{
@@ -135,9 +138,32 @@ def _rollback_script() -> MockScript:
         ]),
         MockTurn(text="正文完成"),
     ]
-    turns += _turn_write("c1", "审稿/章评R1.json", '{"总分":6.8,"问题":[]}')
+    # R1 章评点名第二段（引号片段进入 Change Guard 点名掩码）
+    turns += _turn_write(
+        "c1", "审稿/章评R1.json",
+        json.dumps({
+            "总分": 6.8,
+            "问题": [{"问题": "评委指出“第二段内容完整”表述空泛", "指令": "改写该句"}],
+        }, ensure_ascii=False),
+    )
     turns += _turn_write("b1", "审稿/读者R1.json", '{"读者分":6.9,"卡住":[]}')
-    turns += _turn_write("rev1", "论文/论文.tex", "WORSE")
+    # 定向修订腿：只改被点名的第二段 + 必须写修订回执
+    turns += [
+        MockTurn(tool_calls=[
+            ("rev1", "fs.write", {
+                "path": "论文/论文.tex",
+                "content": "第一段内容完整。第二段改写后的更差表述。第三段内容完整。",
+            }),
+            ("rev1r", "fs.write", {
+                "path": "审稿/回执_S4定向修订R1.json",
+                "content": json.dumps(
+                    [{"改动": "改写第二段", "证据": "论文/论文.tex"}],
+                    ensure_ascii=False,
+                ),
+            }),
+        ]),
+        MockTurn(text="定向修订完成"),
+    ]
     turns += _turn_write(
         "c2",
         "审稿/章评R2.json",
@@ -174,7 +200,9 @@ async def test_s4_worse_second_round_restores_previous_paper(tmp_path: Path) -> 
         )
 
         assert result["g4_pass"] is False
-        assert (root / "论文" / "论文.tex").read_text(encoding="utf-8") == "BASE"
+        assert (root / "论文" / "论文.tex").read_text(encoding="utf-8") == (
+            "第一段内容完整。第二段内容完整。第三段内容完整。"
+        )
         assert result["reviews"][1]["retention_action"] == "回退"
         assert result["reviews"][1]["restored_files"] >= 1
         assert result["reviews"][1]["effective_chapter_score"] == 6.8

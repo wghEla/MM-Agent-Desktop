@@ -76,3 +76,50 @@ def test_delete_last_model_profile_deletes_credential(tmp_path) -> None:
     ) is None
     assert ref not in store.values
     handle.workspace.db.close()
+
+
+def test_openai_compatible_image_input_extra_round_trip(tmp_path) -> None:
+    """R3-F6: extra.image_input on an openai_compatible profile must reach the
+    adapter capabilities; explicit false and the default stay conservative."""
+    handle = create_project(tmp_path / "proj-vision", name="providers-vision", profile="标准")
+    store = MemoryCredentialStore()
+    db = handle.workspace.db
+    try:
+        explicit_true = create_provider_profile(
+            db, store,
+            name="CompatVision",
+            protocol="openai_compatible",
+            base_url="https://example.invalid/v1",
+            model="vision-model",
+            api_key="sk-vision",
+            extra={"image_input": True},
+        )
+        provider = build_provider(db, store, explicit_true.model_profile_id)
+        assert provider.capabilities().image_input is True
+
+        explicit_false = create_provider_profile(
+            db, store,
+            name="CompatNoVision",
+            protocol="openai_compatible",
+            base_url="https://example.invalid/v1",
+            model="text-model",
+            api_key="sk-text",
+            extra={"image_input": False},
+        )
+        assert build_provider(
+            db, store, explicit_false.model_profile_id
+        ).capabilities().image_input is False
+
+        default = create_provider_profile(
+            db, store,
+            name="CompatDefault",
+            protocol="openai_compatible",
+            base_url="https://example.invalid/v1",
+            model="default-model",
+            api_key="sk-default",
+        )
+        assert build_provider(
+            db, store, default.model_profile_id
+        ).capabilities().image_input is False
+    finally:
+        db.close()

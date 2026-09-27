@@ -262,10 +262,27 @@ def _seed_ledger(root: Path, rows: list[dict]) -> None:
     )
 
 
+def _safe_issue(issue_id: str) -> str:
+    import re as _re
+    return _re.sub(r"[^0-9A-Za-z_-]+", "_", issue_id)
+
+
+def _seed_plot_script(root: Path, question: int) -> None:
+    script = root / "求解" / f"问题{question}" / "绘图_图1.py"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text(
+        "from pathlib import Path\n"
+        f"p = Path('求解/问题{question}/图片')\n"
+        "p.mkdir(parents=True, exist_ok=True)\n"
+        "(p / '图1.png').write_bytes(b'PNG')\n",
+        encoding="utf-8",
+    )
+
+
 @pytest.mark.asyncio
 async def test_g5_rework_figure_receipt_then_verdict_resolves_issue(tmp_path: Path) -> None:
-    """R49: plotter receipt → 收回执(待复核) → hunter 逐项裁定 → 已消解，
-    且状态迁移持久化到台账 carrier（durable writeback）。"""
+    """R49 事务：plotter 回执 → Runtime 跑图 → guarded writer 同步回执 →
+    运行时合并回执 → 收回执(待复核) → hunter 逐项裁定 → 已消解，并持久化。"""
     from mmagent.api.projects import create_project
     from mmagent.mm.pipeline.s5_finalize import run_g5_rework
     handle = create_project(tmp_path / "proj", name="g5fig", profile="快速")
@@ -276,11 +293,17 @@ async def test_g5_rework_figure_receipt_then_verdict_resolves_issue(tmp_path: Pa
             "级别": "硬伤", "目标": "图", "定位": "问题3 图4",
             "问题": "图内数字与正文不一致",
         }])
+        _seed_plot_script(root, 3)
+        safe = _safe_issue("审-1-01")
+        plot_rel = f"审稿/回执_G5R1_图问3_{safe}.json"
+        sync_rel = f"审稿/回执_G5R1_图同步问3_{safe}.json"
         db = handle.workspace.db
         run_id = repositories.create_run(db, project_id=handle.project_id, profile="快速")
         script = MockScript(
-            _write("p", "审稿/回执_G5R1_图问3_审-1-01.json",
+            _write("p", plot_rel,
                    [{"id": "审-1-01", "改动": "同步图内数字为 3.14", "证据": "脚本 diff"}])
+            + _write("s", sync_rel,
+                     [{"id": "审-1-01", "改动": "同步图题与正文引用", "证据": "论文/论文.tex"}])
             + _write("h", "审稿/G5复核1.json",
                      {"通过": True, "依据版本": "当前PDF",
                       "逐项": [{"id": "审-1-01", "generation": 0, "裁定": "已消解", "理由": "图已同步"}]})
@@ -292,13 +315,21 @@ async def test_g5_rework_figure_receipt_then_verdict_resolves_issue(tmp_path: Pa
         )
         assert result["pass"] is True, result["issues"]
         assert result["rework_rounds"] == 1
+        assert (root / "求解" / "问题3" / "图片" / "图1.png").is_file()
         # Durable writeback: transitions must be on disk, not just in memory.
         rows = json.loads(
             (root / "台账" / "审稿台账.json").read_text(encoding="utf-8")
         )
         assert rows[0]["状态"] == "已消解"
-        assert any(rc.get("receipt_id") == "g5r1_fig3" for rc in rows[0]["回执"])
+        assert any(
+            rc.get("receipt_id") == "G5:R1:图事务:审-1-01:g0"
+            for rc in rows[0]["回执"]
+        )
         assert any(h.get("裁定") == "已消解" for h in rows[0]["历史"])
+        ok_events = events.query_events(
+            db, run_id=run_id, type="gate.g5_figure_transaction_succeeded"
+        )
+        assert len(ok_events) == 1
     finally:
         handle.workspace.db.close()
 
@@ -370,11 +401,17 @@ async def test_g5_rework_stale_verdict_generation_is_rejected(tmp_path: Path) ->
             "级别": "硬伤", "目标": "图", "定位": "问题3 图4",
             "问题": "图内数字与正文不一致",
         }])
+        _seed_plot_script(root, 3)
+        safe = _safe_issue("审-1-01")
+        plot_rel = f"审稿/回执_G5R1_图问3_{safe}.json"
+        sync_rel = f"审稿/回执_G5R1_图同步问3_{safe}.json"
         db = handle.workspace.db
         run_id = repositories.create_run(db, project_id=handle.project_id, profile="快速")
         script = MockScript(
-            _write("p", "审稿/回执_G5R1_图问3_审-1-01.json",
+            _write("p", plot_rel,
                    [{"id": "审-1-01", "改动": "同步图内数字", "证据": "diff"}])
+            + _write("s", sync_rel,
+                     [{"id": "审-1-01", "改动": "同步图题与正文引用", "证据": "论文/论文.tex"}])
             + _write("h", "审稿/G5复核1.json",
                      {"通过": True, "依据版本": "当前PDF",
                       "逐项": [{"id": "审-1-01", "generation": 99,
@@ -385,9 +422,10 @@ async def test_g5_rework_stale_verdict_generation_is_rejected(tmp_path: Path) ->
             db, MockProvider(script), _registry(), PathPolicy(root), run_id,
             beauty_baseline_pages=10, compile_paper=_compile, render_pages=_render,
         )
-        # Receipt moved the issue to 待复核; the stale verdict must not have
-        # resolved it.  At loop end the missed-verdict path honestly marks it
-        # 评审未裁 (待改), so the mechanical gate still sees an active row.
+        # The figure transaction moved the issue to 待复核; the stale verdict
+        # must not have resolved it.  At loop end the missed-verdict path
+        # honestly marks it 评审未裁 (待改), so the mechanical gate still sees
+        # an active row.
         rows = json.loads(
             (root / "台账" / "审稿台账.json").read_text(encoding="utf-8")
         )

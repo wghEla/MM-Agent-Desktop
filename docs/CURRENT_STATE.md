@@ -1,8 +1,8 @@
 # CURRENT_STATE — fidelity rebuild on gpt/fidelity-rebuild
 
 Branch: `gpt/fidelity-rebuild`
-HEAD: Round-3 GPT source-review patches after locally verified `33544ec`
-Tests: **last locally verified: 422 passed / 0 failed + Ruff clean at `33544ec`; current remote HEAD is UNVERIFIED**
+HEAD: `f94d08e` — GPT Round-3 source closure, LOCALLY VALIDATED by ZCode (see "Round-3 local validation" below)
+Tests: **locally verified at this HEAD: 439 passed / 0 failed + Ruff clean + frontend build OK**
 
 ## Round-3 external source review
 
@@ -182,3 +182,41 @@ Detailed handoff:
 **Important:** the last locally verified baseline is still `33544ec` (422 passed / Ruff
 clean). All Round-3 reviewer/source-closure commits after that baseline remain unverified
 until ZCode runs focused + full local regression.
+
+
+## Round-3 local validation — 2026-09-27 — COMPLETE
+
+ZCode pulled `33544ec..f94d08e` (GPT source-only closure of the three Round-3 release P1s)
+and validated it locally:
+
+- **Stage A focused regression**: 149 passed after updating 4 fixtures to the new
+  fail-closed semantics (S4 directed-revision receipt, G5 figure-transaction writer-sync
+  leg, failed S5 escalation no longer grants an extension round, reviewer verdicts must
+  carry explicit generation). No production semantics were weakened.
+- **Stage B distinguishing tests**: new `tests/pipeline/test_round3_closures.py` (12 tests,
+  all real production paths — `run_s5`, `run_g5_rework`, verified recompute/escalation,
+  IssueLedger, event persistence, filesystem mutation):
+  - S5 calc repair runs solver → red-team → G2 → downstream topological recompute →
+    change manifests → plot rerun → guarded writer sync, and only then a ledger receipt
+    (`s5.calc_cascade_*`, `pipeline.s2_downstream_invalidated`, fresh `checkpoint.s2_question`).
+  - Failing verified recompute leaves the Issue active with NO ledger receipt.
+  - Change manifests are frozen BEFORE carrier propagation and survive a failed sync.
+  - S5 calc escalation requires 获胜变体 adjudication and Runtime-promotes the winning
+    variant into the canonical solver/result carrier (`pipeline.s2_escalation_promoted`).
+  - Plotter/Modeler receipts alone can never advance an issue (S5 normal + G5 rework);
+    G5 writer-sync failure keeps the issue active and fails the publication gate.
+  - Change Guard reverts a broad unnamed rewrite (0.45); the same rewrite passes the
+    escalated 0.70 limit; durable guard snapshots survive crash/resume and roll back
+    orphaned mutations; reverted repairs delete their receipt artifacts.
+- **Stage C**: `openai_compatible` `extra.image_input` round-trip (explicit True/False and
+  default False) verified at the API/adapter level; desktop Provider Settings carries the
+  该兼容渠道支持图片输入 checkbox for compatible channels only.
+- **Stage D**: full suite **439 passed / 0 failed**, `ruff check .` clean, `npm run build`
+  green (vite 157.82 kB).
+
+Fidelity status at this HEAD: **B7, B8, B14, E8 → MATCH** (evidence updated in
+FIDELITY_MATRIX); B9 stays PARTIAL only for the P2-1 master-plan structural invariants
+(core-structure files / problem-chapter count); A17/A20 stay PARTIAL for upstream
+ordering/parity audits.
+
+No tag, no merge, per Round-3 protocol. Next: Round-4 external source review.
