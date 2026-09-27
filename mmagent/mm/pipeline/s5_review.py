@@ -689,8 +689,6 @@ async def run_s5(
                     # reviewer round.
                     continue
                 needs_escalation.append(item.id)
-                escalated_this_round = True
-                escalated_count += 1
                 role_id = {"算": "modeler", "图": "plotter", "文": "writer"}.get(item.目标, "writer")
                 esc_node = f"S5:R{round_num}:升格{item.id}"
                 receipt_path = f"审稿/回执_升格_{item.id}_g{item.generation}.json"
@@ -736,6 +734,8 @@ async def run_s5(
                         receipts.append(enriched)
                     receipt_stats = ledger.收回执(receipts, 腿名=esc_node, 轮次=round_num)
                     if receipt_stats["受理"] > 0:
+                        escalated_this_round = True
+                        escalated_count += 1
                         events.append_event(
                             db, "s5.escalation_succeeded",
                             {"issue_id": item.id, "generation": item.generation,
