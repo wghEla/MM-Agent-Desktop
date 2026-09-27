@@ -433,18 +433,22 @@ async def run_g5_rework(
         if new_pass:
             break
 
-    # Final check
-    compiled = await run_compile(compiler, policy.root, cancel=cancel)
-    pages = int(compiled.get("pages") or 0)
-    ok, issues = check_g5(
-        policy.root, beauty_baseline_pages=beauty_baseline_pages, current_pages=pages
+    # Final authoritative check must include a fresh current-PDF defect review,
+    # not only mechanical checks.  run_g5 uses a distinct final-review node
+    # (G5:硬伤复核), so it cannot reuse the per-rework G5:R*:复核 artifacts.
+    final = await run_g5(
+        db,
+        provider,
+        registry,
+        policy,
+        run_id,
+        beauty_baseline_pages=beauty_baseline_pages,
+        compile_paper=compiler,
+        cancel=cancel,
     )
-
-    events.append_event(
-        db, "gate.result",
-        {"gate": "G5", "pass": bool(ok), "issues": issues,
-         "rework_rounds": rework_count},
-        run_id=run_id,
-    )
-    return {"pass": bool(ok), "issues": issues, "pages": pages,
-            "rework_rounds": rework_count}
+    return {
+        "pass": bool(final.get("pass")),
+        "issues": list(final.get("issues", [])),
+        "pages": int(final.get("pages") or 0),
+        "rework_rounds": rework_count,
+    }
