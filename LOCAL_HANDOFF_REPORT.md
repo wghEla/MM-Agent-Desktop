@@ -7,7 +7,7 @@
 | Repo | https://github.com/wghEla/MM-Agent-Desktop |
 | Branch | `gpt/fidelity-rebuild` |
 | Starting SHA | `8e9efd2` |
-| Ending SHA | `fe6e16be6958059ac6307b5d6c5f12724f8e2a2f` (latest pushed) |
+| Ending SHA | `e918ea57cfa5d0501154d1101c98dcbbc71bafe9` (latest pushed; source-review patches unverified) |
 | Windows version | 11 (10.0.26200 x64) |
 | Python | 3.11.9 (uv managed .venv) |
 | Node/npm | v24.18.0 / 11.16.0 |
@@ -21,7 +21,7 @@
 | Command | Result | Passed | Failed | Duration |
 |---|---|---|---|---|
 | `uv run ruff check .` | exit 0 | — | — | <1s |
-| `uv run pytest -q` | exit 0 | 377 | 0 | 86s |
+| `uv run pytest -q` | last verified at `e80856e` | 394 | 0 | current HEAD not rerun |
 
 ### Test breakdown
 - unit: 33+ files (state/ledger/guards/dag/tool_env/providers) — all green
@@ -109,3 +109,23 @@ with admin rights, or approve UAC prompt.**
 - **MATCH**: 50 items (up from 42)
 - **PARTIAL**: 20 items (down from 25; most require real-LLM or MSVC)
 - **NOT IMPLEMENTED**: 1 item (P11 real-provider smoke, intentionally blocked)
+
+
+## G. 2026-09-27 GPT source review
+
+Verdict: **HOLD — P0=0 / P1=6 / P2=5**.
+
+Review:
+`docs/reviews/v1.0.0-rebuild-external-review-round1.md`
+
+Important: the reviewer applied source-only fixes after the 394-test baseline.
+Current HEAD has **not** been regression-tested. First next action is local focused
+tests + full `pytest` + Ruff; do not spend GitHub Actions quota.
+
+Remaining P1 themes:
+1. G5 R49-R52 rework is not wired into the authoritative Engine and is not ledger-closed.
+2. S5 hard/correctness fuse escalation is marker-only.
+3. S2 and S5/G5 use incompatible degraded-release carrier shapes.
+4. S6 can modify a G5-approved paper and harvest without terminal publication re-gating.
+5. Fidelity audit tests overstate several MATCH/CLOSED claims.
+6. Ledger identity bugs were source-patched by the reviewer but require regression proof.
