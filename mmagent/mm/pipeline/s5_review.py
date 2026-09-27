@@ -810,11 +810,15 @@ async def _run_rework(
         groups: dict[int, list[Issue]] = {}
         for item in items:
             questions = _related_questions(item)
-            if not questions:
+            # One ledger issue is one repair identity.  A calc/figure issue
+            # that names multiple questions must be split by the reviewer
+            # rather than consumed by multiple transactions in the same
+            # generation (which would double-count attempts/receipts).
+            if len(questions) != 1:
                 stats["unrouted"].append(item.id)
                 continue
-            for q in questions:
-                groups.setdefault(q, []).append(item)
+            q = next(iter(questions))
+            groups.setdefault(q, []).append(item)
         for q, group in sorted(groups.items()):
             if target == "算":
                 receipts = await _run_verified_calc_cascade(
