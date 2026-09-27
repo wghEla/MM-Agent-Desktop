@@ -7,7 +7,7 @@
 | Repo | https://github.com/wghEla/MM-Agent-Desktop |
 | Branch | `gpt/fidelity-rebuild` |
 | Starting SHA | `8e9efd2` |
-| Ending SHA | `ab7383c` (latest pushed) |
+| Ending SHA | `fe6e16be6958059ac6307b5d6c5f12724f8e2a2f` (latest pushed) |
 | Windows version | 11 (10.0.26200 x64) |
 | Python | 3.11.9 (uv managed .venv) |
 | Node/npm | v24.18.0 / 11.16.0 |

@@ -1,8 +1,8 @@
 # CURRENT_STATE — fidelity rebuild on gpt/fidelity-rebuild
 
 Branch: `gpt/fidelity-rebuild`
-HEAD: `7a49774`
-Tests: **370 passed, ruff clean**
+HEAD: `fe6e16be6958059ac6307b5d6c5f12724f8e2a2f`
+Tests: **377 passed, ruff clean**
 
 ## Version tags (historical, unchanged)
 
