@@ -1,8 +1,8 @@
 # CURRENT_STATE — fidelity rebuild on gpt/fidelity-rebuild
 
 Branch: `gpt/fidelity-rebuild`
-HEAD: `08f9900b8861b754df5c53a6ca4e124e78a0ffb0`
-Tests: **last verified: 394 passed / 0 failed + Ruff clean at `e80856e`; current HEAD source-only patches are UNVERIFIED**
+HEAD: current branch contains GPT Round 2 source-only patches after the locally verified `c8b85425742d7b42505f16dbc3ef7854aa2ac763`
+Tests: **last locally verified: 408 passed / 0 failed + Ruff clean at `c8b8542`; Round 2 reviewer patches after that are UNVERIFIED**
 
 ## Version tags (historical, unchanged)
 
@@ -65,3 +65,21 @@ Reviewer source patches after the 394-test baseline:
 
 No tests were run after these review patches because execution quota was unavailable.
 Do not report current HEAD as regression-verified until local focused + full regression is run.
+
+
+## External source review Round 2 — 2026-09-27
+
+Review:
+`docs/reviews/v1.0.0-rebuild-external-review-round2.md`
+
+Verdict: **HOLD**.
+
+Round-1 P1 status after source audit:
+- P1-1 Ledger identity: CLOSED on the 408-test baseline.
+- P1-2 G5 closure: OPEN — Engine wiring exists, but G5 repair does not transition/durably persist Issue Ledger state.
+- P1-3 S5 fuse escalation: OPEN — role leg exists, but no required receipt/verdict; final-round fuse processing is still skipped.
+- P1-4 degraded-release contract: reviewer source-patched S2/G5 to the unified carrier; review-level runtime producer still missing.
+- P1-5 S6 TOCTOU: reviewer source-patched final-revision mechanical G5 recheck; unique terminal current-PDF defect review still missing.
+- P1-6 fidelity evidence inflation: OPEN — several tests still prove manually-created events/source presence instead of production behavior.
+
+Round 2 reviewer patches are source-only and must be locally regression-tested before any of the above source patches are called closed.
