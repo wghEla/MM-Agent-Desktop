@@ -217,37 +217,65 @@ async def run_s6(
             "issues": [f"S6 terminal publication gate 失败: {terminal_issues}"],
         }
 
-    # 外审 round2 P1-5: fresh terminal current-PDF defect review on the
-    # post-S6-fix revision.  Unique node + artifact so it can never reuse the
-    # pre-S6 G5 review; harvest only happens after this passes too.
-    terminal_review_rel = "审稿/S6终审复核.json"
-    review_status = await _leg(
-        db, provider, registry, policy, run_id,
-        role_id="defect_hunter", node="S6:出版终审",
-        instructions=(
-            f"只基于刚编译的当前 PDF 做出版终审，写 {terminal_review_rel}。"
-            "顶层给出 通过(boolean)，并注明依据版本/页码。不得用旧 PDF 判断。"
-        ),
-        expected=[ExpectedArtifact(rel_path=terminal_review_rel,
-                                   schema_model=PublicationReviewVerdict)],
-        cancel=cancel,
-    )
-    terminal_review_pass = False
-    if review_status == "SUCCEEDED":
-        try:
-            data = json.loads(
-                (policy.root / terminal_review_rel).read_text(encoding="utf-8")
-            )
-            terminal_review_pass = isinstance(data, dict) and bool(data.get("通过", False))
-        except (OSError, json.JSONDecodeError):
-            terminal_review_pass = False
-    if not terminal_review_pass:
-        events.append_event(
-            db, "s6.terminal_review_failed",
-            {"status": review_status, "node": "S6:出版终审"},
-            run_id=run_id,
+    # Fresh terminal current-PDF visual review on the post-S6-fix revision.
+    # Re-render *after* the final compile; fs.read cannot inspect PDF/image
+    # pixels, so the page images must be attached explicitly to the role leg.
+    try:
+        final_pages = renderer(policy.root)
+    except (OSError, RuntimeError, ValueError) as exc:
+        return {"pass": False, "issues": [f"S6 终态页图渲染失败: {exc}"]}
+    if not final_pages:
+        return {"pass": False, "issues": ["S6 终态页图缺失，不能执行出版终审"]}
+
+    terminal_batches = [
+        final_pages[i:i + 8] for i in range(0, len(final_pages), 8)
+    ]
+    for batch_index, batch in enumerate(terminal_batches, 1):
+        suffix = "" if len(terminal_batches) == 1 else f"_B{batch_index}"
+        terminal_review_rel = f"审稿/S6终审复核{suffix}.json"
+        rel_images = [p.relative_to(policy.root).as_posix() for p in batch]
+        review_status = await _leg(
+            db, provider, registry, policy, run_id,
+            role_id="defect_hunter", node=f"S6:出版终审{suffix}",
+            instructions=(
+                f"只基于随任务附带的最终候选 PDF 页图做出版终审，写 {terminal_review_rel}。"
+                "顶层给出 通过(boolean)，并注明依据版本/页码。不得用旧 PDF 判断。"
+            ),
+            expected=[
+                ExpectedArtifact(
+                    rel_path=terminal_review_rel,
+                    schema_model=PublicationReviewVerdict,
+                )
+            ],
+            image_paths=rel_images,
+            cancel=cancel,
         )
-        return {"pass": False, "issues": ["S6 出版终审复核未通过"]}
+        terminal_review_pass = False
+        if review_status == "SUCCEEDED":
+            try:
+                data = json.loads(
+                    (policy.root / terminal_review_rel).read_text(encoding="utf-8")
+                )
+                terminal_review_pass = (
+                    isinstance(data, dict) and bool(data.get("通过", False))
+                )
+            except (OSError, json.JSONDecodeError):
+                terminal_review_pass = False
+        if not terminal_review_pass:
+            events.append_event(
+                db,
+                "s6.terminal_review_failed",
+                {
+                    "status": review_status,
+                    "node": f"S6:出版终审{suffix}",
+                    "batch": batch_index,
+                },
+                run_id=run_id,
+            )
+            return {
+                "pass": False,
+                "issues": [f"S6 出版终审复核未通过 batch={batch_index}"],
+            }
 
     metrics = _run_metrics(db, run_id)
     metrics_path = policy.root / "审稿" / "回流账.json"
