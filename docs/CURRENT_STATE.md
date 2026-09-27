@@ -1,8 +1,8 @@
 # CURRENT_STATE — fidelity rebuild on gpt/fidelity-rebuild
 
 Branch: `gpt/fidelity-rebuild`
-HEAD: `902abe2` + local Round-4 validation commit — GPT Round-4 source fixes, LOCALLY VALIDATED by ZCode (see "Round-4 local validation" below)
-Tests: **locally verified at this HEAD: 448 passed / 0 failed + Ruff clean + frontend build OK**
+HEAD: `cc46332` + local final-gate validation commit — GPT final source/release-gate fixes, LOCALLY VALIDATED by ZCode (see "Final source gate validation" below)
+Tests: **locally verified at this HEAD: 451 passed / 0 failed + Ruff clean + frontend build OK + secret scan clean**
 
 ## Round-3 external source review
 
@@ -321,3 +321,43 @@ Gate decisions:
 - Product Release: HOLD until current-head MSVC/Tauri/NSIS installed validation,
   installed live cancellation proof, real-provider smoke, and the repository's CI
   acceptance requirement (or an explicit ADR changing that rule) are satisfied.
+
+## Final source gate validation — 2026-09-27 — COMPLETE
+
+ZCode pulled `c4a38cb..cc46332` (GPT final source/release-gate fixes) and validated:
+
+- **F1 S6 figure→text sync**: the S6 figure route is now the full transaction
+  (Plotter receipt → Runtime plot execution → guarded Writer sync of captions/
+  references/numeric text via `审稿/回执_S6_图同步问{q}.json` → final compile →
+  mechanical G5 → fresh visual terminal review → harvest). Sync failure fails S6
+  with no harvest and no `checkpoint.s6_complete`
+  (`test_s6_figure_sync_failure_blocks_harvest`).
+- **F2 Runtime delivery report**: `交付/交付报告.md` is generated mechanically by the
+  Runtime from 交接/降级放行.json, 台账/审稿台账.json and run metrics — listing degraded
+  questions, exact review `(id,generation)` entries, every non-已消解 ledger row. The
+  model cannot hide unresolved state
+  (`test_s6_delivery_report_discloses_degraded_state`: 审-9-01 / generation=2 /
+  升级已耗尽 disclosed; `result["delivery_report"] == "交付报告.md"`).
+- **Compatible Test Connection fallback**: `GET /models` failure falls back to a real
+  minimal chat-completions probe (configured model, max_tokens=1, no reasoning_effort
+  unless explicitly opted in, 4xx bodies redacted)
+  (`test_compatible_connection_falls_back_to_real_chat_when_models_missing`).
+
+**Stage A focused**: 20 passed. **Full pytest**: **451 passed / 0 failed** (129.9s).
+**Ruff**: clean. **Frontend build**: green (vite 158.10 kB). **Secret scan**: 249 tracked
+files clean; fake keys are clearly test-only.
+
+## Gate decisions at this HEAD
+
+- **Source/Pipeline Gate = GO** — no known open source-level P0/P1 from Rounds 1-4 plus
+  the final gate findings.
+- **A12 → MATCH** (producer + exact consumption + G5 fail-closed + S6 delivery disclosure,
+  all with focused tests). A17/A20/B9 remain PARTIAL (parity audits / P2-1 invariants) and
+  must not be force-promoted.
+- **Overall Product Release Gate = HOLD** — remaining external evidence:
+  1. current-head Windows release build (MSVC/Tauri/NSIS);
+  2. NSIS install/startup smoke;
+  3. installed-product live cancellation/process-tree proof;
+  4. real-provider smoke with a user credential;
+  5. current-head CI evidence or an explicit ADR replacing that acceptance rule;
+  6. explicit acceptance of remaining fidelity deviations.

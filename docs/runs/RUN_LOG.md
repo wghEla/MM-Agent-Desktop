@@ -94,3 +94,15 @@
 - 09-27 Stage B：全量 448 passed / 0 failed，Ruff clean，前端 build 158.10 kB，
   secret scan 247 文件无真实密钥。A17/A20 保持 PARTIAL（完整 ordering/parity audit 未做），
   B9 保持 PARTIAL（P2-1 结构不变量）。不 tag、不 merge。下一步 GPT-5.6 Sol 终审。
+- 09-27 Final source gate 本地验证：同步 GPT final fixes 到 cc46332（c4a38cb 后 11 提交）。
+  S6 图修复升级为完整事务（Plotter→Runtime 跑图→guarded Writer 同步 回执_S6_图同步问{q}.json
+  →final compile→机械 G5→新鲜可视化终审→harvest），同步失败即 S6 false、无 harvest、
+  无 checkpoint.s6_complete；Runtime 机械生成 交付/交付报告.md（降级问题、精确 (id,generation)、
+  全部非已消解台账行、运行指标——模型无权隐藏）；compatible Test Connection 增加
+  /models 失败→配置模型最小 chat fallback（max_tokens=1、无 reasoning_effort、4xx 脱敏）。
+- 09-27 验证结果：focused 20 passed；全量 451 passed / 0 failed（129.9s）；Ruff clean
+  （仅 compatible import 排序一处修复）；前端 build 158.10 kB；secret scan 249 文件 clean。
+- 09-27 Gate 决定：Source/Pipeline Gate = GO（Round 1-4 + 终审无已知源码级 P0/P1）；
+  A12 → MATCH（producer+精确消费+G5 fail-closed+S6 披露 全链条测试证据）；
+  A17/A20/B9 保持 PARTIAL；Product Release Gate = HOLD（MSVC/NSIS/安装版取消证明/
+  真实 provider smoke/CI 决议/偏差接受 待办）。不 tag、不 merge、不开第五轮泛化。

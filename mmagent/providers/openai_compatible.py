@@ -13,7 +13,12 @@ from mmagent.providers import redact_secret
 from mmagent.providers._http_util import parse_retry_after
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
-from mmagent.providers.normalized import NormalizedMessage, NormalizedResponse, NormalizedTool, TextPart
+from mmagent.providers.normalized import (
+    NormalizedMessage,
+    NormalizedResponse,
+    NormalizedTool,
+    TextPart,
+)
 from mmagent.providers.openai_chat import (
     build_chat_payload,
     parse_chat_response,
