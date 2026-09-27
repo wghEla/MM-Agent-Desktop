@@ -20,6 +20,11 @@ from mmagent.mm.ledger.issue_ledger import (
 )
 from mmagent.mm.pipeline.compile_runtime import run_compile
 from mmagent.mm.pipeline.guarded_repair import guarded_text_repair
+from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
+from mmagent.mm.pipeline.s2_model import (
+    run_verified_question_escalation,
+    run_verified_question_recompute,
+)
 from mmagent.mm.retention import (
     ensure_paper_snapshot as _ensure_shared_snapshot,
 )
@@ -28,6 +33,7 @@ from mmagent.mm.retention import (
 )
 from mmagent.mm.retention import retention_decision as _retention_decision
 from mmagent.mm.roles.registry import get_role
+from mmagent.orchestration.dag import all_downstreams, build_dependency_graph, topological_layers
 from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.orchestration.wave import WaveJob, run_status_wave
 from mmagent.providers.base import BaseProvider
@@ -334,6 +340,262 @@ def _items_json(items: list[Issue]) -> str:
         for x in items
     ]
     return json.dumps(payload, ensure_ascii=False)
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _flatten_scalars(value: Any, prefix: str = "") -> dict[str, str]:
+    out: dict[str, str] = {}
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            out.update(_flatten_scalars(child, child_prefix))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            child_prefix = f"{prefix}[{index}]"
+            out.update(_flatten_scalars(child, child_prefix))
+    elif value is not None:
+        out[prefix or "$"] = str(value)
+    return out
+
+
+def _calc_cascade_questions(policy: PathPolicy, source_q: int) -> list[int]:
+    plan_path = policy.root / "交接" / "计划.json"
+    plan = _read_json_object(plan_path)
+    rows = plan.get("问题清单", [])
+    if not isinstance(rows, list):
+        return [source_q]
+    graph = build_dependency_graph(rows)
+    affected = {source_q, *all_downstreams(graph, source_q)}
+    ordered: list[int] = []
+    for layer in topological_layers(graph):
+        for q in layer:
+            if q in affected:
+                ordered.append(q)
+    return ordered or [source_q]
+
+
+def _write_calc_change_manifests(
+    policy: PathPolicy,
+    before: dict[int, dict[str, Any]],
+    questions: list[int],
+) -> None:
+    handoff = policy.root / "交接"
+    handoff.mkdir(parents=True, exist_ok=True)
+    for q in questions:
+        after = _read_json_object(handoff / f"结果声明_问题{q}.json")
+        old_flat = _flatten_scalars(before.get(q, {}))
+        new_flat = _flatten_scalars(after)
+        entries: list[dict[str, str]] = []
+        for key in sorted(set(old_flat) | set(new_flat)):
+            old = old_flat.get(key, "")
+            new = new_flat.get(key, "")
+            if old != new:
+                entries.append({"键": key, "旧值": old, "新值": new})
+        (handoff / f"换版清单_问题{q}.json").write_text(
+            json.dumps(
+                {"问题": q, "条目": entries, "来源": "S5 verified calc cascade"},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+
+async def _run_verified_calc_cascade(
+    db: Database,
+    provider: BaseProvider,
+    registry: ToolRegistry,
+    policy: PathPolicy,
+    run_id: str,
+    round_num: int,
+    *,
+    source_q: int,
+    items: list[Issue],
+    escalated: bool = False,
+    cancel=None,
+) -> list[dict]:
+    """Recompute one late calc issue and every dependent carrier before receipt.
+
+    The Issue Ledger is intentionally untouched until solver execution,
+    independent red-team/G2 checks, downstream recomputation, figure rebuild,
+    and guarded text synchronization all succeed.
+    """
+    questions = _calc_cascade_questions(policy, source_q)
+    before = {
+        q: _read_json_object(
+            policy.root / "交接" / f"结果声明_问题{q}.json"
+        )
+        for q in questions
+    }
+    downstream = [q for q in questions if q != source_q]
+    if downstream:
+        events.append_event(
+            db,
+            "pipeline.s2_downstream_invalidated",
+            {"question": source_q, "downstream": downstream, "source": "S5"},
+            run_id=run_id,
+        )
+
+    events.append_event(
+        db,
+        "s5.calc_cascade_started",
+        {
+            "round": round_num,
+            "source_question": source_q,
+            "questions": questions,
+            "escalated": escalated,
+            "issues": [x.id for x in items],
+        },
+        run_id=run_id,
+    )
+
+    for q in questions:
+        identity = (
+            f"S5:R{round_num}:calc:{source_q}:Q{q}:"
+            + ("escalated" if escalated and q == source_q else "recompute")
+        )
+        if escalated and q == source_q:
+            ok, verify_issues = await run_verified_question_escalation(
+                db, provider, registry, policy, run_id, q,
+                identity=identity, cancel=cancel,
+            )
+        else:
+            ok, verify_issues = await run_verified_question_recompute(
+                db, provider, registry, policy, run_id, q,
+                identity=identity, cancel=cancel,
+            )
+        if not ok:
+            events.append_event(
+                db,
+                "s5.calc_cascade_failed",
+                {
+                    "round": round_num,
+                    "source_question": source_q,
+                    "question": q,
+                    "step": "verified_recompute",
+                    "issues": verify_issues,
+                },
+                run_id=run_id,
+            )
+            return []
+
+    for q in questions:
+        plot_issues = await run_question_plot_scripts(
+            registry, policy, q, cancel=cancel
+        )
+        if plot_issues:
+            events.append_event(
+                db,
+                "s5.calc_cascade_failed",
+                {
+                    "round": round_num,
+                    "source_question": source_q,
+                    "question": q,
+                    "step": "plot_runtime",
+                    "issues": plot_issues,
+                },
+                run_id=run_id,
+            )
+            return []
+
+    sync_rel = (
+        f"审稿/回执_S5R{round_num}_算级联问{source_q}"
+        + ("_升格" if escalated else "")
+        + ".json"
+    )
+    sync_node = (
+        f"S5:R{round_num}:算级联同步问{source_q}"
+        + (":升格" if escalated else "")
+    )
+    sync_status, _guard_issues = await guarded_text_repair(
+        db, provider, registry, policy, run_id,
+        stage_key="S5",
+        node_key=sync_node,
+        instructions=(
+            f"问题{source_q}及其依赖问题 {questions} 已由 Runtime 完成求解、"
+            "独立红队与 G2 验证，并重跑现有绘图脚本。"
+            "只同步论文中受这些新结果影响的数字、图题、引用和解释；"
+            "不得改动已验证的计算事实。"
+            f"完成后写 {sync_rel}，对每个原台账 id 各写一条回执。"
+        ),
+        receipt_rel=sync_rel,
+        receipt_schema=ModelRepairReceiptArtifact,
+        review_items=[
+            {"问题": x.问题, "指令": x.指令, "定位": x.定位}
+            for x in items
+        ],
+        cancel=cancel,
+    )
+    if sync_status != "SUCCEEDED":
+        events.append_event(
+            db,
+            "s5.calc_cascade_failed",
+            {
+                "round": round_num,
+                "source_question": source_q,
+                "step": "writer_sync",
+                "status": sync_status,
+            },
+            run_id=run_id,
+        )
+        return []
+
+    try:
+        raw = json.loads((policy.root / sync_rel).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raw = []
+    by_id = {
+        str(row.get("id", "")).strip(): row
+        for row in (raw if isinstance(raw, list) else [])
+        if isinstance(row, dict)
+    }
+    if any(item.id not in by_id for item in items):
+        return []
+
+    _write_calc_change_manifests(policy, before, questions)
+    for q in questions:
+        events.append_event(
+            db,
+            "checkpoint.s2_question",
+            {"question": q, "pass": True, "issues": [], "downgraded": False,
+             "source": "S5_calc_cascade"},
+            run_id=run_id,
+        )
+
+    receipts: list[dict] = []
+    for item in items:
+        row = by_id[item.id]
+        receipts.append({
+            "id": item.id,
+            "generation": item.generation,
+            "receipt_id": (
+                f"{sync_node}:{item.id}:g{item.generation}"
+            ),
+            "改动": str(row.get("改动", "已完成算→图→文级联"))[:300],
+            "证据": (
+                f"G2 verified questions={questions}; {sync_rel}"
+            )[:200],
+        })
+    events.append_event(
+        db,
+        "s5.calc_cascade_succeeded",
+        {
+            "round": round_num,
+            "source_question": source_q,
+            "questions": questions,
+            "issues": [x.id for x in items],
+            "escalated": escalated,
+        },
+        run_id=run_id,
+    )
+    return receipts
 
 
 async def _run_rework_leg(
