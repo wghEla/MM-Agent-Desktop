@@ -88,7 +88,7 @@ async def test_engine_runs_authoritative_stage_order(monkeypatch, tmp_path: Path
 
     for name, func in {
         "run_s0": s0, "run_s1": s1, "run_s2": s2, "run_s3": s3, "run_s4": s4,
-        "run_s5": s5, "run_s5a": s5a, "run_s5b": s5b, "run_g5": g5, "run_s6": s6,
+        "run_s5": s5, "run_s5a": s5a, "run_s5b": s5b, "run_g5_rework": g5, "run_s6": s6,
     }.items():
         monkeypatch.setattr(engine_mod, name, func)
 
@@ -157,7 +157,7 @@ async def test_resume_skips_completed_stage_checkpoints(monkeypatch, tmp_path: P
     monkeypatch.setattr(engine_mod, "run_s5", pass_s5)
     monkeypatch.setattr(engine_mod, "run_s5a", pass_s5a)
     monkeypatch.setattr(engine_mod, "run_s5b", pass_s5b)
-    monkeypatch.setattr(engine_mod, "run_g5", pass_g5)
+    monkeypatch.setattr(engine_mod, "run_g5_rework", pass_g5)
     monkeypatch.setattr(engine_mod, "run_s6", pass_s6)
 
     result = await eng.run(resume=True)

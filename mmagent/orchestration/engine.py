@@ -20,7 +20,7 @@ from mmagent.mm.pipeline.s0_s1 import run_s0, run_s1
 from mmagent.mm.pipeline.s2_model import run_s2
 from mmagent.mm.pipeline.s3_figures import run_s3
 from mmagent.mm.pipeline.s4_paper import run_s4
-from mmagent.mm.pipeline.s5_finalize import run_g5, run_s5a, run_s5b
+from mmagent.mm.pipeline.s5_finalize import run_g5_rework, run_s5a, run_s5b
 from mmagent.mm.pipeline.s5_review import run_s5
 from mmagent.mm.pipeline.s6_finalize import run_s6
 from mmagent.orchestration.budget import check_run_budget
@@ -364,7 +364,11 @@ class PaperFoundryEngine:
                 raise PipelineStageError("G5", ["缺少美化后页数基线"])
 
             async def g5():
-                result = await run_g5(
+                # Authoritative G5 closure: initial check + bounded rework loop (R49-R52).
+                # Uses run_g5_rework which handles: un-shelve blocking, figure route,
+                # calc shelve, text route, compile-before-recheck, page guard,
+                # defect hunter re-check, ledger durable writeback.
+                result = await run_g5_rework(
                     self.db, self.provider, self.registry, self.policy, self.run_id,
                     beauty_baseline_pages=baseline_pages,
                     compile_paper=self.hooks.compile_paper,
