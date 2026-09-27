@@ -10,6 +10,7 @@ from typing import Any
 
 from mmagent.mm.audit import audit_paper
 from mmagent.mm.contracts.degraded_release import upsert_degraded_review_issue
+from mmagent.mm.contracts.repair_receipts import ModelRepairReceiptArtifact
 from mmagent.mm.contracts.s5_contracts import ReviewArtifact
 from mmagent.mm.gates.g4 import check_g4
 from mmagent.mm.ledger.issue_ledger import (
@@ -683,30 +684,49 @@ async def run_s5(
                         f"换一种技术路线或上下文重做。不改已通过的指标。"
                         f"完成后写 {receipt_path}，JSON 数组格式 [{{\"id\": \"{item.id}\", \"改动\": \"...\", \"证据\": \"...\"}}]。"
                     ),
-                    expected_artifacts=[ExpectedArtifact(rel_path=receipt_path)], cancel=cancel,
+                    expected_artifacts=[
+                        ExpectedArtifact(
+                            rel_path=receipt_path,
+                            schema_model=ModelRepairReceiptArtifact,
+                        )
+                    ],
+                    cancel=cancel,
                 )
                 if esc_status == "SUCCEEDED":
-                    # Runtime-owned receipt injection into ledger
                     receipt_path_full = policy.root / receipt_path
+                    try:
+                        raw = json.loads(receipt_path_full.read_text(encoding="utf-8"))
+                    except (json.JSONDecodeError, OSError):
+                        raw = []
                     receipts: list[dict] = []
-                    if receipt_path_full.is_file():
-                        try:
-                            receipts = json.loads(receipt_path_full.read_text(encoding="utf-8"))
-                        except (json.JSONDecodeError, OSError):
-                            pass
-                    if not receipts:
-                        receipts = [{"id": item.id, "改动": "升格重做完成", "证据": esc_node}]
-                    import uuid as _uuid
-                    for r in receipts:
-                        r["receipt_id"] = str(_uuid.uuid4())
-                        r["generation"] = item.generation
-                    ledger.收回执(receipts, 腿名=esc_node)
-                    events.append_event(
-                        db, "s5.escalation_succeeded",
-                        {"issue_id": item.id, "generation": item.generation,
-                         "round": round_num, "role": role_id, "receipts": len(receipts)},
-                        run_id=run_id,
-                    )
+                    for candidate in raw if isinstance(raw, list) else []:
+                        if not isinstance(candidate, dict):
+                            continue
+                        if str(candidate.get("id", "")).strip() != item.id:
+                            continue
+                        enriched = dict(candidate)
+                        enriched["generation"] = item.generation
+                        enriched["receipt_id"] = (
+                            f"{esc_node}:{item.id}:g{item.generation}"
+                        )
+                        receipts.append(enriched)
+                    receipt_stats = ledger.收回执(receipts, 腿名=esc_node, 轮次=round_num)
+                    if receipt_stats["受理"] > 0:
+                        events.append_event(
+                            db, "s5.escalation_succeeded",
+                            {"issue_id": item.id, "generation": item.generation,
+                             "round": round_num, "role": role_id,
+                             "receipts": receipt_stats["受理"]},
+                            run_id=run_id,
+                        )
+                    else:
+                        events.append_event(
+                            db, "s5.escalation_failed",
+                            {"issue_id": item.id, "generation": item.generation,
+                             "round": round_num, "role": role_id,
+                             "status": "INVALID_RECEIPT"},
+                            run_id=run_id,
+                        )
                 else:
                     events.append_event(
                         db, "s5.escalation_failed",
