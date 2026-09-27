@@ -311,11 +311,13 @@ function ProviderPanel({
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [reasoning, setReasoning] = useState("high");
+  const [compatibleImageInput, setCompatibleImageInput] = useState(false);
   const [testResult, setTestResult] = useState("");
 
   function changeProtocol(value: string) {
     setProtocol(value);
     setBaseUrl(protocolDefaults[value] ?? "");
+    if (value !== "openai_compatible") setCompatibleImageInput(false);
   }
 
   async function submit(e: FormEvent) {
@@ -329,6 +331,9 @@ function ProviderPanel({
         api_key: apiKey || null,
         reasoning: reasoning || null,
         timeout_s: 300,
+        extra: protocol === "openai_compatible"
+          ? { image_input: compatibleImageInput }
+          : {},
       });
       setApiKey("");
       await onCreated();
@@ -403,6 +408,18 @@ function ProviderPanel({
           <label>API Key（不会写入 SQLite）</label>
           <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
         </div>
+        {protocol === "openai_compatible" && (
+          <div className="field">
+            <label>
+              <input
+                type="checkbox"
+                checked={compatibleImageInput}
+                onChange={(e) => setCompatibleImageInput(e.target.checked)}
+              />
+              {" "}该兼容渠道支持图片输入（用于 G5/S6 PDF 页图终审）
+            </label>
+          </div>
+        )}
         <div className="field">
           <label>Reasoning</label>
           <select value={reasoning} onChange={(e) => setReasoning(e.target.value)}>
