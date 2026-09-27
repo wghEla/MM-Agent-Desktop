@@ -310,6 +310,7 @@ async def test_g5_rework_calc_upsert_preserves_s2_entries(tmp_path: Path) -> Non
     from mmagent.mm.contracts.degraded_release import (
         DegradedQuestionEntry,
         read_degraded_release,
+        upsert_degraded_review_issue,
         write_degraded_release,
     )
     from mmagent.mm.pipeline.s5_finalize import run_g5_rework
@@ -324,6 +325,14 @@ async def test_g5_rework_calc_upsert_preserves_s2_entries(tmp_path: Path) -> Non
         write_degraded_release(root, question_entries=[
             DegradedQuestionEntry(question=2, issues=["输入数据缺失"], source_stage="S2")
         ])
+        upsert_degraded_review_issue(
+            root,
+            issue_id="审-1-01",
+            generation=0,
+            severity="正确性",
+            reason="S5 escalation exhausted",
+            source_stage="S5",
+        )
         db = handle.workspace.db
         run_id = repositories.create_run(db, project_id=handle.project_id, profile="快速")
         script = MockScript(
@@ -564,5 +573,43 @@ async def test_g5_rework_text_leg_violating_guard_is_reverted(tmp_path: Path) ->
             db, run_id=run_id, type="guard.structure_revert"
         )
         assert len(reverts) == 1
+    finally:
+        handle.workspace.db.close()
+
+
+@pytest.mark.asyncio
+async def test_g5_calc_blocker_without_prior_degraded_approval_fails_closed(
+    tmp_path: Path,
+) -> None:
+    from mmagent.api.projects import create_project
+    from mmagent.mm.pipeline.s5_finalize import run_g5_rework
+
+    handle = create_project(tmp_path / "proj", name="g5calc-noapproval", profile="快速")
+    try:
+        root = handle.workspace.root
+        _seed_publishable(root)
+        _seed_ledger(root, [{
+            "级别": "正确性", "目标": "算", "定位": "问题2 结果",
+            "问题": "求解结果无法复现", "尝试次数": 2,
+        }])
+        db = handle.workspace.db
+        run_id = repositories.create_run(
+            db, project_id=handle.project_id, profile="快速"
+        )
+        script = MockScript(
+            _write("h", "审稿/G5复核1.json", {"通过": True, "依据版本": "当前PDF"})
+            + _write("h2", "审稿/G5复核2.json", {"通过": True, "依据版本": "当前PDF"})
+            + _write("h3", "审稿/G5复核3.json", {"通过": True, "依据版本": "当前PDF"})
+            + _write("f", "审稿/G5复核.json", {"通过": True, "依据版本": "当前PDF"})
+        )
+        result = await run_g5_rework(
+            db, MockProvider(script), _registry(), PathPolicy(root), run_id,
+            beauty_baseline_pages=10, compile_paper=_compile,
+        )
+        assert result["pass"] is False
+        rows = json.loads(
+            (root / "台账" / "审稿台账.json").read_text(encoding="utf-8")
+        )
+        assert rows[0]["状态"] != "搁置"
     finally:
         handle.workspace.db.close()
