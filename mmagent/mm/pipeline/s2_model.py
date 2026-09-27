@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Any
 
 from mmagent.mm.config.thresholds import DEFAULT_THRESHOLDS
+from mmagent.mm.contracts.degraded_release import (
+    is_question_degraded,
+    upsert_degraded_question,
+)
 from mmagent.mm.gates.g2 import check_g2, normalize_red_team_report
 from mmagent.orchestration.dag import build_dependency_graph, topological_layers
 from mmagent.orchestration.role_leg import run_role_leg
@@ -378,38 +382,17 @@ async def _run_escalation(
 
 
 def _has_degraded_release(policy: PathPolicy, q: int) -> bool:
-    path = policy.root / "交接" / "降级放行.json"
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return False
-    if not isinstance(raw, dict) or not isinstance(raw.get("问题"), list):
-        return False
-    for row in raw["问题"]:
-        if not isinstance(row, dict):
-            continue
-        try:
-            if int(row.get("问题编号")) == q:
-                return True
-        except (TypeError, ValueError):
-            continue
-    return False
+    return is_question_degraded(policy.root, q)
 
 
 def _record_degraded_release(policy: PathPolicy, q: int, issues: list[str]) -> None:
-    path = policy.root / "交接" / "降级放行.json"
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
-    except json.JSONDecodeError:
-        raw = {}
-    if not isinstance(raw, dict):
-        raw = {}
-    rows = raw.setdefault("问题", [])
-    if not isinstance(rows, list):
-        rows = []
-        raw["问题"] = rows
-    rows.append({"问题编号": q, "issues": issues})
-    path.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
+    upsert_degraded_question(
+        policy.root,
+        question=q,
+        issues=issues,
+        reason="S2 escalation exhausted",
+        source_stage="S2",
+    )
 
 
 async def run_s2(
