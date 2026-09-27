@@ -398,3 +398,69 @@ async def test_s2_reexecuted_upstream_cascade_invalidates_downstream_checkpoints
         assert len(reused) >= 4
     finally:
         handle.workspace.db.close()
+
+
+@pytest.mark.asyncio
+async def test_s2_resume_replays_downstream_invalidation_tombstone(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """B14 crash boundary: an invalidation event must suppress an older
+    downstream checkpoint after restart, even when that downstream G2 still
+    validates mechanically."""
+    import mmagent.mm.pipeline.s2_model as s2
+    from mmagent.api.projects import create_project
+
+    handle = create_project(tmp_path / "proj-cascade-resume", name="s2-cascade-resume", profile="快速")
+    try:
+        root = handle.workspace.root
+        plan = {
+            "问题清单": [
+                {"编号": 1, "依赖问题": [], "主方法": "A"},
+                {"编号": 2, "依赖问题": [1], "主方法": "B"},
+            ]
+        }
+        plan_path = root / "交接" / "计划.json"
+        plan_path.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+        run_id = repositories.create_run(
+            handle.workspace.db, project_id=handle.project_id, profile="快速"
+        )
+        _seed_g2_artifacts(root, [1, 2])
+
+        for q in (1, 2):
+            events.append_event(
+                handle.workspace.db,
+                "checkpoint.s2_question",
+                {"question": q, "pass": True, "issues": [], "downgraded": False},
+                run_id=run_id,
+            )
+        # Simulate a crash after q1 invalidated q2 in durable event truth but
+        # before q2's replacement checkpoint was written.
+        events.append_event(
+            handle.workspace.db,
+            "pipeline.s2_downstream_invalidated",
+            {"question": 1, "downstream": [2]},
+            run_id=run_id,
+        )
+
+        executed: list[int] = []
+
+        async def fake_attempt(db, provider, registry, policy_, run_id_, q, **kwargs):
+            executed.append(q)
+            return True, []
+
+        monkeypatch.setattr(s2, "_normal_attempt", fake_attempt)
+
+        result = await run_s2(
+            handle.workspace.db,
+            None,  # type: ignore[arg-type]
+            None,  # type: ignore[arg-type]
+            PathPolicy(root),
+            run_id,
+            plan_path,
+        )
+
+        assert result["gates"]["问1"]["pass"] is True
+        assert executed == [2]
+    finally:
+        handle.workspace.db.close()
