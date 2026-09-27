@@ -72,6 +72,9 @@ async def test_s6_final_review_harvest_and_retrospective(tmp_path: Path) -> None
         assert result["pass"] is True, result["issues"]
         assert (root / "交付" / "论文.pdf").is_file()
         assert (root / "交付" / "论文源码" / "论文.tex").is_file()
+        assert (root / "交付" / "交接" / "结果声明_问题1.json").is_file()
+        assert (root / "交付" / "审稿" / "回流账.json").is_file()
+        assert (root / "交付" / "审稿" / "复盘报告.json").is_file()
         assert (root / "审稿" / "回流账.json").is_file()
         done = events.query_events(
             handle.workspace.db, run_id=run_id, type="checkpoint.s6_complete"
