@@ -1,17 +1,16 @@
 # CURRENT_STATE — fidelity rebuild on gpt/fidelity-rebuild
 
 Branch: `gpt/fidelity-rebuild`
-HEAD: Round-2 P1 closure + B9/B14/E8 closure (see "External source review Round 2 — closure" below)
-Tests: **locally verified: 422 passed / 0 failed + Ruff clean** (full suite, this HEAD)
+HEAD: Round-3 GPT source-review patches after locally verified `33544ec`
+Tests: **last locally verified: 422 passed / 0 failed + Ruff clean at `33544ec`; current remote HEAD is UNVERIFIED**
 
-## Round-3 external review — BLOCKED on ChatGPT login
+## Round-3 external source review
 
-The in-app browser session at chatgpt.com is logged out (login/registration page).
-Round 3 must be submitted to the SAME GPT chat as rounds 1-2 once the user logs in.
-Everything is staged: regenerated packet at `docs/reviews/v1.0.0-rebuild-final-review-packet.md`,
-HEAD `0640079` pushed to `gpt/fidelity-rebuild`.
+Round 3 was performed directly from GitHub; ChatGPT browser login is no longer a blocker.
+Report: `docs/reviews/v1.0.0-rebuild-external-review-round3.md`
+Verdict: **HOLD (P0=0)**.
 
-While blocked, the deterministic PARTIAL items were closed (422-test baseline):
+The 422-test baseline had claimed these deterministic items closed:
 - **B14 → MATCH**: S2 cascade invalidation — any re-executed upstream question
   durably drops all downstream checkpoints (`pipeline.s2_downstream_invalidated`)
   and forces rerun, even when the downstream artifacts still pass their own G2.
@@ -146,3 +145,15 @@ then each OPEN P1 was closed with production-path implementations and real
   G5 rework tests. A17/A20/B7/A21 matrix evidence updated accordingly.
 
 Next: round-3 external review with the regenerated packet.
+
+
+## Round-3 current boundary
+
+Open release-level source findings:
+- S5 calculation repair/escalation still lacks the full recompute → red-team → G2 → downstream propagation protocol.
+- G5 figure repair still lacks dependent-text synchronization as part of the same repair transaction.
+- Change Guard is not wired into production late-stage writer revisions; Structure Guard coverage is also incomplete across S4/S5/S5b/S6 writer paths.
+
+Round-3 reviewer patches after `33544ec` include fail-closed/deterministic S5 escalation receipts, real final-round escalation extension, no degradation after failed/missed verdicts, no G5 self-authorized calc degradation, strict G5 receipt/verdict identity, real page-image input for G5/S6 reviews, durable S2 invalidation tombstones, crash-safe guarded repair, stage-scoped guarded compile repair, and an OpenAI-compatible vision capability setting.
+
+These source-only patches must be locally regression-tested before current HEAD is described as green.
