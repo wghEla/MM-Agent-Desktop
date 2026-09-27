@@ -156,3 +156,28 @@ Remaining release-level implementation work:
 3. Change Guard + Structure Guard must be enforced by a shared guarded-writer path across late S4/S5/S5b/S6 revisions, not only one G5 route.
 
 Round-3 source patches already landed for the concrete replay/fail-open/visual/provider/guard issues listed in the review report. Run local focused + full regression before triaging any new failures.
+
+
+## K. Round-4 source review handoff
+
+Authoritative evidence boundary:
+
+- Last locally verified HEAD: `f17d248e43cb3e21871e1455cda2334eec66c9c0`
+- Evidence at that HEAD: 439 passed / 0 failed, Ruff clean, frontend build green.
+- Current remote branch: Round-4 source fixes after `f17d248`; local regression pending.
+
+Round-4 report:
+`docs/reviews/v1.0.0-rebuild-external-review-round4.md`
+
+Important Round-4 source changes:
+1. G5 figure Issues can no longer fall through into Writer-only text repair after a failed
+   figure transaction.
+2. S5 calc/figure repair requires unique question routing for one ledger Issue identity.
+3. S5 rework now compiles/fixes before writing its round checkpoint.
+4. G5 per-round success requires both page guard and defect review.
+5. OpenAI-compatible 4xx errors redact credentials.
+6. OpenAI-compatible `reasoning_effort` is opt-in instead of being sent implicitly from
+   the desktop's default High reasoning selection.
+
+Do not treat the current remote HEAD as green until the Round-4 focused/full local
+regression is completed. No tag or main merge yet.
