@@ -87,6 +87,7 @@ async def guarded_text_repair(
     node_key: str,
     instructions: str,
     receipt_rel: str,
+    receipt_schema=None,
     question_num: int | None = None,
     附录集: set[str] | None = None,
     cancel=None,
@@ -105,7 +106,9 @@ async def guarded_text_repair(
         node_key=node_key,
         question_num=question_num,
         instructions=instructions,
-        expected_artifacts=[ExpectedArtifact(rel_path=receipt_rel)],
+        expected_artifacts=[
+            ExpectedArtifact(rel_path=receipt_rel, schema_model=receipt_schema)
+        ],
         cancel=cancel,
     )
     after = _snapshot_tex(policy.root)
