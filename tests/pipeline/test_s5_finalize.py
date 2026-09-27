@@ -419,7 +419,7 @@ async def test_compile_repair_uses_writer_leg_then_recovers(tmp_path: Path) -> N
             return {"rc": 0, "errors": [], "pages": 10}
 
         script = MockScript(
-            _write("fix", "审稿/回执_编译修复1.json",
+            _write("fix", "审稿/回执_编译修复_S4_1.json",
                    [{"改动": "补上缺失宏包", "证据": "论文/论文.tex"}])
         )
         result = await run_compile_repair(
