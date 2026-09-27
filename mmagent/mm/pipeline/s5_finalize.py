@@ -157,7 +157,6 @@ async def _apply_beauty_issues(
                 + f"。写 {receipt} 记录改动证据。"
             ),
             receipt_rel=receipt,
-            receipt_schema=ModelRepairReceiptArtifact,
             review_items=text_issues,
             cancel=cancel,
         )
