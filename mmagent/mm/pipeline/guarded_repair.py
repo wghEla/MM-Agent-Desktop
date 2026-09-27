@@ -159,7 +159,7 @@ async def guarded_text_repair(
 
         events.append_event(
             db,
-            "guard.repair_revert",
+            "guard.structure_revert",
             {
                 "node": node_key,
                 "issues": guard_issues,
