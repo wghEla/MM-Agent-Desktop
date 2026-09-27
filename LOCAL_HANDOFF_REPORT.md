@@ -7,7 +7,8 @@
 | Repo | https://github.com/wghEla/MM-Agent-Desktop |
 | Branch | `gpt/fidelity-rebuild` |
 | Starting SHA | `fe6e16b` (before GPT external review round 1) |
-| Ending SHA | `c8b85425742d7b42505f16dbc3ef7854aa2ac763` (latest pushed, local+remote in sync) |
+| Last locally verified code SHA | `c8b85425742d7b42505f16dbc3ef7854aa2ac763` (408 passed, Ruff clean) |
+| Current remote state | GPT Round 2 source-only patches after `c8b8542`; local regression required before claiming current-head green |
 | Windows version | 11 (10.0.26200 x64) |
 | Python | 3.11.9 (uv managed .venv) |
 | Node/npm | v24.18.0 / 11.16.0 |
@@ -48,11 +49,11 @@
 | P1 | Finding | Fix | Test | Status |
 |---|---|---|---|---|
 | P1-1 | Ledger receipt identity incomplete | GPT patch 4a2f790/b3e3792 + verified | test_issue_ledger.py (137 lines added) | ✅ CLOSED |
-| P1-2 | G5 R49-R52 not in Engine path | Engine calls run_g5_rework | test_engine.py | ✅ CLOSED |
-| P1-3 | S5 fuse escalation marker-only | Real escalation executor + durable events | test_repair_lane_ordering.py | ✅ CLOSED |
-| P1-4 | Degraded-release contract split | Unified DegradedReleaseCarrier | test_degraded_release.py (7 items) | ✅ CLOSED |
-| P1-5 | S6 TOCTOU after G5 | Terminal stale-value + structural verify | S6 tests pass | ✅ CLOSED |
-| P1-6 | Fidelity evidence inflation | A15/A19/A21 downgraded to PARTIAL | — | ✅ CLOSED |
+| P1-2 | G5 R49-R52 publication closure | Engine wiring exists; reviewer added fresh final defect review, but G5 repair still lacks receipt/verdict/durable ledger transitions | Round 2 review | ❌ OPEN |
+| P1-3 | S5 fuse escalation marker-only | Role leg exists, but no required receipt/verdict, status-gated completion, or final-round fuse execution | Round 2 review | ❌ OPEN |
+| P1-4 | Degraded-release contract split | Reviewer wired S2/G5 to unified carrier + exact generation; runtime producer for review-level degraded entry still missing | Round 2 source patches | ⚠️ PARTIAL |
+| P1-5 | S6 TOCTOU after G5 | Reviewer added final-revision audit+mechanical G5/page check; unique terminal current-PDF defect review still missing | Round 2 source patches | ⚠️ PARTIAL |
+| P1-6 | Fidelity evidence inflation | Matrix remains conservative, but new fuse/G5 tests still manually manufacture evidence instead of executing production control flow | Round 2 review | ❌ OPEN |
 
 ## E. Fidelity Matrix
 
@@ -116,3 +117,24 @@
 - No-dev-Python startup smoke (CI #174)
 - Tauri binary build (CI #174)
 - Linux test results (CI #227)
+
+
+## I. External Review Round 2
+
+Report:
+`docs/reviews/v1.0.0-rebuild-external-review-round2.md`
+
+Verdict: **HOLD**.
+
+Important evidence boundary:
+
+- `c8b8542`: last locally verified implementation-agent code, 408 passed / Ruff clean.
+- commits after `c8b8542`: GPT Round 2 source-only fixes/tests/docs; **not yet locally executed**.
+- Do not describe the remote branch as current-head green until the Round 2 focused/full regression is run.
+
+Next implementation pass should focus only on:
+1. actual S5 escalation receipt/verdict/checkpoint flow;
+2. runtime review-level degraded-release registration after escalation exhaustion;
+3. G5 repair → ledger receipt → reviewer verdict → durable writeback;
+4. terminal S6 current-PDF defect review after final mechanical gate;
+5. production-path behavior tests replacing manually-created evidence.
