@@ -531,12 +531,14 @@ async def run_g5_rework(
                 # ledger state, so an omitted generation means the current one;
                 # an explicitly stale generation is still rejected by the CAS
                 # inside 收裁定.
-                verdicts = [v for v in (data.get("逐项") or []) if isinstance(v, dict)]
+                verdicts = [
+                    v for v in (data.get("逐项") or [])
+                    if isinstance(v, dict)
+                ]
                 if verdicts:
-                    current_gen = {x.id: x.generation for x in ledger.条目}
-                    for v in verdicts:
-                        if v.get("generation") is None:
-                            v["generation"] = current_gen.get(str(v.get("id", "")).strip())
+                    # Reviewer verdict identity is model-declared and CAS
+                    # checked.  Unlike repair receipts, Runtime must not guess
+                    # which generation the reviewer intended to adjudicate.
                     ledger.收裁定(verdicts, 轮次=ledger.轮次)
             except (OSError, json.JSONDecodeError):
                 new_pass = False
