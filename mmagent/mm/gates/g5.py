@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from mmagent.mm.contracts.degraded_release import is_issue_degraded
 from mmagent.mm.gates.g4 import check_g4
 from mmagent.mm.guards.guards import page_guard, stale_value_guard
 
@@ -37,15 +38,6 @@ def check_g5(
     if not isinstance(ledger, list):
         issues.append("台账/审稿台账.json 缺失或不可解析")
     else:
-        degraded = _load_json(root / "交接" / "降级放行.json")
-        allowed: set[str] = set()
-        if isinstance(degraded, dict):
-            raw = degraded.get("issue_ids", degraded.get("条目", []))
-            if isinstance(raw, list):
-                allowed = {
-                    str(x.get("id")) if isinstance(x, dict) else str(x)
-                    for x in raw
-                }
         for item in ledger:
             if not isinstance(item, dict) or item.get("级别") not in _BLOCKING:
                 continue
@@ -53,8 +45,17 @@ def check_g5(
             iid = str(item.get("id", "?"))
             if state in _ACTIVE:
                 issues.append(f"阻塞级台账未收敛: {iid} {item.get('级别')}/{state}")
-            elif state == "搁置" and iid not in allowed:
-                issues.append(f"阻塞级搁置未登记降级放行: {iid}")
+            elif state == "搁置":
+                generation = item.get("generation")
+                try:
+                    generation_i = int(generation)
+                except (TypeError, ValueError):
+                    issues.append(f"阻塞级搁置缺有效 generation: {iid}")
+                    continue
+                if not is_issue_degraded(root, iid, generation_i):
+                    issues.append(
+                        f"阻塞级搁置未登记精确降级放行: {iid} generation={generation_i}"
+                    )
 
     stale_ok, stale_issues = stale_value_guard(root)
     if not stale_ok:
