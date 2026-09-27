@@ -66,21 +66,31 @@ def read_degraded_release(root: Path) -> DegradedReleaseCarrier | None:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    # Legacy migration: S2 old format {"问题": [{"问题编号": N, "issues": [...]}]}
-    if "问题" in raw and "questions" not in raw:
-        questions = []
-        for q in raw.get("问题", []):
-            if isinstance(q, dict):
+    # Legacy migration must also fail closed: malformed legacy payloads must
+    # not escape validation or be silently rewritten into a valid carrier.
+    try:
+        # S2 old format {"问题": [{"问题编号": N, "issues": [...]}]}
+        if "问题" in raw and "questions" not in raw:
+            questions = []
+            rows = raw.get("问题", [])
+            if not isinstance(rows, list):
+                return None
+            for q in rows:
+                if not isinstance(q, dict):
+                    return None
                 questions.append(DegradedQuestionEntry(
                     question=q.get("问题编号", 0),
                     issues=q.get("issues", []),
                     source_stage="S2",
                 ))
-        return DegradedReleaseCarrier(version=0, questions=questions, review_issues=[])
-    # Legacy migration: G5 old format {"issue_ids": [...]}
-    if "issue_ids" in raw and "review_issues" not in raw:
-        ids = raw.get("issue_ids", [])
-        if isinstance(ids, list):
+            return DegradedReleaseCarrier(
+                version=0, questions=questions, review_issues=[]
+            )
+        # G5 old format {"issue_ids": [...]}
+        if "issue_ids" in raw and "review_issues" not in raw:
+            ids = raw.get("issue_ids", [])
+            if not isinstance(ids, list):
+                return None
             entries = [
                 DegradedReviewIssueEntry(
                     id=str(x.get("id")) if isinstance(x, dict) else str(x),
@@ -89,6 +99,8 @@ def read_degraded_release(root: Path) -> DegradedReleaseCarrier | None:
                 for x in ids
             ]
             return DegradedReleaseCarrier(version=0, review_issues=entries)
+    except Exception:
+        return None
     # Current format
     try:
         return DegradedReleaseCarrier.model_validate(raw)
@@ -105,3 +117,75 @@ def is_issue_degraded(root: Path, issue_id: str, generation: int) -> bool:
         if entry.id == issue_id and entry.generation == generation:
             return True
     return False
+
+
+
+def is_question_degraded(root: Path, question: int) -> bool:
+    """Check whether a question-level S2 degraded entry exists."""
+    carrier = read_degraded_release(root)
+    if carrier is None:
+        return False
+    return any(entry.question == int(question) for entry in carrier.questions)
+
+
+def upsert_degraded_question(
+    root: Path,
+    *,
+    question: int,
+    issues: list[str],
+    reason: str = "",
+    source_stage: str = "S2",
+) -> Path:
+    """Runtime-owned update preserving unrelated question/review entries."""
+    path = root / "交接" / "降级放行.json"
+    current = read_degraded_release(root)
+    if path.is_file() and current is None:
+        raise ValueError("existing degraded-release carrier is malformed")
+    carrier = current or DegradedReleaseCarrier()
+    questions = [entry for entry in carrier.questions if entry.question != int(question)]
+    questions.append(DegradedQuestionEntry(
+        question=int(question),
+        issues=[str(x) for x in issues],
+        source_stage=source_stage,
+        reason=reason,
+    ))
+    return write_degraded_release(
+        root,
+        question_entries=questions,
+        review_issue_entries=list(carrier.review_issues),
+    )
+
+
+def upsert_degraded_review_issue(
+    root: Path,
+    *,
+    issue_id: str,
+    generation: int,
+    severity: str,
+    reason: str,
+    evidence: str = "",
+    source_stage: str = "S5",
+) -> Path:
+    """Runtime-owned update preserving question entries and other generations."""
+    path = root / "交接" / "降级放行.json"
+    current = read_degraded_release(root)
+    if path.is_file() and current is None:
+        raise ValueError("existing degraded-release carrier is malformed")
+    carrier = current or DegradedReleaseCarrier()
+    review = [
+        entry for entry in carrier.review_issues
+        if not (entry.id == issue_id and entry.generation == int(generation))
+    ]
+    review.append(DegradedReviewIssueEntry(
+        id=issue_id,
+        generation=int(generation),
+        severity=severity,
+        source_stage=source_stage,
+        reason=reason,
+        evidence=evidence,
+    ))
+    return write_degraded_release(
+        root,
+        question_entries=list(carrier.questions),
+        review_issue_entries=review,
+    )
