@@ -632,22 +632,21 @@ async def run_s5(
         # Fuse processing: escalate blocking, shelve narrative (ALWAYS runs, even on final round)
         escalated_this_round = False
         escalated_count = 0
-        prior_escalations: set[str] = set()
+        prior_successful_escalations: set[str] = set()
+        prior_failed_escalations: set[str] = set()
         for ev in events.query_events(db, run_id=run_id, type="s5.escalation_succeeded"):
             ek = f"{ev.payload.get('issue_id')}:{ev.payload.get('generation')}"
-            prior_escalations.add(ek)
+            prior_successful_escalations.add(ek)
         for ev in events.query_events(db, run_id=run_id, type="s5.escalation_failed"):
             ek = f"{ev.payload.get('issue_id')}:{ev.payload.get('generation')}"
-            prior_escalations.add(ek)
+            prior_failed_escalations.add(ek)
         for item in ledger.熔断候选(阈值=2):
             ek = f"{item.id}:{item.generation}"
             if item.级别 in ("硬伤", "正确性"):
-                if ek in prior_escalations:
-                    # 外审 round2 P1-4: escalation for this generation already
-                    # ran (succeeded or failed) and the issue is still a fuse
-                    # candidate → escalation is exhausted.  Only the Runtime
-                    # may authorize degraded release; register the exact
-                    # (id, generation) record and shelve for 复盘/人工.
+                if ek in prior_successful_escalations:
+                    # A successful escalation produced a valid repair receipt,
+                    # and the reviewer still left this generation unresolved:
+                    # the single escalation chance is genuinely exhausted.
                     upsert_degraded_review_issue(
                         policy.root,
                         issue_id=item.id,
@@ -663,6 +662,11 @@ async def run_s5(
                          "round": round_num},
                         run_id=run_id,
                     )
+                    continue
+                if ek in prior_failed_escalations:
+                    # Technical/model failure is not evidence that a genuine
+                    # alternative repair was attempted and reviewed.  Never
+                    # auto-authorize degraded release from a failed leg.
                     continue
                 needs_escalation.append(item.id)
                 escalated_this_round = True
