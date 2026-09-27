@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from mmagent.mm.audit import audit_paper
+from mmagent.mm.contracts.degraded_release import read_degraded_release
 from mmagent.mm.contracts.final_contracts import PageReviewArtifact, PublicationReviewVerdict
 from mmagent.mm.gates.g5 import check_g5
 from mmagent.mm.pipeline.compile_runtime import run_compile
@@ -85,6 +86,86 @@ def _harvest(root: Path) -> list[str]:
             shutil.copytree(source, target)
             copied.append(name)
     return copied
+
+
+def _write_delivery_report(
+    root: Path,
+    *,
+    copied: list[str],
+    metrics: dict[str, Any],
+) -> Path:
+    """Runtime-owned human-readable delivery disclosure.
+
+    The report never asks the model to summarize unresolved state.  It reads
+    the typed degraded-release carrier and durable review ledger directly.
+    """
+    delivery = root / "交付"
+    delivery.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# MM-Agent 交付报告",
+        "",
+        "## 交付物",
+        "",
+    ]
+    lines.extend(f"- {name}" for name in copied)
+    lines.extend([
+        "",
+        "## 已知未消解/降级项",
+        "",
+    ])
+
+    disclosed = 0
+    degraded = read_degraded_release(root)
+    if degraded is not None:
+        for item in degraded.questions:
+            lines.append(
+                f"- 问题{item.question}（{item.source_stage}）: "
+                f"{item.reason or '; '.join(item.issues) or '降级放行'}"
+            )
+            disclosed += 1
+        for item in degraded.review_issues:
+            lines.append(
+                f"- {item.id} generation={item.generation} "
+                f"{item.severity}（{item.source_stage}）: "
+                f"{item.reason or '降级放行'}"
+            )
+            disclosed += 1
+
+    ledger_path = root / "台账" / "审稿台账.json"
+    if ledger_path.is_file():
+        try:
+            rows = json.loads(ledger_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            rows = []
+        if isinstance(rows, list):
+            for item in rows:
+                if not isinstance(item, dict):
+                    continue
+                state = str(item.get("状态", ""))
+                if state in ("", "已消解"):
+                    continue
+                lines.append(
+                    f"- 台账 {item.get('id', '?')} {item.get('级别', '?')}/"
+                    f"{state}: {item.get('问题', '')}"
+                )
+                disclosed += 1
+
+    if disclosed == 0:
+        lines.append("- 无已知未消解/降级项。")
+
+    lines.extend([
+        "",
+        "## 运行指标",
+        "",
+        f"- 事件数: {metrics.get('事件数', 0)}",
+        f"- 腿数: {metrics.get('腿数', 0)}",
+        "",
+        "> 本报告由 Runtime 从持久化状态机械生成；降级/未消解项不会由模型自行隐藏。",
+        "",
+    ])
+    path = delivery / "交付报告.md"
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return path
 
 
 def _run_metrics(db: Database, run_id: str) -> dict[str, Any]:
@@ -198,6 +279,40 @@ async def run_s6(
         if execute_issues:
             return {"pass": False, "issues": execute_issues}
 
+        # S6 is the final mutable carrier stage.  A regenerated figure is not
+        # complete until dependent captions/textual references are synchronized
+        # behind the same late-writer guards used by S5/G5.
+        sync_receipt = f"审稿/回执_S6_图同步问{q}.json"
+        sync_status, _guard_issues = await guarded_text_repair(
+            db, provider, registry, policy, run_id,
+            stage_key="S6",
+            node_key=f"S6:终审图同步问{q}",
+            instructions=(
+                f"问题{q}终审图已由 Runtime 重跑成功。"
+                "只同步依赖这些终审图问题的图题、正文引用、数字引用和解释，"
+                "不得修改冻结计算事实："
+                + json.dumps(group, ensure_ascii=False)
+                + f"。完成后写 {sync_receipt}。"
+            ),
+            receipt_rel=sync_receipt,
+            review_items=[
+                {
+                    "问题": str(x.get("问题", "")),
+                    "指令": str(x.get("修改指令", "")),
+                    "定位": str(x.get("定位", x.get("页", ""))),
+                }
+                for x in group
+                if isinstance(x, dict)
+            ],
+            question_num=q,
+            cancel=cancel,
+        )
+        if sync_status != "SUCCEEDED":
+            return {
+                "pass": False,
+                "issues": [f"S6 问{q}终审改图后的正文同步失败"],
+            }
+
     compiled = await run_compile(compiler, policy.root, cancel=cancel)
     if compiled.get("rc") not in (0, None) or compiled.get("errors"):
         return {"pass": False, "issues": [f"S6 final compile 失败: {compiled.get('errors')}"]}
@@ -298,7 +413,22 @@ async def run_s6(
         return {"pass": False, "issues": ["复盘官失败"]}
 
     copied = _harvest(policy.root)
-    events.append_event(
-        db, "checkpoint.s6_complete", {"delivery": copied, "metrics": metrics}, run_id=run_id
+    report_path = _write_delivery_report(
+        policy.root,
+        copied=copied,
+        metrics=metrics,
     )
-    return {"pass": True, "issues": [], "delivery": copied, "metrics": metrics}
+    copied.append(report_path.name)
+    events.append_event(
+        db,
+        "checkpoint.s6_complete",
+        {"delivery": copied, "metrics": metrics, "delivery_report": report_path.name},
+        run_id=run_id,
+    )
+    return {
+        "pass": True,
+        "issues": [],
+        "delivery": copied,
+        "metrics": metrics,
+        "delivery_report": report_path.name,
+    }
