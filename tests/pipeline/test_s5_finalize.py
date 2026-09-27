@@ -283,7 +283,7 @@ async def test_g5_rework_figure_receipt_then_verdict_resolves_issue(tmp_path: Pa
                    [{"id": "审-1-01", "改动": "同步图内数字为 3.14", "证据": "脚本 diff"}])
             + _write("h", "审稿/G5复核1.json",
                      {"通过": True, "依据版本": "当前PDF",
-                      "逐项": [{"id": "审-1-01", "裁定": "已消解", "理由": "图已同步"}]})
+                      "逐项": [{"id": "审-1-01", "generation": 0, "裁定": "已消解", "理由": "图已同步"}]})
             + _write("f", "审稿/G5复核.json", {"通过": True, "依据版本": "当前PDF"})
         )
         result = await run_g5_rework(
