@@ -372,6 +372,7 @@ class PaperFoundryEngine:
                     self.db, self.provider, self.registry, self.policy, self.run_id,
                     beauty_baseline_pages=baseline_pages,
                     compile_paper=self.hooks.compile_paper,
+                    render_pages=self.hooks.render_pages,
                     cancel=self.cancel,
                 )
                 if not result["pass"]:
