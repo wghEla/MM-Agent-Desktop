@@ -17,6 +17,7 @@ from mmagent.mm.contracts.s4_contracts import (
     RequirementCoverageDocument,
 )
 from mmagent.mm.gates.g4 import check_g4, check_narrative
+from mmagent.mm.pipeline.guarded_repair import guarded_text_repair
 from mmagent.mm.retention import (
     ensure_paper_snapshot,
     restore_paper_snapshot,
@@ -63,6 +64,32 @@ def _relative_judgment(path: Path) -> str | None:
     if raw:
         return "持平"
     return None
+
+
+def _review_items(path: Path, *keys: str) -> list[dict[str, str]]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    out: list[dict[str, str]] = []
+    for key in keys:
+        raw = data.get(key, [])
+        if isinstance(raw, dict):
+            raw = [raw]
+        if not isinstance(raw, list):
+            continue
+        for item in raw:
+            if isinstance(item, dict):
+                out.append({
+                    "问题": str(item.get("问题", item.get("内容", ""))),
+                    "指令": str(item.get("指令", item.get("修改指令", ""))),
+                    "定位": str(item.get("定位", item.get("章节", ""))),
+                })
+            elif item is not None:
+                out.append({"问题": str(item), "指令": "", "定位": ""})
+    return out
 
 
 def _abstract_verdict(path: Path) -> tuple[bool, float]:
@@ -330,14 +357,23 @@ async def run_s4(
         source_round = round_num - 1 if restored_files else round_num
         source_chapter_rel = f"审稿/章评R{source_round}.json"
         source_reader_rel = f"审稿/读者R{source_round}.json"
-        revision = await _leg(
+        revision_receipt = f"审稿/回执_S4定向修订R{round_num}.json"
+        revision_items = (
+            _review_items(policy.root / source_chapter_rel, "问题")
+            + _review_items(policy.root / source_reader_rel, "卡住")
+        )
+        revision, _guard_issues = await guarded_text_repair(
             db, provider, registry, policy, run_id,
-            role_id="writer", node_key=f"S4:定向修订R{round_num}",
+            stage_key="S4",
+            node_key=f"S4:定向修订R{round_num}",
             instructions=(
                 f"只根据 {source_chapter_rel} 与 {source_reader_rel} 做定向修订；"
-                "保持数字/公式事实不变，修改 论文/论文.tex。"
+                "保持数字/公式事实不变，修改既有论文内容。"
+                f"完成后写 {revision_receipt} 说明修改证据。"
             ),
-            expected=[ExpectedArtifact(rel_path="论文/论文.tex", kind="text")], cancel=cancel,
+            receipt_rel=revision_receipt,
+            review_items=revision_items,
+            cancel=cancel,
         )
         if revision != "SUCCEEDED":
             return {"g4_pass": False, "g4_issues": ["S4 定向修订失败"], "reviews": review_history}
@@ -358,11 +394,22 @@ async def run_s4(
                 "reviews": review_history,
             }
 
-    integrate = await _leg(
+    latest_items: list[dict[str, str]] = []
+    if review_history:
+        last_round = int(review_history[-1]["round"])
+        latest_items = (
+            _review_items(policy.root / f"审稿/章评R{last_round}.json", "问题")
+            + _review_items(policy.root / f"审稿/读者R{last_round}.json", "卡住")
+        )
+    integrate, _guard_issues = await guarded_text_repair(
         db, provider, registry, policy, run_id,
-        role_id="integrator", node_key="S4:统稿",
+        stage_key="S4",
+        node_key="S4:统稿",
+        role_id="integrator",
         instructions="统一全文语言与跨章衔接，只动语言层；写 审稿/统稿回执.json。",
-        expected=[ExpectedArtifact(rel_path="审稿/统稿回执.json")], cancel=cancel,
+        receipt_rel="审稿/统稿回执.json",
+        review_items=latest_items,
+        cancel=cancel,
     )
     if integrate != "SUCCEEDED":
         return {"g4_pass": False, "g4_issues": ["统稿腿失败"], "reviews": review_history}
