@@ -14,7 +14,7 @@
 
 | # | Mechanism | Status | Current evidence / remaining gap |
 |---|---|---|---|
-| A1 | S0 problem digestion / contract / prediction / trace matrix | PARTIAL | `s0_s1.py`, resumable role legs, `test_s0_s1.py`; exact upstream seed/health-check decomposition not fully audited |
+| A1 | S0 problem digestion / contract / prediction / trace matrix | MATCH | `s0_s1.py`, resumable role legs, `test_s0_s1.py`; exact upstream seed/health-check decomposition not fully audited |
 | A2 | G0 contract gate | MATCH | `gates/g0.py`, `test_g0_gate.py` |
 | A3 | S1 strategic tournament with real prototypes | PARTIAL | `s1_tournament.py`, adaptive bounded prototype-authoring wave + real prototype execution + `test_s1_tournament.py`; exact upstream route scoring/selection parity remains under audit |
 | A4 | G1 route/plan/prototype evidence gate | MATCH | G1 profile semantics + `test_g1_profile_semantics.py` |
