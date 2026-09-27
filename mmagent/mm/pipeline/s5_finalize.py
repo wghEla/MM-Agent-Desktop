@@ -396,22 +396,25 @@ async def run_g5_rework(
         if figure_receipts:
             ledger.收回执(figure_receipts, 腿名=f"G5返工图{rework_n}")
 
-        # R50: Calc route → shelve + degraded release (no recalc at publication gate)
+        # R50: G5 never self-authorizes degraded release for calculation
+        # blockers.  It may only consume an exact approval already produced by
+        # the earlier bounded S5 escalation/exhaustion path.
         calc_items = [x for x in blocking if x.目标 == "算"]
         if calc_items:
-            from mmagent.mm.contracts.degraded_release import upsert_degraded_review_issue
+            from mmagent.mm.contracts.degraded_release import is_issue_degraded
             for x in calc_items:
-                # upsert preserves S2 question entries and other generations;
-                # a full write here would wipe them.
-                upsert_degraded_review_issue(
-                    policy.root,
-                    issue_id=x.id,
-                    generation=x.generation,
-                    severity=x.级别,
-                    reason="G5 无算路，出版前重算风险大",
-                    source_stage="G5",
-                )
-                ledger.搁置条目(x.id, "G5 无算路（出版前重算风险大），交复盘/人工")
+                if is_issue_degraded(policy.root, x.id, x.generation):
+                    ledger.搁置条目(
+                        x.id,
+                        "S5 已登记精确降级放行；G5 不执行出版前重算",
+                    )
+                else:
+                    events.append_event(
+                        db,
+                        "gate.g5_calc_blocked",
+                        {"issue_id": x.id, "generation": x.generation},
+                        run_id=run_id,
+                    )
 
         # Text route → writer with required receipts + R38 structure guard
         text_items = [x for x in ledger.待改条目(级别们=list(阻塞级别)) if x.目标 != "算"]
