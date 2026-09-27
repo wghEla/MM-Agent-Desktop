@@ -586,8 +586,15 @@ async def run_g5_rework(
                         run_id=run_id,
                     )
 
-        # Text route → writer with required receipts + R38 structure guard
-        text_items = [x for x in ledger.待改条目(级别们=list(阻塞级别)) if x.目标 != "算"]
+        # Text route is strictly text-only.  Figure issues may advance
+        # only through the full Plotter -> Runtime plot -> guarded Writer sync
+        # transaction above; never let a failed figure transaction fall
+        # through to a Writer-only receipt path.
+        text_items = [
+            x
+            for x in ledger.待改条目(级别们=list(阻塞级别))
+            if x.目标 == "文"
+        ]
         text_receipts: list[dict] = []
         if text_items:
             from mmagent.mm.pipeline.guarded_repair import guarded_text_repair
