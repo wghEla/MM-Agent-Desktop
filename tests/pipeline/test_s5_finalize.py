@@ -373,7 +373,7 @@ async def test_g5_rework_stale_verdict_generation_is_rejected(tmp_path: Path) ->
         db = handle.workspace.db
         run_id = repositories.create_run(db, project_id=handle.project_id, profile="快速")
         script = MockScript(
-            _write("p", "审稿/回执_G5R1_图问3.json",
+            _write("p", "审稿/回执_G5R1_图问3_审-1-01.json",
                    [{"id": "审-1-01", "改动": "同步图内数字", "证据": "diff"}])
             + _write("h", "审稿/G5复核1.json",
                      {"通过": True, "依据版本": "当前PDF",
