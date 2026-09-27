@@ -9,6 +9,7 @@ from __future__ import annotations
 import httpx
 
 from mmagent.agent.errors import ErrorKind, ProviderError, RateLimitError
+from mmagent.providers import redact_secret
 from mmagent.providers._http_util import parse_retry_after
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
@@ -94,8 +95,11 @@ class OpenAICompatibleProvider(BaseProvider):
         if resp.status_code >= 500:
             raise ProviderError(f"服务端错误 {resp.status_code}", kind=ErrorKind.PROVIDER_SERVER, retryable=True)
         if resp.status_code >= 400:
-            raise ProviderError(f"请求错误 {resp.status_code}: {resp.text[:300]}",
-                                kind=ErrorKind.PROVIDER_BAD_REQUEST)
+            detail = redact_secret(resp.text[:300], self._key_getter())
+            raise ProviderError(
+                f"请求错误 {resp.status_code}: {detail}",
+                kind=ErrorKind.PROVIDER_BAD_REQUEST,
+            )
         return parse_chat_response(resp.json(), self.protocol)
 
     async def test_connection(self) -> dict:
