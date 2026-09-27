@@ -19,6 +19,7 @@ from mmagent.mm.ledger.issue_ledger import (
     merge_channel_verdicts,
 )
 from mmagent.mm.pipeline.compile_runtime import run_compile
+from mmagent.mm.pipeline.guarded_repair import guarded_text_repair
 from mmagent.mm.retention import (
     ensure_paper_snapshot as _ensure_shared_snapshot,
 )
@@ -352,20 +353,42 @@ async def _run_rework_leg(
     suffix = f"问{question_num}" if question_num is not None else ""
     receipt_rel = f"审稿/回执_R{round_num}_{target}{suffix}.json"
     node = f"S5:R{round_num}:回炉{target}{suffix}"
-    status = await run_role_leg(
-        db, provider, registry, policy, run_id,
-        stage_key="S5",
-        role_id=role_id,
-        node_key=node,
-        question_num=question_num,
-        instructions=(
-            "只处理下面点名的台账条目，不扩大修改范围。"
-            f"条目={_items_json(items)}。修改完成后写 {receipt_rel}，"
-            "每条回执包含 id、generation、改动、证据。"
-        ),
-        expected_artifacts=[ExpectedArtifact(rel_path=receipt_rel)],
-        cancel=cancel,
+    instructions = (
+        "只处理下面点名的台账条目，不扩大修改范围。"
+        f"条目={_items_json(items)}。修改完成后写 {receipt_rel}，"
+        "每条回执包含 id、generation、改动、证据。"
     )
+    if target == "文":
+        status, _guard_issues = await guarded_text_repair(
+            db, provider, registry, policy, run_id,
+            stage_key="S5",
+            node_key=node,
+            instructions=instructions,
+            receipt_rel=receipt_rel,
+            receipt_schema=ModelRepairReceiptArtifact,
+            review_items=[
+                {"问题": x.问题, "指令": x.指令, "定位": x.定位}
+                for x in items
+            ],
+            question_num=question_num,
+            cancel=cancel,
+        )
+    else:
+        status = await run_role_leg(
+            db, provider, registry, policy, run_id,
+            stage_key="S5",
+            role_id=role_id,
+            node_key=node,
+            question_num=question_num,
+            instructions=instructions,
+            expected_artifacts=[
+                ExpectedArtifact(
+                    rel_path=receipt_rel,
+                    schema_model=ModelRepairReceiptArtifact,
+                )
+            ],
+            cancel=cancel,
+        )
     if status != "SUCCEEDED":
         return []
     try:
