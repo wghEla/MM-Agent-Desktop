@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -371,7 +372,7 @@ async def _run_escalation(
         instructions=(
             f"比较问题{q}的升格变体真实结果 {json.dumps(variants, ensure_ascii=False)}，"
             f"选择证据最充分的方案并刷新 交接/结果声明_问题{q}.json；"
-            f"写 交接/升格裁决_问题{q}.json。"
+            f"写 交接/升格裁决_问题{q}.json，顶层必须包含 获胜变体（1-{_ESCALATION_VARIANTS} 的整数）。"
         ),
         expected=[
             ExpectedArtifact(rel_path=f"交接/结果声明_问题{q}.json"),
@@ -381,6 +382,48 @@ async def _run_escalation(
     )
     if adjudication != "SUCCEEDED":
         return False, ["升格裁决失败"]
+
+    decision_path = policy.root / "交接" / f"升格裁决_问题{q}.json"
+    try:
+        decision = json.loads(decision_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False, ["升格裁决不可解析"]
+    if not isinstance(decision, dict):
+        return False, ["升格裁决顶层必须为对象"]
+    try:
+        winner = int(decision.get("获胜变体"))
+    except (TypeError, ValueError):
+        return False, ["升格裁决缺少有效获胜变体"]
+    winner_rel = dict(variant_specs).get(winner)
+    if winner_rel is None or winner_rel not in variants:
+        return False, [f"升格获胜变体无有效执行证据: {winner}"]
+
+    # Runtime owns canonical truth promotion.  The model may select a variant,
+    # but downstream stages must consume one canonical solver/result carrier.
+    winner_solver = policy.root / winner_rel
+    winner_result_dir = winner_solver.parent / "结果"
+    canonical_dir = policy.root / "求解" / f"问题{q}"
+    canonical_solver = canonical_dir / f"求解_问题{q}.py"
+    canonical_result_dir = canonical_dir / "结果"
+    if not winner_solver.is_file() or not winner_result_dir.is_dir():
+        return False, [f"升格获胜变体缺 solver/result: {winner}"]
+    canonical_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(winner_solver, canonical_solver)
+    if canonical_result_dir.exists():
+        shutil.rmtree(canonical_result_dir)
+    shutil.copytree(winner_result_dir, canonical_result_dir)
+    events.append_event(
+        db,
+        "pipeline.s2_escalation_promoted",
+        {
+            "question": q,
+            "winner": winner,
+            "identity": identity,
+            "solver": winner_rel,
+        },
+        run_id=run_id,
+    )
+
     ok, detail = await _red_team_cycle(
         db, provider, registry, policy, run_id, q,
         cycle_key=(
