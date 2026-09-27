@@ -8,6 +8,8 @@ paper back to the snapshot, keeps the rejected draft under
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 from mmagent.mm.guards.guards import structure_guard
@@ -41,6 +43,39 @@ def _restore_tex(root: Path, files: dict[str, str]) -> None:
         (root / rel).unlink(missing_ok=True)
 
 
+def _guard_snapshot_path(root: Path, node_key: str) -> Path:
+    digest = hashlib.sha256(node_key.encode("utf-8")).hexdigest()[:20]
+    return root / ".mmagent" / "guard_snapshots" / f"{digest}.json"
+
+
+def _load_or_create_guard_snapshot(root: Path, node_key: str) -> tuple[Path, dict[str, str]]:
+    """Persist the pre-repair baseline so a crash cannot erase guard truth."""
+    path = _guard_snapshot_path(root, node_key)
+    if path.is_file():
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(raw, dict)
+            or raw.get("node_key") != node_key
+            or not isinstance(raw.get("files"), dict)
+            or not all(
+                isinstance(k, str) and isinstance(v, str)
+                for k, v in raw["files"].items()
+            )
+        ):
+            raise RuntimeError(f"invalid guard snapshot for {node_key}")
+        return path, dict(raw["files"])
+
+    files = _snapshot_tex(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(
+        json.dumps({"node_key": node_key, "files": files}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    tmp.replace(path)
+    return path, files
+
+
 async def guarded_text_repair(
     db: Database,
     provider: BaseProvider,
@@ -62,7 +97,7 @@ async def guarded_text_repair(
     success but the guard rolled the paper back; callers must treat it as a
     failed repair and must not accept its receipts.
     """
-    before = _snapshot_tex(policy.root)
+    snapshot_path, before = _load_or_create_guard_snapshot(policy.root, node_key)
     status = await run_role_leg(
         db, provider, registry, policy, run_id,
         stage_key=stage_key,
@@ -73,24 +108,40 @@ async def guarded_text_repair(
         expected_artifacts=[ExpectedArtifact(rel_path=receipt_rel)],
         cancel=cancel,
     )
-    guard_issues: list[str] = []
-    if status == "SUCCEEDED":
-        after = _snapshot_tex(policy.root)
-        _, guard_issues = structure_guard(before, after, 附录集=附录集)
-        if guard_issues:
-            backup_dir = policy.root / "审稿" / "回退稿" / node_key.replace(":", "_")
-            backup_dir.mkdir(parents=True, exist_ok=True)
-            for rel, content in after.items():
-                target = backup_dir / rel
-                target.parent.mkdir(parents=True, exist_ok=True)
-                (backup_dir / rel).write_text(content, encoding="utf-8")
-            _restore_tex(policy.root, before)
-            events.append_event(
-                db,
-                "guard.structure_revert",
-                {"node": node_key, "issues": guard_issues,
-                 "kept_files": sorted(after)},
-                run_id=run_id,
-            )
+    after = _snapshot_tex(policy.root)
+    _, guard_issues = structure_guard(before, after, 附录集=附录集)
+
+    # A failed agent leg is not allowed to leave partial file mutations behind,
+    # even if those mutations happen to satisfy the structural guard.
+    must_revert = status != "SUCCEEDED" or bool(guard_issues)
+    if must_revert:
+        backup_dir = policy.root / "审稿" / "回退稿" / node_key.replace(":", "_")
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        for rel, content in after.items():
+            target = backup_dir / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        _restore_tex(policy.root, before)
+
+        # If the role task itself sealed SUCCEEDED but the outer guard rejects
+        # the mutation, remove the receipt.  A later node reuse must fail
+        # artifact verification rather than resurrect a receipt for reverted
+        # changes.
+        if status == "SUCCEEDED":
+            (policy.root / receipt_rel).unlink(missing_ok=True)
             status = "REVERTED"
+
+        events.append_event(
+            db,
+            "guard.structure_revert",
+            {
+                "node": node_key,
+                "issues": guard_issues,
+                "leg_status": status,
+                "kept_files": sorted(after),
+            },
+            run_id=run_id,
+        )
+
+    snapshot_path.unlink(missing_ok=True)
     return status, guard_issues
