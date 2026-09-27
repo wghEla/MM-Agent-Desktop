@@ -12,7 +12,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from mmagent.mm.guards.guards import structure_guard
+from mmagent.mm.guards.guards import change_guard, structure_guard
 from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.base import BaseProvider
 from mmagent.state import events
@@ -88,6 +88,9 @@ async def guarded_text_repair(
     instructions: str,
     receipt_rel: str,
     receipt_schema=None,
+    role_id: str = "writer",
+    review_items: list[dict] | None = None,
+    change_limit: float = 0.45,
     question_num: int | None = None,
     附录集: set[str] | None = None,
     cancel=None,
@@ -102,7 +105,7 @@ async def guarded_text_repair(
     status = await run_role_leg(
         db, provider, registry, policy, run_id,
         stage_key=stage_key,
-        role_id="writer",
+        role_id=role_id,
         node_key=node_key,
         question_num=question_num,
         instructions=instructions,
@@ -112,7 +115,28 @@ async def guarded_text_repair(
         cancel=cancel,
     )
     after = _snapshot_tex(policy.root)
-    _, guard_issues = structure_guard(before, after, 附录集=附录集)
+    _, structure_issues = structure_guard(before, after, 附录集=附录集)
+
+    def body_text(files: dict[str, str]) -> str:
+        chunks: list[str] = []
+        for rel, content in sorted(files.items()):
+            if any(key in rel for key in ("源码", "代码", "摘要候选_")):
+                continue
+            chunks.append(content)
+        return "\n".join(chunks)
+
+    change_ok, change_ratio, change_detail = change_guard(
+        body_text(before),
+        body_text(after),
+        list(review_items or []),
+        上限=change_limit,
+    )
+    guard_issues = list(structure_issues)
+    if not change_ok:
+        guard_issues.append(
+            f"Change Guard 超限: ratio={change_ratio:.3f} > {change_limit:.3f}; "
+            f"detail={json.dumps(change_detail, ensure_ascii=False)}"
+        )
 
     # A failed agent leg is not allowed to leave partial file mutations behind,
     # even if those mutations happen to satisfy the structural guard.
@@ -135,11 +159,12 @@ async def guarded_text_repair(
 
         events.append_event(
             db,
-            "guard.structure_revert",
+            "guard.repair_revert",
             {
                 "node": node_key,
                 "issues": guard_issues,
                 "leg_status": status,
+                "change_limit": change_limit,
                 "kept_files": sorted(after),
             },
             run_id=run_id,
