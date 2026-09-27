@@ -239,3 +239,151 @@ async def test_g5_compiles_before_defect_hunter_and_passes(tmp_path: Path) -> No
         assert result["pass"] is True, result["issues"]
     finally:
         handle.workspace.db.close()
+
+
+# ==================== G5 authoritative rework closure (round2 P1-2) ====================
+
+def _seed_ledger(root: Path, rows: list[dict]) -> None:
+    """Build a valid S5 ledger carrier via 并入 → 快照, then apply overrides."""
+    from mmagent.mm.ledger.issue_ledger import IssueLedger
+    ledger = IssueLedger(前缀="审")
+    ledger.并入([
+        {k: v for k, v in row.items() if k not in ("状态", "尝试次数", "generation")}
+        for row in rows
+    ], 轮次=1)
+    snapshot = ledger.快照()
+    for row, overrides in zip(snapshot, rows, strict=True):
+        for k in ("状态", "尝试次数", "generation"):
+            if k in overrides:
+                row[k] = overrides[k]
+    (root / "台账").mkdir(parents=True, exist_ok=True)
+    (root / "台账" / "审稿台账.json").write_text(
+        json.dumps(snapshot, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+@pytest.mark.asyncio
+async def test_g5_rework_figure_receipt_then_verdict_resolves_issue(tmp_path: Path) -> None:
+    """R49: plotter receipt → 收回执(待复核) → hunter 逐项裁定 → 已消解，
+    且状态迁移持久化到台账 carrier（durable writeback）。"""
+    from mmagent.api.projects import create_project
+    from mmagent.mm.pipeline.s5_finalize import run_g5_rework
+    handle = create_project(tmp_path / "proj", name="g5fig", profile="快速")
+    try:
+        root = handle.workspace.root
+        _seed_publishable(root)
+        _seed_ledger(root, [{
+            "级别": "硬伤", "目标": "图", "定位": "问题3 图4",
+            "问题": "图内数字与正文不一致",
+        }])
+        db = handle.workspace.db
+        run_id = repositories.create_run(db, project_id=handle.project_id, profile="快速")
+        script = MockScript(
+            _write("p", "审稿/回执_G5R1_图问3.json",
+                   [{"id": "审-1-01", "改动": "同步图内数字为 3.14", "证据": "脚本 diff"}])
+            + _write("h", "审稿/G5复核1.json",
+                     {"通过": True, "依据版本": "当前PDF",
+                      "逐项": [{"id": "审-1-01", "裁定": "已消解", "理由": "图已同步"}]})
+            + _write("f", "审稿/G5复核.json", {"通过": True, "依据版本": "当前PDF"})
+        )
+        result = await run_g5_rework(
+            db, MockProvider(script), _registry(), PathPolicy(root), run_id,
+            beauty_baseline_pages=10, compile_paper=_compile,
+        )
+        assert result["pass"] is True, result["issues"]
+        assert result["rework_rounds"] == 1
+        # Durable writeback: transitions must be on disk, not just in memory.
+        rows = json.loads(
+            (root / "台账" / "审稿台账.json").read_text(encoding="utf-8")
+        )
+        assert rows[0]["状态"] == "已消解"
+        assert any(rc.get("receipt_id") == "g5r1_fig3" for rc in rows[0]["回执"])
+        assert any(h.get("裁定") == "已消解" for h in rows[0]["历史"])
+    finally:
+        handle.workspace.db.close()
+
+
+@pytest.mark.asyncio
+async def test_g5_rework_calc_upsert_preserves_s2_entries(tmp_path: Path) -> None:
+    """R50: 算类搁置 + 降级放行 upsert 不得清空 S2 的 question 条目。"""
+    from mmagent.api.projects import create_project
+    from mmagent.mm.contracts.degraded_release import (
+        DegradedQuestionEntry,
+        read_degraded_release,
+        write_degraded_release,
+    )
+    from mmagent.mm.pipeline.s5_finalize import run_g5_rework
+    handle = create_project(tmp_path / "proj", name="g5calc", profile="快速")
+    try:
+        root = handle.workspace.root
+        _seed_publishable(root)
+        _seed_ledger(root, [{
+            "级别": "正确性", "目标": "算", "定位": "问题2 结果",
+            "问题": "求解结果无法复现", "尝试次数": 2,
+        }])
+        write_degraded_release(root, question_entries=[
+            DegradedQuestionEntry(question=2, issues=["输入数据缺失"], source_stage="S2")
+        ])
+        db = handle.workspace.db
+        run_id = repositories.create_run(db, project_id=handle.project_id, profile="快速")
+        script = MockScript(
+            _write("h", "审稿/G5复核1.json", {"通过": True, "依据版本": "当前PDF"})
+            + _write("f", "审稿/G5复核.json", {"通过": True, "依据版本": "当前PDF"})
+        )
+        result = await run_g5_rework(
+            db, MockProvider(script), _registry(), PathPolicy(root), run_id,
+            beauty_baseline_pages=10, compile_paper=_compile,
+        )
+        assert result["pass"] is True, result["issues"]
+        carrier = read_degraded_release(root)
+        assert carrier is not None
+        # S2 question entry preserved alongside the G5 review-issue entry.
+        assert any(q.question == 2 for q in carrier.questions)
+        assert any(e.id == "审-1-01" and e.generation == 0 for e in carrier.review_issues)
+        rows = json.loads(
+            (root / "台账" / "审稿台账.json").read_text(encoding="utf-8")
+        )
+        assert rows[0]["状态"] == "搁置"
+    finally:
+        handle.workspace.db.close()
+
+
+@pytest.mark.asyncio
+async def test_g5_rework_stale_verdict_generation_is_rejected(tmp_path: Path) -> None:
+    """CAS fail-closed：hunter 带过期 generation 的裁定不得翻转条目状态。"""
+    from mmagent.api.projects import create_project
+    from mmagent.mm.pipeline.s5_finalize import run_g5_rework
+    handle = create_project(tmp_path / "proj", name="g5stale", profile="快速")
+    try:
+        root = handle.workspace.root
+        _seed_publishable(root)
+        _seed_ledger(root, [{
+            "级别": "硬伤", "目标": "图", "定位": "问题3 图4",
+            "问题": "图内数字与正文不一致",
+        }])
+        db = handle.workspace.db
+        run_id = repositories.create_run(db, project_id=handle.project_id, profile="快速")
+        script = MockScript(
+            _write("p", "审稿/回执_G5R1_图问3.json",
+                   [{"id": "审-1-01", "改动": "同步图内数字", "证据": "diff"}])
+            + _write("h", "审稿/G5复核1.json",
+                     {"通过": True, "依据版本": "当前PDF",
+                      "逐项": [{"id": "审-1-01", "generation": 99,
+                                "裁定": "已消解", "理由": "过期裁定"}]})
+            + _write("f", "审稿/G5复核.json", {"通过": True, "依据版本": "当前PDF"})
+        )
+        result = await run_g5_rework(
+            db, MockProvider(script), _registry(), PathPolicy(root), run_id,
+            beauty_baseline_pages=10, compile_paper=_compile,
+        )
+        # Receipt moved the issue to 待复核; the stale verdict must not have
+        # resolved it.  At loop end the missed-verdict path honestly marks it
+        # 评审未裁 (待改), so the mechanical gate still sees an active row.
+        rows = json.loads(
+            (root / "台账" / "审稿台账.json").read_text(encoding="utf-8")
+        )
+        assert rows[0]["状态"] != "已消解"
+        assert any(h.get("裁定") == "评审未裁" for h in rows[0]["历史"])
+        assert result["pass"] is False
+    finally:
+        handle.workspace.db.close()

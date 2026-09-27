@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from mmagent.mm.audit import audit_paper
-from mmagent.mm.contracts.final_contracts import PageReviewArtifact
+from mmagent.mm.contracts.final_contracts import PageReviewArtifact, PublicationReviewVerdict
 from mmagent.mm.gates.g5 import check_g5
 from mmagent.mm.pipeline.compile_runtime import run_compile
 from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
@@ -216,6 +216,38 @@ async def run_s6(
             "pass": False,
             "issues": [f"S6 terminal publication gate 失败: {terminal_issues}"],
         }
+
+    # 外审 round2 P1-5: fresh terminal current-PDF defect review on the
+    # post-S6-fix revision.  Unique node + artifact so it can never reuse the
+    # pre-S6 G5 review; harvest only happens after this passes too.
+    terminal_review_rel = "审稿/S6终审复核.json"
+    review_status = await _leg(
+        db, provider, registry, policy, run_id,
+        role_id="defect_hunter", node="S6:出版终审",
+        instructions=(
+            f"只基于刚编译的当前 PDF 做出版终审，写 {terminal_review_rel}。"
+            "顶层给出 通过(boolean)，并注明依据版本/页码。不得用旧 PDF 判断。"
+        ),
+        expected=[ExpectedArtifact(rel_path=terminal_review_rel,
+                                   schema_model=PublicationReviewVerdict)],
+        cancel=cancel,
+    )
+    terminal_review_pass = False
+    if review_status == "SUCCEEDED":
+        try:
+            data = json.loads(
+                (policy.root / terminal_review_rel).read_text(encoding="utf-8")
+            )
+            terminal_review_pass = isinstance(data, dict) and bool(data.get("通过", False))
+        except (OSError, json.JSONDecodeError):
+            terminal_review_pass = False
+    if not terminal_review_pass:
+        events.append_event(
+            db, "s6.terminal_review_failed",
+            {"status": review_status, "node": "S6:出版终审"},
+            run_id=run_id,
+        )
+        return {"pass": False, "issues": ["S6 出版终审复核未通过"]}
 
     metrics = _run_metrics(db, run_id)
     metrics_path = policy.root / "审稿" / "回流账.json"

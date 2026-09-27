@@ -79,7 +79,7 @@ class TestDegradedReleaseContract:
         # S5 adds review issue
         carrier = read_degraded_release(tmp_path)
         carrier.review_issues.append(DegradedReviewIssueEntry(id="审-2-01", generation=1))
-        write_path = write_degraded_release(
+        write_degraded_release(
             tmp_path,
             question_entries=carrier.questions,
             review_issue_entries=carrier.review_issues,

@@ -44,3 +44,14 @@
   Responses continuation_items、safe_json/parse_retry_after/stop fail-closed、ProviderConfig ref 校验。117→124 测试。
 - 03:20 R2：1 P1（parse_retry_after 未接线 429 路径）。修复 + generate() 级集成测试 4 场景。124→129。
 - 03:30 R3：GO。tag v0.3.0。
+- 09-27 Round2 收口：G5 返工真闭包（图/文强制回执→收回执→逐项裁定 gen CAS→已消解/未消解、
+  算路 upsert 降级放行保 S2 条目、每轮台账落盘、有降级记录的存活条目返工耗尽后回搁置）。
+- 09-27 S5 熔断升格真实化：必选回执 artifact、started/succeeded/failed 事件按状态落账、
+  运行时收回执、每 (id,generation) 一次、终轮熔断必执行；修 len(bool) 崩溃
+  （checkpoint.s5_escalation_extension 从未被测试暴露）。
+- 09-27 S5 升格耗尽→Runtime 登记 (id,generation) 精确降级放行 + 搁置；G5 端回搁置闭环。
+- 09-27 S6 终局：修复后重跑机械 G5 + 新鲜当前 PDF 硬伤终审（S6:出版终审/审稿/S6终审复核.json，
+  defect_hunter scope 扩展），两者都过才 harvest。
+- 09-27 删手工 append 事件的伪测试，换 run_s5/run_g5_rework/run_s6 真实路径行为测试 8 条。
+- 09-27 全量回归 416 passed / 0 failed，Ruff clean。FIDELITY_MATRIX A17/A20/B7/A21 证据更新。
+- 09-27 下一步：重生成 review packet → Round 3 外审。

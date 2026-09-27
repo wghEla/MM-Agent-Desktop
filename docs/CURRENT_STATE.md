@@ -1,8 +1,8 @@
 # CURRENT_STATE — fidelity rebuild on gpt/fidelity-rebuild
 
 Branch: `gpt/fidelity-rebuild`
-HEAD: current branch contains GPT Round 2 source-only patches after the locally verified `c8b85425742d7b42505f16dbc3ef7854aa2ac763`
-Tests: **last locally verified: 408 passed / 0 failed + Ruff clean at `c8b8542`; Round 2 reviewer patches after that are UNVERIFIED**
+HEAD: Round-2 P1 closure implementation (see "External source review Round 2 — closure" below)
+Tests: **locally verified: 416 passed / 0 failed + Ruff clean** (full suite, this HEAD)
 
 ## Version tags (historical, unchanged)
 
@@ -83,3 +83,47 @@ Round-1 P1 status after source audit:
 - P1-6 fidelity evidence inflation: OPEN — several tests still prove manually-created events/source presence instead of production behavior.
 
 Round 2 reviewer patches are source-only and must be locally regression-tested before any of the above source patches are called closed.
+
+
+## External source review Round 2 — closure — 2026-09-27
+
+All Round-2 reviewer patches were locally regression-tested (full suite green),
+then each OPEN P1 was closed with production-path implementations and real
+`run_s5()` / `run_g5_rework()` / `run_s6()` behavior tests:
+
+- **P1-2 G5 authoritative closure — CLOSED.** `run_g5_rework` now requires
+  repair receipts from figure (`审稿/回执_G5R{n}_图问{q}.json`) and text
+  (`审稿/回执_G5R{n}_文.json`) legs, injects them via `收回执` (待复核),
+  applies per-issue hunter verdicts with generation CAS via `收裁定`
+  (已消解/未消解), upserts exact degraded-release records for calc items
+  (preserving S2 question entries), durably writes the ledger carrier back
+  every round, and restores disclosed-degraded items to 搁置 after the
+  bounded extra chances (items without a record stay active → fail-closed).
+  Tests: `test_s5_finalize.py::test_g5_rework_figure_receipt_then_verdict_resolves_issue`,
+  `::test_g5_rework_calc_upsert_preserves_s2_entries`,
+  `::test_g5_rework_stale_verdict_generation_is_rejected`.
+- **P1-3 S5 fuse escalation — CLOSED.** Escalation runs a real role leg with
+  a required receipt (`审稿/回执_升格_{id}_g{gen}.json`), status-gated
+  `s5.escalation_started/succeeded/failed` events, runtime-owned `收回执`,
+  once-per-(issue,generation) via event query, post-fuse convergence
+  re-check, and final-round fuse processing. Also fixed a latent
+  `len(bool)` crash in the `checkpoint.s5_escalation_extension` event.
+  Tests: `test_s5_review.py::test_s5_escalation_runs_real_leg_then_degrades_after_exhaustion`,
+  `::test_s5_escalation_leg_without_receipt_fails_and_degrades_later`.
+- **P1-4 degraded-release producer — CLOSED.** When an escalation for
+  (issue, generation) already ran and the issue is still a fuse candidate,
+  the Runtime registers an exact degraded-release record
+  (`upsert_degraded_review_issue`, preserving S2 namespace) and shelves the
+  issue with `s5.degraded_release_registered`. G5's re-shelve closure then
+  honors the disclosed record at the publication gate.
+- **P1-5 S6 terminal review — CLOSED.** After S6's own fixes and final
+  compile, S6 reruns mechanical G5 and adds a fresh terminal current-PDF
+  defect review (unique `S6:出版终审` node + `审稿/S6终审复核.json`;
+  `defect_hunter` write scope extended). Harvest happens only after both
+  pass. Test: `test_s6_finalize.py::test_s6_terminal_defect_review_gates_harvest`.
+- **P1-6 evidence inflation — CLOSED for the flagged items.** The manual
+  event-append escalation tests were deleted and replaced by the real-path
+  tests above; `TestG5Rework` import/no-op tests superseded by behavioral
+  G5 rework tests. A17/A20/B7/A21 matrix evidence updated accordingly.
+
+Next: round-3 external review with the regenerated packet.

@@ -210,8 +210,9 @@ def _provider_script() -> MockScript:
     # G5 final defect verification
     turns += _write("g5", "审稿/G5复核.json", {"通过": True, "依据版本": "当前PDF", "页码": [1]})
 
-    # S6 final page review + retrospective
+    # S6 final page review + terminal defect review + retrospective
     turns += _write("s6f", "审稿/终审_1.json", {"页问题": [], "美观分": 9.1})
+    turns += _write("s6t", "审稿/S6终审复核.json", {"通过": True, "依据版本": "当前PDF"})
     turns += _write("s6r", "审稿/复盘报告.json", {
         "总评": "全链完成",
         "回流账": "见 审稿/回流账.json",

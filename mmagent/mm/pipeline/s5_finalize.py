@@ -15,6 +15,7 @@ from mmagent.mm.gates.g5 import check_g5
 from mmagent.mm.guards.guards import page_guard
 from mmagent.mm.pipeline.compile_runtime import run_compile
 from mmagent.mm.pipeline.plot_runtime import run_question_plot_scripts
+from mmagent.mm.pipeline.s5_review import _write_ledger_view
 from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.base import BaseProvider
 from mmagent.state import events
@@ -319,6 +320,7 @@ async def run_g5_rework(
         IssueLedger,
         待改,
         搁置,
+        未消解,
         阻塞级别,
     )
     compiler = compile_paper or _default_compile
@@ -354,43 +356,93 @@ async def run_g5_rework(
             # No blocking issues left — G5 can pass
             break
 
-        # R49: Figure route
+        # R49: Figure route with required receipts
         figure_items = [x for x in blocking if x.目标 == "图"]
+        figure_receipts: list[dict] = []
         if figure_items:
             for item in figure_items:
                 q = _question_from_issue({"定位": item.定位, "问题": item.问题})
                 if q is None:
                     continue
-                await _leg(
+                receipt_rel = f"审稿/回执_G5R{rework_n}_图问{q}.json"
+                status = await _leg(
                     db, provider, registry, policy, run_id,
                     stage="G5", role_id="plotter", node=f"G5:R{rework_n}:图问{q}",
                     question_num=q,
                     instructions=(
                         f"【G5返工·改图】第{rework_n}次返工。改绘图脚本（只改不跑），"
-                        f"按台账条目同步图内数字/标注。"
+                        f"按台账条目同步图内数字/标注。完成后写 {receipt_rel}，"
+                        f'JSON 数组格式 [{{"id": "{item.id}", "改动": "...", "证据": "..."}}]。'
                     ),
-                    expected=[], cancel=cancel,
+                    expected=[ExpectedArtifact(rel_path=receipt_rel)], cancel=cancel,
                 )
+                if status == "SUCCEEDED":
+                    receipt_full = policy.root / receipt_rel
+                    if receipt_full.is_file():
+                        try:
+                            receipts = json.loads(receipt_full.read_text(encoding="utf-8"))
+                            if isinstance(receipts, list):
+                                for r in receipts:
+                                    r["generation"] = item.generation
+                                    r["receipt_id"] = f"g5r{rework_n}_fig{q}"
+                                figure_receipts.extend(receipts)
+                        except (json.JSONDecodeError, OSError):
+                            pass
                 await run_question_plot_scripts(registry, policy, q, cancel=cancel)
+        if figure_receipts:
+            ledger.收回执(figure_receipts, 腿名=f"G5返工图{rework_n}")
 
-        # R50: Calc route → shelve (no recalc at publication gate)
+        # R50: Calc route → shelve + degraded release (no recalc at publication gate)
         calc_items = [x for x in blocking if x.目标 == "算"]
-        for x in calc_items:
-            ledger.搁置条目(x.id, "G5 无算路（出版前重算风险大），交复盘/人工")
+        if calc_items:
+            from mmagent.mm.contracts.degraded_release import upsert_degraded_review_issue
+            for x in calc_items:
+                # upsert preserves S2 question entries and other generations;
+                # a full write here would wipe them.
+                upsert_degraded_review_issue(
+                    policy.root,
+                    issue_id=x.id,
+                    generation=x.generation,
+                    severity=x.级别,
+                    reason="G5 无算路，出版前重算风险大",
+                    source_stage="G5",
+                )
+                ledger.搁置条目(x.id, "G5 无算路（出版前重算风险大），交复盘/人工")
 
-        # Text route → writer
+        # Text route → writer with required receipts
         text_items = [x for x in ledger.待改条目(级别们=list(阻塞级别)) if x.目标 != "算"]
+        text_receipts: list[dict] = []
         if text_items:
-            await _leg(
+            receipt_rel = f"审稿/回执_G5R{rework_n}_文.json"
+            issue_ids = ",".join(x.id for x in text_items)
+            status = await _leg(
                 db, provider, registry, policy, run_id,
                 stage="G5", role_id="writer", node=f"G5:R{rework_n}:文",
                 instructions=(
-                    f"【G5返工】第{rework_n}次返工。只改编号点名处，"
+                    f"【G5返工】第{rework_n}次返工。只改编号点名处（{issue_ids}），"
                     "不许删除 \\cite，不许整章移附录，"
-                    f"共 {len(text_items)} 条。"
+                    f"共 {len(text_items)} 条。完成后写 {receipt_rel}，"
+                    f'JSON 数组格式 [{{"id": "...", "改动": "...", "证据": "..."}}]。'
                 ),
-                expected=[], cancel=cancel,
+                expected=[ExpectedArtifact(rel_path=receipt_rel)], cancel=cancel,
             )
+            if status == "SUCCEEDED":
+                receipt_full = policy.root / receipt_rel
+                if receipt_full.is_file():
+                    try:
+                        receipts = json.loads(receipt_full.read_text(encoding="utf-8"))
+                        if isinstance(receipts, list):
+                            for r in receipts:
+                                r["generation"] = next(
+                                    (x.generation for x in text_items if x.id == r.get("id")),
+                                    0,
+                                )
+                                r["receipt_id"] = f"g5r{rework_n}_txt_{r.get('id', 'unknown')}"
+                            text_receipts.extend(receipts)
+                    except (json.JSONDecodeError, OSError):
+                        pass
+        if text_receipts:
+            ledger.收回执(text_receipts, 腿名=f"G5返工文{rework_n}")
 
         # R51: Compile before re-check
         compiled = await run_compile(compiler, policy.root, cancel=cancel)
@@ -405,13 +457,16 @@ async def run_g5_rework(
                                      "baseline": beauty_baseline_pages},
                                     run_id=run_id)
 
-        # Defect hunter re-check on new PDF
+        # Defect hunter re-check on new PDF + per-issue ledger verdicts
         review_rel = f"审稿/G5复核{rework_n}.json"
         status = await _leg(
             db, provider, registry, policy, run_id,
             stage="G5", role_id="defect_hunter", node=f"G5:R{rework_n}:复核",
             instructions=(
                 f"G5 复核（第{rework_n}次）。只基于刚编译的当前 PDF，写 {review_rel}。"
+                "顶层给出 通过(boolean)。"
+                "同时逐条裁定原台账条目："
+                'JSON {"通过": bool, "逐项": [{"id": "...", "generation": N, "裁定": "已消解|未消解", "理由": "..."}]}。'
             ),
             expected=[ExpectedArtifact(rel_path=review_rel,
                                        schema_model=PublicationReviewVerdict)],
@@ -422,6 +477,18 @@ async def run_g5_rework(
             try:
                 data = json.loads((policy.root / review_rel).read_text(encoding="utf-8"))
                 new_pass = isinstance(data, dict) and bool(data.get("通过", False))
+                # Per-issue ledger verdict transitions (待复核 → 已消解/未消解).
+                # The recheck leg reviewed the current PDF against the current
+                # ledger state, so an omitted generation means the current one;
+                # an explicitly stale generation is still rejected by the CAS
+                # inside 收裁定.
+                verdicts = [v for v in (data.get("逐项") or []) if isinstance(v, dict)]
+                if verdicts:
+                    current_gen = {x.id: x.generation for x in ledger.条目}
+                    for v in verdicts:
+                        if v.get("generation") is None:
+                            v["generation"] = current_gen.get(str(v.get("id", "")).strip())
+                    ledger.收裁定(verdicts, 轮次=ledger.轮次)
             except (OSError, json.JSONDecodeError):
                 new_pass = False
 
@@ -430,8 +497,32 @@ async def run_g5_rework(
             {"rework": rework_n, "pass": new_pass, "pages": pages},
             run_id=run_id,
         )
+
+        # Durable ledger writeback (外审 round2 P1-2): persist 待复核/已消解/
+        # 未消解/搁置 transitions to the carrier + view so a crash between
+        # the rework mutation and run_g5's final check cannot resurrect
+        # resolved issues as blocking.
+        _write_ledger_view(policy, ledger)
+
         if new_pass:
             break
+
+    # Bounded G5 extra chances exhausted.  Items the S5 Runtime already
+    # registered for degraded release (exact id+generation record in
+    # 交接/降级放行.json) that are still active go back to 搁置 so the
+    # disclosed approval applies.  Items without a record stay active → the
+    # final gate below fails closed.  Missed verdicts (待复核) must not
+    # default-pass either.
+    from mmagent.mm.contracts.degraded_release import is_issue_degraded
+    ledger.待复核未裁()
+    for x in ledger.条目:
+        if (
+            x.级别 in 阻塞级别
+            and x.状态 in (待改, 未消解)
+            and is_issue_degraded(policy.root, x.id, x.generation)
+        ):
+            ledger.搁置条目(x.id, "G5 返工未消解，维持降级放行")
+    _write_ledger_view(policy, ledger)
 
     # Final authoritative check must include a fresh current-PDF defect review,
     # not only mechanical checks.  run_g5 uses a distinct final-review node

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from mmagent.mm.audit import audit_paper
+from mmagent.mm.contracts.degraded_release import upsert_degraded_review_issue
 from mmagent.mm.contracts.s5_contracts import ReviewArtifact
 from mmagent.mm.gates.g4 import check_g4
 from mmagent.mm.ledger.issue_ledger import (
@@ -627,13 +628,127 @@ async def run_s5(
             run_id=run_id,
         )
 
-        if converged or round_num >= max_rounds:
+        # Fuse processing: escalate blocking, shelve narrative (ALWAYS runs, even on final round)
+        escalated_this_round = False
+        escalated_count = 0
+        prior_escalations: set[str] = set()
+        for ev in events.query_events(db, run_id=run_id, type="s5.escalation_succeeded"):
+            ek = f"{ev.payload.get('issue_id')}:{ev.payload.get('generation')}"
+            prior_escalations.add(ek)
+        for ev in events.query_events(db, run_id=run_id, type="s5.escalation_failed"):
+            ek = f"{ev.payload.get('issue_id')}:{ev.payload.get('generation')}"
+            prior_escalations.add(ek)
+        for item in ledger.熔断候选(阈值=2):
+            ek = f"{item.id}:{item.generation}"
+            if item.级别 in ("硬伤", "正确性"):
+                if ek in prior_escalations:
+                    # 外审 round2 P1-4: escalation for this generation already
+                    # ran (succeeded or failed) and the issue is still a fuse
+                    # candidate → escalation is exhausted.  Only the Runtime
+                    # may authorize degraded release; register the exact
+                    # (id, generation) record and shelve for 复盘/人工.
+                    upsert_degraded_review_issue(
+                        policy.root,
+                        issue_id=item.id,
+                        generation=item.generation,
+                        severity=item.级别,
+                        reason="S5 升格重做已耗尽，登记降级放行",
+                        source_stage="S5",
+                    )
+                    ledger.搁置条目(item.id, "升格重做已耗尽，登记降级放行")
+                    events.append_event(
+                        db, "s5.degraded_release_registered",
+                        {"issue_id": item.id, "generation": item.generation,
+                         "round": round_num},
+                        run_id=run_id,
+                    )
+                    continue
+                needs_escalation.append(item.id)
+                escalated_this_round = True
+                escalated_count += 1
+                role_id = {"算": "modeler", "图": "plotter", "文": "writer"}.get(item.目标, "writer")
+                esc_node = f"S5:R{round_num}:升格{item.id}"
+                receipt_path = f"审稿/回执_升格_{item.id}_g{item.generation}.json"
+                events.append_event(
+                    db, "s5.escalation_started",
+                    {"issue_id": item.id, "generation": item.generation,
+                     "round": round_num, "role": role_id},
+                    run_id=run_id,
+                )
+                esc_status = await run_role_leg(
+                    db, provider, registry, policy, run_id,
+                    stage_key="S5", role_id=role_id, node_key=esc_node,
+                    instructions=(
+                        f"【升格】台账条目 {item.id} 两次定向修订仍未消解。"
+                        f"换一种技术路线或上下文重做。不改已通过的指标。"
+                        f"完成后写 {receipt_path}，JSON 数组格式 [{{\"id\": \"{item.id}\", \"改动\": \"...\", \"证据\": \"...\"}}]。"
+                    ),
+                    expected_artifacts=[ExpectedArtifact(rel_path=receipt_path)], cancel=cancel,
+                )
+                if esc_status == "SUCCEEDED":
+                    # Runtime-owned receipt injection into ledger
+                    receipt_path_full = policy.root / receipt_path
+                    receipts: list[dict] = []
+                    if receipt_path_full.is_file():
+                        try:
+                            receipts = json.loads(receipt_path_full.read_text(encoding="utf-8"))
+                        except (json.JSONDecodeError, OSError):
+                            pass
+                    if not receipts:
+                        receipts = [{"id": item.id, "改动": "升格重做完成", "证据": esc_node}]
+                    import uuid as _uuid
+                    for r in receipts:
+                        r["receipt_id"] = str(_uuid.uuid4())
+                        r["generation"] = item.generation
+                    ledger.收回执(receipts, 腿名=esc_node)
+                    events.append_event(
+                        db, "s5.escalation_succeeded",
+                        {"issue_id": item.id, "generation": item.generation,
+                         "round": round_num, "role": role_id, "receipts": len(receipts)},
+                        run_id=run_id,
+                    )
+                else:
+                    events.append_event(
+                        db, "s5.escalation_failed",
+                        {"issue_id": item.id, "generation": item.generation,
+                         "round": round_num, "role": role_id, "status": esc_status},
+                        run_id=run_id,
+                    )
+                continue
+            ledger.搁置条目(item.id, "两次定向修订仍未消解")
+
+        # Persist shelve/degraded-registration before any break path so the
+        # carrier on disk always matches the post-fuse ledger state.
+        _write_ledger_view(policy, ledger)
+
+        # Post-fuse convergence check
+        converged, blocking = ledger.收敛()
+        round_info["converged"] = converged
+        round_info["blocking"] = len(blocking)
+
+        if converged:
             events.append_event(
                 db,
                 "checkpoint.s5_round_complete",
                 {
                     "round": round_num,
-                    "converged": converged,
+                    "converged": True,
+                    "ledger": ledger.快照(),
+                    "round_info": round_info,
+                },
+                run_id=run_id,
+            )
+            break
+
+        # Break only if: final round AND no escalation was started this round
+        # (escalation gives the issue one more round for reviewer re-verdict)
+        if round_num >= max_rounds and not escalated_this_round:
+            events.append_event(
+                db,
+                "checkpoint.s5_round_complete",
+                {
+                    "round": round_num,
+                    "converged": False,
                     "ledger": ledger.快照(),
                     "round_info": round_info,
                     "needs_escalation": needs_escalation,
@@ -642,37 +757,14 @@ async def run_s5(
             )
             break
 
-        # Fuse processing: escalate blocking, shelve narrative
-        prior_escalations = set()
-        for ev in events.query_events(db, run_id=run_id, type="s5.escalation_executed"):
-            ek = f"{ev.payload.get('issue_id')}:{ev.payload.get('generation')}"
-            prior_escalations.add(ek)
-        for item in ledger.熔断候选(阈值=2):
-            key = f"{item.id}:{item.generation}"
-            if item.级别 in ("硬伤", "正确性"):
-                if key not in prior_escalations:
-                    needs_escalation.append(item.id)
-                    role_id = {"算": "modeler", "图": "plotter", "文": "writer"}.get(item.目标, "writer")
-                    esc_node = f"S5:R{round_num}:升格{item.id}"
-                    await run_role_leg(
-                        db, provider, registry, policy, run_id,
-                        stage_key="S5", role_id=role_id, node_key=esc_node,
-                        instructions=(
-                            f"【升格】台账条目 {item.id} 两次定向修订仍未消解。"
-                            f"换一种技术路线或上下文重做。不改已通过的指标。"
-                            f"完成后写回执。"
-                        ),
-                        expected_artifacts=[], cancel=cancel,
-                    )
-                    events.append_event(
-                        db, "s5.escalation_executed",
-                        {"issue_id": item.id, "generation": item.generation,
-                         "round": round_num, "role": role_id},
-                        run_id=run_id,
-                    )
-                    # Issue stays in 待改 for next-round re-review
-                continue
-            ledger.搁置条目(item.id, "两次定向修订仍未消解")
+        if round_num >= max_rounds and escalated_this_round:
+            # Allow one extra round for escalation re-verdict
+            events.append_event(
+                db,
+                "checkpoint.s5_escalation_extension",
+                {"round": round_num, "escalated": escalated_count},
+                run_id=run_id,
+            )
 
         round_info["rework"] = await _run_rework(
             db, provider, registry, policy, run_id, round_num, ledger, cancel=cancel

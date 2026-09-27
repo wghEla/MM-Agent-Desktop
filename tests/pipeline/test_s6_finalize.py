@@ -76,6 +76,7 @@ async def test_s6_final_review_harvest_and_retrospective(tmp_path: Path) -> None
         )
         script = MockScript(
             _write("f", "审稿/终审_1.json", {"页问题": [], "美观分": 9.0})
+            + _write("t", "审稿/S6终审复核.json", {"通过": True, "依据版本": "当前PDF"})
             + _write("r", "审稿/复盘报告.json", {"总评": "完成", "回流账": "见回流账.json"})
         )
         result = await run_s6(
@@ -139,6 +140,7 @@ async def test_s6_figure_fix_reruns_plot_script(tmp_path: Path) -> None:
                 ]),
                 MockTurn(text="终审改图完成"),
             ]
+            + _write("t", "审稿/S6终审复核.json", {"通过": True, "依据版本": "当前PDF"})
             + _write("r", "审稿/复盘报告.json", {
                 "总评": "完成",
                 "回流账": "见回流账.json",
@@ -152,5 +154,44 @@ async def test_s6_figure_fix_reruns_plot_script(tmp_path: Path) -> None:
         assert (root / "求解" / "问题1" / "图片" / "s6-rerun.marker").read_text(
             encoding="utf-8"
         ) == "rerun"
+    finally:
+        handle.workspace.db.close()
+
+
+@pytest.mark.asyncio
+async def test_s6_terminal_defect_review_gates_harvest(tmp_path: Path) -> None:
+    """P1-5: the fresh S6 terminal current-PDF defect review (unique node +
+    artifact) must gate the harvest; a rejecting review blocks delivery."""
+    from mmagent.api.projects import create_project
+
+    handle = create_project(tmp_path / "proj-treview", name="s6-treview", profile="快速")
+    try:
+        root = handle.workspace.root
+        (root / "论文" / "论文.tex").write_text("最终正文", encoding="utf-8")
+        _seed_terminal_gate(root)
+        run_id = repositories.create_run(
+            handle.workspace.db, project_id=handle.project_id, profile="快速"
+        )
+        script = MockScript(
+            _write("f", "审稿/终审_1.json", {"页问题": [], "美观分": 9.0})
+            + _write("t", "审稿/S6终审复核.json",
+                     {"通过": False, "依据版本": "当前PDF", "页码": [3]})
+        )
+        result = await run_s6(
+            handle.workspace.db, MockProvider(script), _registry(), PathPolicy(root), run_id,
+            compile_paper=_compile, render_pages=_render, beauty_baseline_pages=10,
+        )
+        assert result["pass"] is False
+        assert any("出版终审" in x for x in result["issues"])
+        # Harvest and the completion checkpoint must not have happened.
+        assert not (root / "交付" / "论文.pdf").is_file()
+        done = events.query_events(
+            handle.workspace.db, run_id=run_id, type="checkpoint.s6_complete"
+        )
+        assert not done
+        failed = events.query_events(
+            handle.workspace.db, run_id=run_id, type="s6.terminal_review_failed"
+        )
+        assert len(failed) == 1
     finally:
         handle.workspace.db.close()
