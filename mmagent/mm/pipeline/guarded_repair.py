@@ -126,12 +126,11 @@ async def guarded_text_repair(
             target.write_text(content, encoding="utf-8")
         _restore_tex(policy.root, before)
 
-        # If the role task itself sealed SUCCEEDED but the outer guard rejects
-        # the mutation, remove the receipt.  A later node reuse must fail
-        # artifact verification rather than resurrect a receipt for reverted
-        # changes.
+        # A reverted/failed repair must never leave a receipt behind.
+        # Otherwise a later retry could satisfy artifact verification with
+        # stale evidence from the rejected attempt.
+        (policy.root / receipt_rel).unlink(missing_ok=True)
         if status == "SUCCEEDED":
-            (policy.root / receipt_rel).unlink(missing_ok=True)
             status = "REVERTED"
 
         events.append_event(
