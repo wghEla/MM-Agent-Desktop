@@ -449,3 +449,49 @@ async def test_compatible_profile_extra_round_trip_both_capabilities(tmp_path) -
         assert stored["reasoning_effort"] is True
     finally:
         db.close()
+
+
+
+@pytest.mark.asyncio
+async def test_compatible_connection_falls_back_to_real_chat_when_models_missing() -> None:
+    """A relay without /models must still pass Test Connection when its actual
+    configured chat path/model works."""
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        if request.method == "GET" and request.url.path.endswith("/models"):
+            return httpx.Response(404, text="not implemented")
+        if request.method == "POST" and request.url.path.endswith("/chat/completions"):
+            payload = json.loads(request.content)
+            assert payload["model"] == "m1"
+            assert payload["max_tokens"] == 1
+            assert "reasoning_effort" not in payload
+            return httpx.Response(200, json={
+                "id": "c1",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "m1",
+                "choices": [{
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "OK"},
+                }],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 1},
+            })
+        return httpx.Response(500)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    p = OpenAICompatibleProvider(
+        "https://relay.test/v1",
+        lambda: "k",
+        client=client,
+        test_model="m1",
+    )
+    try:
+        result = await p.test_connection()
+        assert result["ok"] is True
+        assert "chat fallback 成功" in result["detail"]
+        assert [req.method for req in captures] == ["GET", "POST"]
+    finally:
+        await client.aclose()
