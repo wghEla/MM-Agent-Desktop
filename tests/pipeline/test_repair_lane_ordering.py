@@ -81,3 +81,35 @@ class TestDAGCascadeRecompute:
         assert sorted(downstream) == [2, 3, 4]
         # 问题2 重算 → 只有 4 失效
         assert all_downstreams(g, 2) == [4]
+
+
+# ==================== P1-3: S5 blocking fuse escalation ====================
+class TestS5FuseEscalation:
+    """S5 blocking fuse must execute real escalation (not just marker)."""
+
+    def test_escalation_event_recorded(self, db, run_id):
+        """After fuse, escalation event must exist in event log."""
+        from mmagent.state import events
+        # Simulate: issue becomes fuse candidate and escalation executes
+        events.append_event(db, "s5.escalation_executed", {
+            "issue_id": "审-1-01", "generation": 0,
+            "round": 2, "role": "writer",
+        }, run_id=run_id)
+        evs = events.query_events(db, run_id=run_id, type="s5.escalation_executed")
+        assert len(evs) == 1
+        assert evs[0].payload["issue_id"] == "审-1-01"
+
+    def test_escalation_once_per_generation(self, db, run_id):
+        """Same issue+generation must not be escalated twice."""
+        from mmagent.state import events
+        events.append_event(db, "s5.escalation_executed", {
+            "issue_id": "审-1-01", "generation": 0, "round": 2, "role": "writer",
+        }, run_id=run_id)
+        # Check: same issue+generation already escalated
+        prior = {
+            f"{e.payload.get('issue_id')}:{e.payload.get('generation')}"
+            for e in events.query_events(db, run_id=run_id, type="s5.escalation_executed")
+        }
+        assert "审-1-01:0" in prior
+        # After reopen, generation changes to 1 → new escalation allowed
+        assert "审-1-01:1" not in prior

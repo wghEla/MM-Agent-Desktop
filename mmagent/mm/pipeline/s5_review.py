@@ -642,10 +642,35 @@ async def run_s5(
             )
             break
 
+        # Fuse processing: escalate blocking, shelve narrative
+        prior_escalations = set()
+        for ev in events.query_events(db, run_id=run_id, type="s5.escalation_executed"):
+            ek = f"{ev.payload.get('issue_id')}:{ev.payload.get('generation')}"
+            prior_escalations.add(ek)
         for item in ledger.熔断候选(阈值=2):
+            key = f"{item.id}:{item.generation}"
             if item.级别 in ("硬伤", "正确性"):
-                if item.id not in needs_escalation:
+                if key not in prior_escalations:
                     needs_escalation.append(item.id)
+                    role_id = {"算": "modeler", "图": "plotter", "文": "writer"}.get(item.目标, "writer")
+                    esc_node = f"S5:R{round_num}:升格{item.id}"
+                    await run_role_leg(
+                        db, provider, registry, policy, run_id,
+                        stage_key="S5", role_id=role_id, node_key=esc_node,
+                        instructions=(
+                            f"【升格】台账条目 {item.id} 两次定向修订仍未消解。"
+                            f"换一种技术路线或上下文重做。不改已通过的指标。"
+                            f"完成后写回执。"
+                        ),
+                        expected_artifacts=[], cancel=cancel,
+                    )
+                    events.append_event(
+                        db, "s5.escalation_executed",
+                        {"issue_id": item.id, "generation": item.generation,
+                         "round": round_num, "role": role_id},
+                        run_id=run_id,
+                    )
+                    # Issue stays in 待改 for next-round re-review
                 continue
             ledger.搁置条目(item.id, "两次定向修订仍未消解")
 
