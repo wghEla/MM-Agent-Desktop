@@ -169,7 +169,7 @@ def test_g5_blocks_unapproved_blocking_shelved_issue(tmp_path: Path) -> None:
     from mmagent.mm.audit import audit_paper
     audit_paper(root)
     (root / "台账" / "审稿台账.json").write_text(json.dumps([
-        {"id": "审-1-01", "级别": "正确性", "状态": "搁置"}
+        {"id": "审-1-01", "级别": "正确性", "状态": "搁置", "generation": 0}
     ], ensure_ascii=False), encoding="utf-8")
     ok, issues = check_g5(root, beauty_baseline_pages=10, current_pages=10)
     assert not ok

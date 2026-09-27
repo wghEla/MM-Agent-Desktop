@@ -271,7 +271,7 @@ class TestG5Rework:
         handle = create_project(root, name="t")
         db = handle.workspace.db
         policy = PathPolicy(root)
-        run_id = repositories.create_run(db, project_id=handle.project_id, profile="std")
+        run_id = repositories.create_run(db, project_id=handle.project_id, profile="标准")
         (root / "论文").mkdir(exist_ok=True)
         (root / "论文" / "论文.tex").write_text(r"\documentclass{article}", encoding="utf-8")
 
