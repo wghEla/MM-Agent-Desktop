@@ -486,6 +486,11 @@ async def _run_verified_calc_cascade(
             )
             return []
 
+    # Freeze the numerical delta before touching downstream carriers.  These
+    # manifests remain even if figure/text propagation later fails, so stale
+    # values are mechanically visible to publication guards.
+    _write_calc_change_manifests(policy, before, questions)
+
     for q in questions:
         plot_issues = await run_question_plot_scripts(
             registry, policy, q, cancel=cancel
@@ -559,7 +564,6 @@ async def _run_verified_calc_cascade(
     if any(item.id not in by_id for item in items):
         return []
 
-    _write_calc_change_manifests(policy, before, questions)
     for q in questions:
         events.append_event(
             db,
