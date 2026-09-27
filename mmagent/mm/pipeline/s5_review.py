@@ -686,6 +686,109 @@ async def _run_rework_leg(
     return receipts
 
 
+async def _run_verified_figure_repair(
+    db: Database,
+    provider: BaseProvider,
+    registry: ToolRegistry,
+    policy: PathPolicy,
+    run_id: str,
+    round_num: int,
+    *,
+    q: int,
+    items: list[Issue],
+    cancel=None,
+) -> list[dict]:
+    """Plotter -> Runtime execution -> guarded dependent-text sync."""
+    plot_receipts = await _run_rework_leg(
+        db, provider, registry, policy, run_id, round_num,
+        target="图", items=items, question_num=q, cancel=cancel,
+    )
+    plot_by_id = {
+        str(row.get("id", "")).strip(): row
+        for row in plot_receipts
+        if isinstance(row, dict)
+    }
+    if any(item.id not in plot_by_id for item in items):
+        return []
+
+    plot_issues = await run_question_plot_scripts(
+        registry, policy, q, cancel=cancel
+    )
+    if plot_issues:
+        events.append_event(
+            db,
+            "s5.figure_repair_failed",
+            {"round": round_num, "question": q, "step": "plot_runtime",
+             "issues": plot_issues},
+            run_id=run_id,
+        )
+        return []
+
+    sync_rel = f"审稿/回执_R{round_num}_图同步问{q}.json"
+    sync_node = f"S5:R{round_num}:图同步问{q}"
+    sync_status, _guard_issues = await guarded_text_repair(
+        db, provider, registry, policy, run_id,
+        stage_key="S5",
+        node_key=sync_node,
+        instructions=(
+            f"问题{q}的绘图脚本已经由 Runtime 重跑成功。"
+            "只同步这些图类台账条目影响的图题、正文引用、数字引用和解释，"
+            "不得修改冻结计算事实。"
+            f"完成后写 {sync_rel}，每个原台账 id 各一条回执。"
+        ),
+        receipt_rel=sync_rel,
+        receipt_schema=ModelRepairReceiptArtifact,
+        review_items=[
+            {"问题": x.问题, "指令": x.指令, "定位": x.定位}
+            for x in items
+        ],
+        question_num=q,
+        cancel=cancel,
+    )
+    if sync_status != "SUCCEEDED":
+        return []
+    try:
+        sync_raw = json.loads(
+            (policy.root / sync_rel).read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError):
+        sync_raw = []
+    sync_by_id = {
+        str(row.get("id", "")).strip(): row
+        for row in (sync_raw if isinstance(sync_raw, list) else [])
+        if isinstance(row, dict)
+    }
+    if any(item.id not in sync_by_id for item in items):
+        return []
+
+    out: list[dict] = []
+    for item in items:
+        plot_row = plot_by_id[item.id]
+        sync_row = sync_by_id[item.id]
+        out.append({
+            "id": item.id,
+            "generation": item.generation,
+            "receipt_id": (
+                f"{sync_node}:{item.id}:g{item.generation}"
+            ),
+            "改动": (
+                f"图={str(plot_row.get('改动', ''))[:140]}; "
+                f"文={str(sync_row.get('改动', ''))[:140]}"
+            ),
+            "证据": (
+                f"{str(plot_row.get('证据', ''))[:90]}; {sync_rel}"
+            )[:200],
+        })
+    events.append_event(
+        db,
+        "s5.figure_repair_succeeded",
+        {"round": round_num, "question": q,
+         "issues": [item.id for item in items]},
+        run_id=run_id,
+    )
+    return out
+
+
 async def _run_rework(
     db: Database,
     provider: BaseProvider,
@@ -715,6 +818,12 @@ async def _run_rework(
                     source_q=q, items=group, cancel=cancel,
                 )
                 leg_name = f"回炉算级联问{q}"
+            elif target == "图":
+                receipts = await _run_verified_figure_repair(
+                    db, provider, registry, policy, run_id, round_num,
+                    q=q, items=group, cancel=cancel,
+                )
+                leg_name = f"回炉图事务问{q}"
             else:
                 receipts = await _run_rework_leg(
                     db, provider, registry, policy, run_id, round_num,
