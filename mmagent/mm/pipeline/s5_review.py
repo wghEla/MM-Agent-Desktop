@@ -709,12 +709,20 @@ async def _run_rework(
             for q in questions:
                 groups.setdefault(q, []).append(item)
         for q, group in sorted(groups.items()):
-            receipts = await _run_rework_leg(
-                db, provider, registry, policy, run_id, round_num,
-                target=target, items=group, question_num=q, cancel=cancel,
-            )
+            if target == "算":
+                receipts = await _run_verified_calc_cascade(
+                    db, provider, registry, policy, run_id, round_num,
+                    source_q=q, items=group, cancel=cancel,
+                )
+                leg_name = f"回炉算级联问{q}"
+            else:
+                receipts = await _run_rework_leg(
+                    db, provider, registry, policy, run_id, round_num,
+                    target=target, items=group, question_num=q, cancel=cancel,
+                )
+                leg_name = f"回炉{target}问{q}"
             result = ledger.收回执(
-                receipts, 腿名=f"回炉{target}问{q}", 轮次=round_num
+                receipts, 腿名=leg_name, 轮次=round_num
             )
             stats[target] += result["受理"]
 
