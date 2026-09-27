@@ -660,13 +660,21 @@ async def run_g5_rework(
         pages = int(compiled.get("pages") or 0)
 
         # R52: Page guard against beauty baseline
+        page_ok = True
         if pages > 0 and beauty_baseline_pages > 0:
             page_ok, page_issue = page_guard(beauty_baseline_pages, pages)
             if not page_ok:
-                events.append_event(db, "gate.g5_page_guard",
-                                    {"rework": rework_n, "pages": pages,
-                                     "baseline": beauty_baseline_pages},
-                                    run_id=run_id)
+                events.append_event(
+                    db,
+                    "gate.g5_page_guard",
+                    {
+                        "rework": rework_n,
+                        "pages": pages,
+                        "baseline": beauty_baseline_pages,
+                        "issue": page_issue,
+                    },
+                    run_id=run_id,
+                )
 
         # Defect hunter re-check on new PDF + per-issue ledger verdicts
         review_rel = f"审稿/G5复核{rework_n}.json"
@@ -693,7 +701,11 @@ async def run_g5_rework(
         if status == "SUCCEEDED":
             try:
                 data = json.loads((policy.root / review_rel).read_text(encoding="utf-8"))
-                new_pass = isinstance(data, dict) and bool(data.get("通过", False))
+                new_pass = (
+                    page_ok
+                    and isinstance(data, dict)
+                    and bool(data.get("通过", False))
+                )
                 # Per-issue ledger verdict transitions (待复核 → 已消解/未消解).
                 # The recheck leg reviewed the current PDF against the current
                 # ledger state, so an omitted generation means the current one;
