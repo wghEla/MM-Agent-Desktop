@@ -324,21 +324,22 @@ async def run_g5_rework(
     compiler = compile_paper or _default_compile
     rework_count = 0
 
-    # Load S5 ledger state
+    # Load the S5 ledger carrier. S5 writes a top-level issue list.
+    # Malformed state must not be treated as an empty/converged ledger.
     ledger = IssueLedger(前缀="审")
     ledger_path = policy.root / "台账" / "审稿台账.json"
     if ledger_path.is_file():
         try:
             data = json.loads(ledger_path.read_text(encoding="utf-8"))
-            for entry in data.get("条目", []):
-                if isinstance(entry, dict):
-                    from mmagent.mm.ledger.issue_ledger import Issue
-                    ledger.条目.append(Issue(**{
-                        k: v for k, v in entry.items()
-                        if k in Issue.model_fields
-                    }))
-        except (OSError, json.JSONDecodeError, Exception):
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError("G5 could not read the S5 ledger") from exc
+        if isinstance(data, list):
+            rows = data
+        elif isinstance(data, dict) and isinstance(data.get("条目"), list):
+            rows = data["条目"]
+        else:
+            raise RuntimeError("G5 ledger carrier has an invalid shape")
+        ledger = IssueLedger.从快照(rows, 前缀="审")
 
     for rework_n in range(1, max_rework + 1):
         rework_count = rework_n
