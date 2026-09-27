@@ -1,8 +1,8 @@
 # CURRENT_STATE — fidelity rebuild on gpt/fidelity-rebuild
 
 Branch: `gpt/fidelity-rebuild`
-HEAD: `fe6e16be6958059ac6307b5d6c5f12724f8e2a2f`
-Tests: **377 passed, ruff clean**
+HEAD: `08f9900b8861b754df5c53a6ca4e124e78a0ffb0`
+Tests: **last verified: 394 passed / 0 failed + Ruff clean at `e80856e`; current HEAD source-only patches are UNVERIFIED**
 
 ## Version tags (historical, unchanged)
 
@@ -47,3 +47,21 @@ FIDELITY_MATRIX has been updated to reflect current state.
 
 - MSVC Build Tools (needs UAC elevation, user must approve)
 - Real-provider smoke (needs API key from user)
+
+
+## External source review — 2026-09-27
+
+GPT-5.6 Sol source review: **HOLD (P0=0, P1=6, P2=5)**.
+
+Review file:
+`docs/reviews/v1.0.0-rebuild-external-review-round1.md`
+
+Reviewer source patches after the 394-test baseline:
+- strict generation/receipt identity and generation-local attempt semantics;
+- deterministic runtime-owned S5 repair receipt identity/routing;
+- fail-closed G5 ledger restore;
+- S6 delivery now includes ledger/review evidence;
+- A1/A17/A20/B7 downgraded to PARTIAL pending real closure.
+
+No tests were run after these review patches because execution quota was unavailable.
+Do not report current HEAD as regression-verified until local focused + full regression is run.
