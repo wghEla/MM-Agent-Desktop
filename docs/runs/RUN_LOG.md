@@ -82,3 +82,15 @@
 - 09-27 FIDELITY_MATRIX：B7/B8/B14/E8 → MATCH（含 HEAD 证据），B9 保持 PARTIAL
   （P2-1 核心结构文件/问题章节数不变量未做），A17/A20 证据刷新仍 PARTIAL。
   提交推送，不 tag，不 merge。下一步 Round 4 外审。
+- 09-27 Round 4 本地收口：同步 GPT source-only fixes 到 902abe2（f17d248 后 13 提交）。
+  Stage A focused：90 tests，唯一 fixture 回归正是 R4-P1 本身（旧 fixture 故意让失败的图事务
+  走文路）——改断言为「排队一个本可成功的 Writer 响应也不被消费 + 回退日志无 G5:R1:文」。
+- 09-27 新增 tests/pipeline/test_round4_closures.py 9 条区分性测试：S5 多问题算/图 Issue 一律
+  unrouted（零回执、尝试次数不增）、S5 返工后编译/修复先于 round checkpoint（post_rework_compile
+  证据 + 编译失败合并为 硬伤/文/编译 且先于 checkpoint 落账）、G5 页数守卫控制返工轮
+  （new_pass = page_ok AND hunter，20页 vs 基线10 不再提前 break）、compatible 4xx 正文
+  redact_secret 不泄漏 key、reasoning_effort 仅显式能力开启才发送/宣告、profile extra 双能力
+  round-trip。
+- 09-27 Stage B：全量 448 passed / 0 failed，Ruff clean，前端 build 158.10 kB，
+  secret scan 247 文件无真实密钥。A17/A20 保持 PARTIAL（完整 ordering/parity audit 未做），
+  B9 保持 PARTIAL（P2-1 结构不变量）。不 tag、不 merge。下一步 GPT-5.6 Sol 终审。

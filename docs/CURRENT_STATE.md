@@ -1,8 +1,8 @@
 # CURRENT_STATE — fidelity rebuild on gpt/fidelity-rebuild
 
 Branch: `gpt/fidelity-rebuild`
-HEAD: `f94d08e` — GPT Round-3 source closure, LOCALLY VALIDATED by ZCode (see "Round-3 local validation" below)
-Tests: **locally verified at this HEAD: 439 passed / 0 failed + Ruff clean + frontend build OK**
+HEAD: `902abe2` + local Round-4 validation commit — GPT Round-4 source fixes, LOCALLY VALIDATED by ZCode (see "Round-4 local validation" below)
+Tests: **locally verified at this HEAD: 448 passed / 0 failed + Ruff clean + frontend build OK**
 
 ## Round-3 external source review
 
@@ -249,3 +249,41 @@ Round-4 source findings/fixes:
 
 Next action: local focused regression + full pytest/Ruff/frontend build. Do not tag/merge
 or start MSVC/real-provider smoke until this regression is green.
+
+
+## Round-4 local validation — 2026-09-27 — COMPLETE
+
+ZCode pulled `f17d248..902abe2` (GPT Round-4 source-only fixes) and validated locally:
+
+- **Stage A focused regression**: 90 tests green after one fixture update — the old
+  G5 fixture deliberately let the failed-figure issue take the text route ("also takes
+  the G5 text route"), which is exactly the Round-4 P1 and is now forbidden; the fixture
+  instead queues a would-succeed Writer-only response and proves it is never consumed.
+- **New Round-4 distinguishing tests** (`tests/pipeline/test_round4_closures.py`, 9 tests,
+  all real production paths):
+  - `test_g5_failed_figure_transaction_cannot_fall_through_text_route` (in
+    test_round3_closures.py): figure transaction failure keeps the 图 issue active with
+    no ledger receipt even with a would-succeed Writer response queued, and the
+    guarded-repair log proves node `G5:R1:文` never ran for the figure issue.
+  - `test_s5_multi_question_calc_issue_is_unrouted_once` /
+    `test_s5_multi_question_figure_issue_is_unrouted_once`: an issue naming two questions
+    is routed to NO transaction (unrouted, active, zero receipts, 尝试次数 stays 0).
+  - `test_s5_round_checkpoint_contains_post_rework_compile_evidence`: every post-rework
+    checkpoint carries `post_rework_compile` evidence (A17 step 17).
+  - `test_s5_post_rework_compile_failure_becomes_hard_issue`: a compile that stays broken
+    after bounded repair is merged as 硬伤/文/编译 BEFORE the checkpoint; every checkpoint's
+    ledger snapshot shows it (no healthy-looking checkpoint of a broken carrier).
+  - `test_g5_page_guard_failure_cannot_end_rework_round`: with 20 pages vs baseline 10 and
+    the hunter passing, the loop still enters round 2 (`new_pass = page_ok AND hunter`).
+  - `test_openai_compatible_4xx_never_exposes_api_key`: a 400 body echoing the credential
+    comes back redacted through the ProviderError.
+  - `test_compatible_reasoning_effort_default_off` / `_explicit_on`: `reasoning_effort` is
+    sent only behind the explicit capability; reasoning_levels advertised only then.
+  - `test_compatible_profile_extra_round_trip_both_capabilities`: both compatible-only
+    extras persist through the provider-profile API.
+- **Stage B**: full suite **448 passed / 0 failed**, `ruff check .` clean, `npm run build`
+  green (vite 158.10 kB). **Secret scan**: 247 tracked files, no real-looking secrets.
+
+A17/A20 remain PARTIAL (per Round-4 protocol: full Master-Plan ordering/parity audit still
+pending); B9 remains PARTIAL for the P2-1 structural invariants. No tag, no merge.
+Next: GPT-5.6 Sol final source/release-gate review.

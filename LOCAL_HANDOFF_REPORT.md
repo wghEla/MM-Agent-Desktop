@@ -7,7 +7,8 @@
 | Repo | https://github.com/wghEla/MM-Agent-Desktop |
 | Branch | `gpt/fidelity-rebuild` |
 | Starting SHA | `fe6e16b` (before GPT external review round 1) |
-| Last locally verified code SHA | **`f94d08e603c6ae983c64552c3ca7206a1d0abe77`** (439 passed, Ruff clean, frontend build OK) |
+| Last locally verified code SHA | **this commit (902abe2 + docs/tests)**: 448 passed / 0 failed, Ruff clean, frontend build OK, secret scan clean |
+| Prior verified baseline | `f17d248e43cb3e21871e1455cda2334eec66c9c0` (439 passed) — GPT Round-4 source fixes landed after it and are now locally validated |
 | Prior verified baseline | `33544eca0b950edc68f0481dd0237b0371be5ced` (422 passed) — GPT Round-3 source-only closure landed between the two, now locally validated |
 | Windows version | 11 (10.0.26200 x64) |
 | Python | 3.11.9 (uv managed .venv) |
@@ -22,7 +23,7 @@
 | Command | Result | Passed | Failed | Duration |
 |---|---|---|---|---|
 | `uv run ruff check .` | exit 0 | — | — | <1s |
-| `uv run pytest -q` | exit 0 | **439** | 0 | 118s |
+| `uv run pytest -q` | exit 0 | **448** | 0 | 113s |
 
 ### Test breakdown
 - unit: 33+ files (state/ledger/guards/dag/tool_env/providers) — all green
@@ -164,7 +165,7 @@ Authoritative evidence boundary:
 
 - Last locally verified HEAD: `f17d248e43cb3e21871e1455cda2334eec66c9c0`
 - Evidence at that HEAD: 439 passed / 0 failed, Ruff clean, frontend build green.
-- Current remote branch: Round-4 source fixes after `f17d248`; local regression pending.
+- Current remote branch: Round-4 source fixes (`902abe2`) locally regression-tested — focused + full pytest + Ruff + frontend build + secret scan all green.
 
 Round-4 report:
 `docs/reviews/v1.0.0-rebuild-external-review-round4.md`

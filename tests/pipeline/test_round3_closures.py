@@ -684,9 +684,10 @@ async def test_g5_figure_receipt_alone_cannot_advance_issue(tmp_path: Path) -> N
 
 
 @pytest.mark.asyncio
-async def test_g5_figure_writer_sync_failure_keeps_issue_active(tmp_path: Path) -> None:
-    """A G5 figure transaction whose dependent-text sync fails reverts the
-    repair, keeps the issue active, and fails the publication gate."""
+async def test_g5_failed_figure_transaction_cannot_fall_through_text_route(tmp_path: Path) -> None:
+    """R4-P1: a failed G5 figure transaction must not fall through to the
+    Writer-only text route — even with a would-succeed Writer response queued,
+    the 图 issue stays active without a ledger receipt."""
     import re as _re
 
     handle, run_id = _seed_g5_workspace(tmp_path, "g5-fig-syncfail")
@@ -706,9 +707,13 @@ async def test_g5_figure_writer_sync_failure_keeps_issue_active(tmp_path: Path) 
         )
         # Figure-sync leg writes nothing (initial attempt + wave retry).
         turns += [MockTurn(text="不同步"), MockTurn(text="不同步")]
-        # The same 图 issue also takes the G5 text route, which also fails
-        # (initial attempt + wave retry).
-        turns += [MockTurn(text="不修文"), MockTurn(text="不修文")]
+        # A Writer-only response that WOULD succeed is queued afterwards, but
+        # the 图 issue must never reach the G5 text route (R4-P1: failed
+        # figure transactions cannot fall through to Writer-only repair).
+        turns += _write_turn(
+            "w-would-succeed", "审稿/回执_G5R1_文.json",
+            [{"id": "审-1-01", "改动": "writer-only 整改", "证据": "论文/论文.tex"}],
+        )
         turns += _write_turn("h", "审稿/G5复核1.json",
                              {"通过": True, "依据版本": "当前PDF"})
         turns += _write_turn("f", "审稿/G5复核.json",
@@ -722,10 +727,17 @@ async def test_g5_figure_writer_sync_failure_keeps_issue_active(tmp_path: Path) 
         )
         assert len(failed) == 1
         assert failed[0].payload["step"] == "writer_sync"
-        # The failed guarded legs must have been rolled back and recorded.
+        # Only the figure-sync leg was rolled back; the 图 issue never entered
+        # the Writer-only text route (which would have produced a second
+        # guarded-repair leg with node G5:R1:文).
         reverts = events.query_events(db, run_id=run_id, type="guard.structure_revert")
-        assert len(reverts) == 2
-        assert all(r.payload["leg_status"] != "SUCCEEDED" for r in reverts)
+        assert len(reverts) == 1
+        assert reverts[0].payload["leg_status"] != "SUCCEEDED"
+        assert not any(
+            r.payload["node"].startswith("G5:R1:文") for r in reverts
+        )
+        # The would-succeed Writer-only response was never consumed: the mock
+        # script retained the recheck turns, proving no extra text leg ran.
         rows = _ledger_rows(root)
         assert rows[0]["状态"] == "待改"
         assert rows[0]["回执"] == []
