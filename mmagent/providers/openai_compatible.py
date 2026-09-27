@@ -40,6 +40,7 @@ class OpenAICompatibleProvider(BaseProvider):
         client: httpx.AsyncClient | None = None,
         extra_headers: dict[str, str] | None = None,
         image_input: bool = False,
+        reasoning_effort: bool = False,
     ):
         self.base_url = base_url.rstrip("/")
         self.completions_path = completions_path
@@ -48,6 +49,7 @@ class OpenAICompatibleProvider(BaseProvider):
         self._client = client or httpx.AsyncClient(timeout=600.0)
         self._extra_headers = extra_headers or {}
         self._image_input = bool(image_input)
+        self._reasoning_effort = bool(reasoning_effort)
 
     def capabilities(self) -> CapabilitySet:
         return CapabilitySet(
@@ -55,7 +57,11 @@ class OpenAICompatibleProvider(BaseProvider):
             tool_calling=True,
             image_input=self._image_input,  # 默认保守关闭；profile 可显式声明
             streaming=False,    # v0.3.x 引入流式后按渠道探测
-            reasoning_levels=frozenset(),
+            reasoning_levels=(
+                frozenset({"low", "medium", "high"})
+                if self._reasoning_effort
+                else frozenset()
+            ),
         )
 
     def _headers(self) -> dict[str, str]:
@@ -78,8 +84,14 @@ class OpenAICompatibleProvider(BaseProvider):
         max_output_tokens: int | None = None,
         timeout_s: float = 300.0,
     ) -> NormalizedResponse:
-        payload = build_chat_payload(messages, tools, model=model, reasoning=reasoning,
-                                     max_output_tokens=max_output_tokens, stream=False)
+        payload = build_chat_payload(
+            messages,
+            tools,
+            model=model,
+            reasoning=reasoning if self._reasoning_effort else None,
+            max_output_tokens=max_output_tokens,
+            stream=False,
+        )
         url = f"{self.base_url}{self.completions_path}"
         try:
             resp = await self._client.post(url, json=payload, headers=self._headers(), timeout=timeout_s)
