@@ -433,3 +433,38 @@ async def test_s5_escalation_leg_without_receipt_fails_and_degrades_later(
         assert rows[0]["状态"] == "待复核"
     finally:
         handle.workspace.db.close()
+
+
+@pytest.mark.asyncio
+async def test_s5_final_round_successful_escalation_gets_one_review_extension(
+    tmp_path: Path,
+) -> None:
+    """If the fuse first escalates on max_rounds, run exactly one extra
+    reviewer round so the accepted escalation receipt can receive a verdict."""
+    handle, run_id = _seed_s5_workspace(tmp_path, "s5-final-extension")
+    try:
+        db = handle.workspace.db
+        # The helper includes an R4 reviewer verdict; run_s5 itself is capped
+        # at 3 normal rounds, so consuming R4 proves the extension executed.
+        result = await run_s5(
+            db,
+            MockProvider(_escalation_script(max_rounds=4, escalation_receipt=True)),
+            _registry(),
+            PathPolicy(handle.workspace.root),
+            run_id,
+            max_rounds=3,
+            compile_paper=_fake_compile,
+            render_pages=_fake_render,
+        )
+
+        extension = events.query_events(
+            db, run_id=run_id, type="checkpoint.s5_escalation_extension"
+        )
+        assert len(extension) == 1
+        checkpoints = events.query_events(
+            db, run_id=run_id, type="checkpoint.s5_round_complete"
+        )
+        assert any(e.payload.get("round") == 4 for e in checkpoints)
+        assert len(result["rounds"]) == 4
+    finally:
+        handle.workspace.db.close()
