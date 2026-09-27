@@ -138,7 +138,12 @@ def structure_guard(
     """
     issues: list[str] = []
     if 附录集 is None:
-        附录集 = {f for f in old_files if re.search(r"附录|源码|代码", f)}
+        附录集 = {
+            fname
+            for fname, content in old_files.items()
+            if re.search(r"附录|源码|代码", fname)
+            or _is_code_chapter(fname, content)
+        }
     for fname, old_content in old_files.items():
         new_content = new_files.get(fname)
         if new_content is None:
