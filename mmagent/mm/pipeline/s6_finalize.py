@@ -10,7 +10,6 @@ from typing import Any
 
 from mmagent.mm.audit import audit_paper
 from mmagent.mm.contracts.final_contracts import PageReviewArtifact, PublicationReviewVerdict
-from mmagent.mm.contracts.repair_receipts import ModelRepairReceiptArtifact
 from mmagent.mm.gates.g5 import check_g5
 from mmagent.mm.pipeline.compile_runtime import run_compile
 from mmagent.mm.pipeline.guarded_repair import guarded_text_repair
@@ -159,7 +158,6 @@ async def run_s6(
                 + f"。写 {receipt}。"
             ),
             receipt_rel=receipt,
-            receipt_schema=ModelRepairReceiptArtifact,
             review_items=text_issues,
             cancel=cancel,
         )
