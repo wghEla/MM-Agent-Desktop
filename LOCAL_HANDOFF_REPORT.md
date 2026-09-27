@@ -1,184 +1,114 @@
 # LOCAL_HANDOFF_REPORT
 
-## A. 基线
+## Source of truth
 
 | Item | Value |
 |---|---|
-| Repo | https://github.com/wghEla/MM-Agent-Desktop |
+| Repository | `wghEla/MM-Agent-Desktop` |
 | Branch | `gpt/fidelity-rebuild` |
-| Starting SHA | `fe6e16b` (before GPT external review round 1) |
-| Last locally verified code SHA | **this commit (902abe2 + docs/tests)**: 448 passed / 0 failed, Ruff clean, frontend build OK, secret scan clean |
-| Prior verified baseline | `f17d248e43cb3e21871e1455cda2334eec66c9c0` (439 passed) — GPT Round-4 source fixes landed after it and are now locally validated |
-| Prior verified baseline | `33544eca0b950edc68f0481dd0237b0371be5ced` (422 passed) — GPT Round-3 source-only closure landed between the two, now locally validated |
-| Windows version | 11 (10.0.26200 x64) |
-| Python | 3.11.9 (uv managed .venv) |
+| Last locally verified HEAD | `c4a38cbfa468a7d406306b36d16dcf49720368ca` |
+| Verified evidence | 448 passed / 0 failed; Ruff clean; frontend Vite build green; secret scan clean |
+| Current remote state | final source-gate patches after `c4a38cb`; local micro-regression pending |
+| Windows | 11 (10.0.26200 x64) |
+| Python | 3.11.9 (uv-managed .venv) |
 | Node/npm | v24.18.0 / 11.16.0 |
-| Rust | 1.98.1 (`D:/dev/rust/cargo`) |
-| XeLaTeX | TeX Live 2026 ✅ |
-| MATLAB | R2026a ✅ |
-| MSVC Build Tools | ❌ BLOCKED (UAC elevation required) |
+| Rust | 1.98.1 |
+| XeLaTeX | TeX Live 2026 available |
+| MATLAB | R2026a available |
+| MSVC Build Tools | BLOCKED by UAC/admin approval |
 
-## B. 测试结果
+## External review status
 
-| Command | Result | Passed | Failed | Duration |
-|---|---|---|---|---|
-| `uv run ruff check .` | exit 0 | — | — | <1s |
-| `uv run pytest -q` | exit 0 | **448** | 0 | 113s |
+Rounds 1–4 source-review findings have been fixed and locally regression-tested through
+`c4a38cb`. At that verified baseline:
 
-### Test breakdown
-- unit: 33+ files (state/ledger/guards/dag/tool_env/providers) — all green
-- contracts: 5 files (incl. degraded-release 7 items) — all green
-- integration: 6 files (incl. provider failure propagation 6 items) — all green
-- orchestration: wave timeout 13 items — all green
-- pipeline: 109+ items (G0/G1/S0/S1/S2/G2/RedTeam/S5/S5a/S5b/G5/G6/fidelity audit/repair ordering) — all green
-- e2e: actual full chain S0→S6, mid-S1 crash/restart, 429 retry — all green
-- provider_mocks: 13 items — all green
-- failure_injection: 25+ items — all green
-
-## C. Windows Release
-
-| Component | Status | Evidence |
-|---|---|---|
-| PyInstaller sidecar | ✅ | local build → mmagent-sidecar-x86_64-pc-windows-msvc.exe |
-| React frontend | ✅ | vite production build 157KB |
-| Tauri binary | ❌ BLOCKED | MSVC Build Tools not installed (UAC elevation) |
-| NSIS installer | ❌ BLOCKED | depends on Tauri |
-| Installed startup smoke | ❌ BLOCKED | depends on installer |
-
-## D. External Review P1 closure status
-
-| P1 | Finding | Fix | Test | Status |
-|---|---|---|---|---|
-| P1-1 | Ledger receipt identity incomplete | GPT patch 4a2f790/b3e3792 + verified | test_issue_ledger.py (137 lines added) | ✅ CLOSED |
-| P1-2 | G5 R49-R52 publication closure | Engine wiring exists; reviewer added fresh final defect review, but G5 repair still lacks receipt/verdict/durable ledger transitions | Round 2 review | ❌ OPEN |
-| P1-3 | S5 fuse escalation marker-only | Role leg exists, but no required receipt/verdict, status-gated completion, or final-round fuse execution | Round 2 review | ❌ OPEN |
-| P1-4 | Degraded-release contract split | Reviewer wired S2/G5 to unified carrier + exact generation; runtime producer for review-level degraded entry still missing | Round 2 source patches | ⚠️ PARTIAL |
-| P1-5 | S6 TOCTOU after G5 | Reviewer added final-revision audit+mechanical G5/page check; unique terminal current-PDF defect review still missing | Round 2 source patches | ⚠️ PARTIAL |
-| P1-6 | Fidelity evidence inflation | Matrix remains conservative, but new fuse/G5 tests still manually manufacture evidence instead of executing production control flow | Round 2 review | ❌ OPEN |
-
-## E. Fidelity Matrix
-
-| Status | Count |
-|---|---|
-| MATCH | 49+ |
-| PARTIAL | 24 |
-| NOT IMPLEMENTED | 1 (real-provider smoke) |
-
-### Remaining PARTIAL (requires real LLM or MSVC)
-
-| ID | Gap | Blocker |
-|---|---|---|
-| A1 | S0 seed/health-check decomposition order | Requires real LLM to validate quality |
-| A3 | S1 route scoring formula parity | Requires real LLM |
-| A6 | Red-team recompute protocol edge cases | Requires real LLM |
-| A11 | Escalation swarm evidence chain | Requires real LLM |
-| A12 | Degraded release delivery-report integration | Requires real LLM |
-| A15 | S4 editorial-guard full ordering | Requires real LLM |
-| A19 | S5a/S5b cosmetic-loop parity | Requires real LLM |
-| A21 | S6 installed-product delivery | MSVC blocker |
-| B9 | Complete appendix/title rules | Code-level, can be done |
-| B11 | Integrator per-file fingerprint parity | Code-level, can be done |
-| B12 | Full calc→figure→text propagation proof | Requires real LLM |
-| B14 | Durable downstream invalidation crash/restart | Code-level, can be done |
-| C1-C17 | Per-role schema parity | 17 role schemas (low priority) |
-| D5 | Beauty threshold convergence proof | Requires real LLM |
-| D8-D10 | Profile behavioral parity | Requires real LLM |
-| E3/E4 | Process/cancellation full product cycle | MSVC blocker |
-| E7 | JSON repair bounded implementation | Code-level, can be done |
-| E8 | Compile repair loop | Code-level, can be done |
-| E10 | Mechanical carrier contract auditor | Code-level, can be done |
-
-## F. External blockers
-
-| Blocker | Why external | Resolution |
-|---|---|---|
-| MSVC Build Tools | UAC elevation requires admin approval | User runs `vs_BuildTools.exe --installPath D:\dev\msvc --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended` |
-| Real-provider credential | User API key | User provides through product Provider Settings |
-| GPT external review round 2 | User manually gives packet to GPT | Review packet at `docs/reviews/v1.0.0-rebuild-final-review-packet.md` |
-
-## G. Current-head verified evidence
-
-- 408 tests passing (up from 377 at start of this pass)
-- ruff clean
-- React frontend production build (157KB)
-- PyInstaller sidecar build
-- XeLaTeX discovery (TeX Live 2026 nested path)
-- MATLAB discovery (root layout)
-- Provider failure propagation (auth/network/429/5xx)
-- Tool env security boundary (secrets excluded)
-- Degraded-release unified contract
-- S5 fuse escalation executor
-- G5 authoritative closure in Engine
-- S6 terminal publication verify
-
-## H. Historical-only evidence
-
-- NSIS installer build (CI #174)
-- Silent install verification (CI #174)
-- No-dev-Python startup smoke (CI #174)
-- Tauri binary build (CI #174)
-- Linux test results (CI #227)
-
-
-## I. External Review Round 2
-
-Report:
-`docs/reviews/v1.0.0-rebuild-external-review-round2.md`
-
-Verdict: **HOLD**.
-
-Important evidence boundary:
-
-- `c8b8542`: last locally verified implementation-agent code, 408 passed / Ruff clean.
-- commits after `c8b8542`: GPT Round 2 source-only fixes/tests/docs; **not yet locally executed**.
-- Do not describe the remote branch as current-head green until the Round 2 focused/full regression is run.
-
-Next implementation pass should focus only on:
-1. actual S5 escalation receipt/verdict/checkpoint flow;
-2. runtime review-level degraded-release registration after escalation exhaustion;
-3. G5 repair → ledger receipt → reviewer verdict → durable writeback;
-4. terminal S6 current-PDF defect review after final mechanical gate;
-5. production-path behavior tests replacing manually-created evidence.
-
-
-## J. External Review Round 3
-
-Report:
-`docs/reviews/v1.0.0-rebuild-external-review-round3.md`
-
-Verdict: **HOLD (P0=0)**.
-
-The previously reported 422-test baseline remains valid only for `33544ec`.
-Round-3 reviewer patches after that HEAD are unverified.
-
-Remaining release-level implementation work:
-1. S5 calc repair/escalation must preserve Frozen Truth via solver execution, red-team/G2, downstream invalidation and carrier propagation, or fail closed to an explicit degraded path.
-2. G5 figure repair must include dependent-text synchronization before the Issue can move to reviewer adjudication.
-3. Change Guard + Structure Guard must be enforced by a shared guarded-writer path across late S4/S5/S5b/S6 revisions, not only one G5 route.
-
-Round-3 source patches already landed for the concrete replay/fail-open/visual/provider/guard issues listed in the review report. Run local focused + full regression before triaging any new failures.
-
-
-## K. Round-4 source review handoff
-
-Authoritative evidence boundary:
-
-- Last locally verified HEAD: `f17d248e43cb3e21871e1455cda2334eec66c9c0`
-- Evidence at that HEAD: 439 passed / 0 failed, Ruff clean, frontend build green.
-- Current remote branch: Round-4 source fixes (`902abe2`) locally regression-tested — focused + full pytest + Ruff + frontend build + secret scan all green.
+- P0: 0
+- known open source-level P1: 0
+- full pytest: 448 passed
+- Ruff: clean
+- frontend build: green
+- secret scan: clean
 
 Round-4 report:
 `docs/reviews/v1.0.0-rebuild-external-review-round4.md`
 
-Important Round-4 source changes:
-1. G5 figure Issues can no longer fall through into Writer-only text repair after a failed
-   figure transaction.
-2. S5 calc/figure repair requires unique question routing for one ledger Issue identity.
-3. S5 rework now compiles/fixes before writing its round checkpoint.
-4. G5 per-round success requires both page guard and defect review.
-5. OpenAI-compatible 4xx errors redact credentials.
-6. OpenAI-compatible `reasoning_effort` is opt-in instead of being sent implicitly from
-   the desktop's default High reasoning selection.
+## Final source-gate patches after c4a38cb
 
-Do not treat the current remote HEAD as green until the Round-4 focused/full local
-regression is completed. No tag or main merge yet.
+The final source/release-gate review found two last deterministic delivery-carrier gaps and
+source-patched them:
+
+1. **S6 figure final-fix transaction**
+   - Plotter repair
+   - trusted Runtime plot execution
+   - guarded Writer synchronization of dependent caption/text/numeric references
+   - only then final compile/publication verification
+   - Writer-sync failure blocks harvest
+
+2. **Explicit delivery disclosure**
+   - Runtime writes `交付/交付报告.md`
+   - report mechanically lists exact degraded question/review entries
+   - report also lists non-resolved review-ledger items and run metrics
+   - no model is trusted to hide or summarize unresolved state
+
+New/updated tests in `tests/pipeline/test_s6_finalize.py` cover:
+- S6 figure repair requires dependent-text synchronization;
+- Writer-sync failure blocks delivery;
+- delivery report exposes an exact degraded review issue.
+
+These patches are source-only until ZCode runs the final micro-regression.
+
+## Fidelity boundary
+
+High-risk runtime/review mechanisms with focused behavior evidence include:
+
+- SQLite single state truth + append-only events
+- task lease / no double owner
+- generation-CAS reviewer verdicts
+- deterministic/idempotent repair receipts
+- fail-closed missed verdicts
+- real S5 fuse escalation
+- verified calc recompute / Red Team / G2 / downstream cascade
+- durable downstream invalidation tombstones
+- Change Guard + Structure Guard with crash-safe pre-repair snapshots
+- S5/G5 figure transactions
+- bounded guarded compile repair
+- fresh current-PDF visual review at G5/S6
+- OpenAI-compatible image capability opt-in
+- OpenAI-compatible reasoning_effort opt-in
+- provider error secret redaction
+
+Still intentionally PARTIAL / external:
+- A17 exact upstream 18-step parity audit
+- A20 exact R49–R52 / multi-question parity audit
+- B9 core-structure/problem-chapter-count guard representation
+- C1–C17 exact per-role upstream-style schema/package parity
+- E3/E4 installed-product live cancellation/process proof
+- residual low-risk schema/fidelity items in `FIDELITY_MATRIX.md`
+
+## Product-release blockers
+
+The repository's own acceptance rule still prevents calling the whole product complete
+until current-head release evidence is available.
+
+Outstanding external gates:
+
+1. MSVC Build Tools installation / UAC approval.
+2. Current-head Tauri release build.
+3. Current-head NSIS installer build + install/startup smoke without developer Python.
+4. Installed-product cancellation during a live external tool / process-tree cleanup proof.
+5. Real-provider smoke using a user-supplied credential through Provider Settings.
+6. Current-head CI evidence if the project keeps CI as a mandatory acceptance criterion,
+   or an explicit documented decision replacing that criterion.
+
+Historical CI #174 proves an older head could build/install/start successfully, but it is
+not current-head release proof.
+
+## Next action
+
+Run only the final local micro-regression for the post-`c4a38cb` S6/delivery patches.
+Do not start MSVC, real credentials, tagging, or main merge until that is green.
+
+After the micro-regression is green:
+- source/pipeline layer may be considered to have no known open P0/P1 from review rounds;
+- proceed to Windows package validation and then real-provider smoke;
+- do not continue indefinite low-value fidelity polishing before those product gates.
