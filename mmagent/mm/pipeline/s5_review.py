@@ -372,7 +372,21 @@ async def _run_rework_leg(
         return []
     if isinstance(data, dict):
         data = data.get("回执", [data])
-    return [x for x in (data or []) if isinstance(x, dict)]
+
+    # Runtime, not the model, owns delivery identity.  A deterministic
+    # receipt_id makes crash/replay of the same rework node idempotent even if
+    # the model omits or changes its own identifier.
+    receipts: list[dict] = []
+    for raw in data or []:
+        if not isinstance(raw, dict):
+            continue
+        item = dict(raw)
+        issue_id = str(item.get("id", "")).strip()
+        generation = item.get("generation")
+        if issue_id and generation is not None:
+            item["receipt_id"] = f"{node}:{issue_id}:g{generation}"
+        receipts.append(item)
+    return receipts
 
 
 async def _run_rework(
