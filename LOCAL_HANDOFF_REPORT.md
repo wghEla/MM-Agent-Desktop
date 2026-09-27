@@ -7,8 +7,8 @@
 | Repo | https://github.com/wghEla/MM-Agent-Desktop |
 | Branch | `gpt/fidelity-rebuild` |
 | Starting SHA | `fe6e16b` (before GPT external review round 1) |
-| Last locally verified code SHA | `c8b85425742d7b42505f16dbc3ef7854aa2ac763` (408 passed, Ruff clean) |
-| Current remote state | GPT Round 2 source-only patches after `c8b8542`; local regression required before claiming current-head green |
+| Last locally verified code SHA | `33544eca0b950edc68f0481dd0237b0371be5ced` (422 passed, Ruff clean) |
+| Current remote state | GPT Round 3 source-only patches after `33544ec`; local regression required before claiming current-head green |
 | Windows version | 11 (10.0.26200 x64) |
 | Python | 3.11.9 (uv managed .venv) |
 | Node/npm | v24.18.0 / 11.16.0 |
@@ -138,3 +138,21 @@ Next implementation pass should focus only on:
 3. G5 repair → ledger receipt → reviewer verdict → durable writeback;
 4. terminal S6 current-PDF defect review after final mechanical gate;
 5. production-path behavior tests replacing manually-created evidence.
+
+
+## J. External Review Round 3
+
+Report:
+`docs/reviews/v1.0.0-rebuild-external-review-round3.md`
+
+Verdict: **HOLD (P0=0)**.
+
+The previously reported 422-test baseline remains valid only for `33544ec`.
+Round-3 reviewer patches after that HEAD are unverified.
+
+Remaining release-level implementation work:
+1. S5 calc repair/escalation must preserve Frozen Truth via solver execution, red-team/G2, downstream invalidation and carrier propagation, or fail closed to an explicit degraded path.
+2. G5 figure repair must include dependent-text synchronization before the Issue can move to reviewer adjudication.
+3. Change Guard + Structure Guard must be enforced by a shared guarded-writer path across late S4/S5/S5b/S6 revisions, not only one G5 route.
+
+Round-3 source patches already landed for the concrete replay/fail-open/visual/provider/guard issues listed in the review report. Run local focused + full regression before triaging any new failures.
