@@ -17,7 +17,6 @@ from mmagent.providers.base import BaseProvider
 from mmagent.state import events
 from mmagent.state.db import Database
 from mmagent.tools.registry import ToolRegistry
-from mmagent.workspace.artifacts import ExpectedArtifact
 from mmagent.workspace.path_policy import PathPolicy
 
 CompileFn = Callable[..., dict[str, Any]]
