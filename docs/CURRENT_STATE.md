@@ -157,3 +157,28 @@ Open release-level source findings:
 Round-3 reviewer patches after `33544ec` include fail-closed/deterministic S5 escalation receipts, real final-round escalation extension, no degradation after failed/missed verdicts, no G5 self-authorized calc degradation, strict G5 receipt/verdict identity, real page-image input for G5/S6 reviews, durable S2 invalidation tombstones, crash-safe guarded repair, stage-scoped guarded compile repair, and an OpenAI-compatible vision capability setting.
 
 These source-only patches must be locally regression-tested before current HEAD is described as green.
+
+## Round-3 source closure after external review
+
+Source-only closure is now implemented through the current branch HEAD. The three
+release-level Round-3 P1s are **source-closed but regression-pending**:
+
+- S5 calculation repair/escalation now reuses the verified S2 solver execution +
+  independent red-team + G2 protocol, recomputes downstream questions, writes change
+  manifests, reruns figures, and guarded-syncs dependent text before the Issue Ledger
+  receives a repair receipt. Escalation winner selection is Runtime-promoted into the
+  canonical solver/result carrier.
+- G5 figure repair is now one transaction: Plotter receipt -> Runtime plot execution ->
+  guarded Writer dependent-text sync -> Runtime generation-bound ledger receipt. The same
+  anti-self-certification semantics were also applied to normal S5 figure repair/fuse.
+- Change Guard + Structure Guard are now jointly enforced by the shared durable guarded
+  repair primitive across late S4/S5/S5b/G5/S6 writer/integrator mutation paths and compile
+  repair. Initial draft/independent abstract candidate generation remains intentionally
+  outside diff-guarding.
+
+Detailed handoff:
+`docs/reviews/v1.0.0-rebuild-round3-source-closure-handoff.md`
+
+**Important:** the last locally verified baseline is still `33544ec` (422 passed / Ruff
+clean). All Round-3 reviewer/source-closure commits after that baseline remain unverified
+until ZCode runs focused + full local regression.
