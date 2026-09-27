@@ -613,3 +613,22 @@ async def test_g5_calc_blocker_without_prior_degraded_approval_fails_closed(
         assert rows[0]["状态"] != "搁置"
     finally:
         handle.workspace.db.close()
+
+
+def test_structure_guard_detects_neutral_named_code_chapter_by_content() -> None:
+    from mmagent.mm.guards.guards import structure_guard
+
+    lst = "\\begin{lstlisting}"
+    endlst = "\\end{lstlisting}"
+    old = {
+        "论文/8.7.补充.tex": (
+            f"{lst}\nprint('a')\n{endlst}\n"
+            f"{lst}\nprint('b')\n{endlst}\n"
+        )
+    }
+    new = {
+        "论文/8.7.补充.tex": f"{lst}\nprint('a')\n{endlst}\n"
+    }
+    ok, issues = structure_guard(old, new)
+    assert not ok
+    assert any("附录源码清单减少" in x for x in issues)
