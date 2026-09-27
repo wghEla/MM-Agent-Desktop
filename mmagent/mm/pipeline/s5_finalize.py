@@ -10,6 +10,7 @@ from typing import Any
 from mmagent.mm.audit import audit_paper
 from mmagent.mm.config.profiles import get_profile
 from mmagent.mm.contracts.final_contracts import PageReviewArtifact, PublicationReviewVerdict
+from mmagent.mm.contracts.repair_receipts import ModelRepairReceiptArtifact
 from mmagent.mm.contracts.s4_contracts import AbstractRestatementVerdict
 from mmagent.mm.gates.g5 import check_g5
 from mmagent.mm.guards.guards import page_guard
@@ -368,31 +369,49 @@ async def run_g5_rework(
                 q = _question_from_issue({"定位": item.定位, "问题": item.问题})
                 if q is None:
                     continue
-                receipt_rel = f"审稿/回执_G5R{rework_n}_图问{q}.json"
+                safe_issue = re.sub(r"[^0-9A-Za-z_-]+", "_", item.id)
+                receipt_rel = (
+                    f"审稿/回执_G5R{rework_n}_图问{q}_{safe_issue}.json"
+                )
+                node_key = f"G5:R{rework_n}:图问{q}:{item.id}"
                 status = await _leg(
                     db, provider, registry, policy, run_id,
-                    stage="G5", role_id="plotter", node=f"G5:R{rework_n}:图问{q}",
+                    stage="G5", role_id="plotter", node=node_key,
                     question_num=q,
                     instructions=(
                         f"【G5返工·改图】第{rework_n}次返工。改绘图脚本（只改不跑），"
-                        f"按台账条目同步图内数字/标注。完成后写 {receipt_rel}，"
+                        f"只处理台账条目 {item.id}，同步图内数字/标注。"
+                        f"完成后写 {receipt_rel}，"
                         f'JSON 数组格式 [{{"id": "{item.id}", "改动": "...", "证据": "..."}}]。'
                     ),
-                    expected=[ExpectedArtifact(rel_path=receipt_rel)], cancel=cancel,
+                    expected=[
+                        ExpectedArtifact(
+                            rel_path=receipt_rel,
+                            schema_model=ModelRepairReceiptArtifact,
+                        )
+                    ],
+                    cancel=cancel,
                 )
                 if status == "SUCCEEDED":
                     receipt_full = policy.root / receipt_rel
-                    if receipt_full.is_file():
-                        try:
-                            receipts = json.loads(receipt_full.read_text(encoding="utf-8"))
-                            if isinstance(receipts, list):
-                                for r in receipts:
-                                    r["generation"] = item.generation
-                                    r["receipt_id"] = f"g5r{rework_n}_fig{q}"
-                                figure_receipts.extend(receipts)
-                        except (json.JSONDecodeError, OSError):
-                            pass
-                await run_question_plot_scripts(registry, policy, q, cancel=cancel)
+                    try:
+                        raw = json.loads(receipt_full.read_text(encoding="utf-8"))
+                    except (json.JSONDecodeError, OSError):
+                        raw = []
+                    for candidate in raw if isinstance(raw, list) else []:
+                        if not isinstance(candidate, dict):
+                            continue
+                        if str(candidate.get("id", "")).strip() != item.id:
+                            continue
+                        enriched = dict(candidate)
+                        enriched["generation"] = item.generation
+                        enriched["receipt_id"] = (
+                            f"{node_key}:{item.id}:g{item.generation}"
+                        )
+                        figure_receipts.append(enriched)
+                    await run_question_plot_scripts(
+                        registry, policy, q, cancel=cancel
+                    )
         if figure_receipts:
             ledger.收回执(figure_receipts, 腿名=f"G5返工图{rework_n}")
 
@@ -423,16 +442,19 @@ async def run_g5_rework(
             from mmagent.mm.pipeline.guarded_repair import guarded_text_repair
             receipt_rel = f"审稿/回执_G5R{rework_n}_文.json"
             issue_ids = ",".join(x.id for x in text_items)
+            text_node = f"G5:R{rework_n}:文"
             status, guard_issues = await guarded_text_repair(
                 db, provider, registry, policy, run_id,
-                stage_key="G5", node_key=f"G5:R{rework_n}:文",
+                stage_key="G5", node_key=text_node,
                 instructions=(
                     f"【G5返工】第{rework_n}次返工。只改编号点名处（{issue_ids}），"
                     "不许删除 \\cite，不许整章移附录，"
                     f"共 {len(text_items)} 条。完成后写 {receipt_rel}，"
                     f'JSON 数组格式 [{{"id": "...", "改动": "...", "证据": "..."}}]。'
                 ),
-                receipt_rel=receipt_rel, cancel=cancel,
+                receipt_rel=receipt_rel,
+                receipt_schema=ModelRepairReceiptArtifact,
+                cancel=cancel,
             )
             if guard_issues:
                 for issue in guard_issues:
@@ -447,13 +469,20 @@ async def run_g5_rework(
                     try:
                         receipts = json.loads(receipt_full.read_text(encoding="utf-8"))
                         if isinstance(receipts, list):
+                            assigned = {x.id: x.generation for x in text_items}
                             for r in receipts:
-                                r["generation"] = next(
-                                    (x.generation for x in text_items if x.id == r.get("id")),
-                                    0,
+                                if not isinstance(r, dict):
+                                    continue
+                                issue_id = str(r.get("id", "")).strip()
+                                if issue_id not in assigned:
+                                    continue
+                                enriched = dict(r)
+                                generation = assigned[issue_id]
+                                enriched["generation"] = generation
+                                enriched["receipt_id"] = (
+                                    f"{text_node}:{issue_id}:g{generation}"
                                 )
-                                r["receipt_id"] = f"g5r{rework_n}_txt_{r.get('id', 'unknown')}"
-                            text_receipts.extend(receipts)
+                                text_receipts.append(enriched)
                     except (json.JSONDecodeError, OSError):
                         pass
         if text_receipts:
