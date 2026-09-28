@@ -307,20 +307,24 @@ function App() {
 
         <main className="workbench-main">
           {!project ? (
-            <WelcomeSurface
-              recent={recentWorkspaces}
-              busy={busy}
-              onCreate={() => openWorkspaceDialog("create")}
-              onOpenDialog={() => openWorkspaceDialog("open")}
-              onOpenRecent={(workspace) => createOrOpen("open", workspace.root, workspace.name, workspace.profile)}
-              onRemoveRecent={(root) => {
-                setRecentWorkspaces((current) => {
-                  const next = current.filter((item) => item.root !== root);
-                  window.localStorage.setItem(RECENT_WORKSPACES_KEY, JSON.stringify(next));
-                  return next;
-                });
-              }}
-            />
+            <>
+              {notice && <div className="notice-banner success">{notice}</div>}
+              {error && <div className="notice-banner error">{error}</div>}
+              <WelcomeSurface
+                recent={recentWorkspaces}
+                busy={busy}
+                onCreate={() => openWorkspaceDialog("create")}
+                onOpenDialog={() => openWorkspaceDialog("open")}
+                onOpenRecent={(workspace) => createOrOpen("open", workspace.root, workspace.name, workspace.profile)}
+                onRemoveRecent={(root) => {
+                  setRecentWorkspaces((current) => {
+                    const next = current.filter((item) => item.root !== root);
+                    window.localStorage.setItem(RECENT_WORKSPACES_KEY, JSON.stringify(next));
+                    return next;
+                  });
+                }}
+              />
+            </>
           ) : (
             <>
               <div className="workbench-toolbar">
