@@ -61,7 +61,7 @@ export function WorkspaceDialog({
   }
 
   return (
-    <div className="modal-backdrop workspace-modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="modal-backdrop workspace-modal-backdrop" role="presentation" onMouseDown={() => { if (!busy) onClose(); }}>
       <section
         className="workspace-dialog"
         role="dialog"
@@ -79,7 +79,7 @@ export function WorkspaceDialog({
                 : "选择已有 MM-Agent 工作区目录；打开操作不会启动或恢复历史 Run。"}
             </p>
           </div>
-          <button className="icon-button" onClick={onClose} aria-label="关闭">×</button>
+          <button className="icon-button" disabled={busy} onClick={onClose} aria-label="关闭">×</button>
         </header>
 
         <div className="workspace-dialog-body">
