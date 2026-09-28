@@ -768,7 +768,7 @@ export function ProviderSettings({
                   placeholder="/models；留空表示不提供模型列表端点"
                 />
                 <span className="field-hint">
-                  仅用于“发现模型/Test Connection”的列表探测；留空时不会生成额外请求来猜模型。
+                  “发现模型”始终只做只读列表请求、不消耗生成 token；留空表示关闭列表探测。Test Connection 在列表不可用时仍可能按协议规则执行一次最小模型 probe。
                 </span>
               </div>
             </>
@@ -1024,10 +1024,13 @@ export function ProviderSettings({
                 <p className="mono">{selected.model}</p>
               </div>
               <div className="provider-heading-actions">
-                <button onClick={() => void discoverSaved()} disabled={busy || discoverBusy}>
+                <button
+                  onClick={() => void discoverSaved()}
+                  disabled={busy || discoverBusy || testBusy}
+                >
                   {discoverBusy ? "发现中…" : "刷新模型列表"}
                 </button>
-                <button onClick={startEdit} disabled={busy}>编辑</button>
+                <button onClick={startEdit} disabled={busy || discoverBusy || testBusy}>编辑</button>
               </div>
             </div>
 
