@@ -15,7 +15,11 @@ import httpx
 
 from mmagent.agent.errors import ErrorKind, ProviderError, RateLimitError
 from mmagent.providers import redact_secret
-from mmagent.providers._http_util import parse_retry_after
+from mmagent.providers._http_util import (
+    configured_model_detail,
+    openai_style_model_ids,
+    parse_retry_after,
+)
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
 from mmagent.providers.normalized import (
@@ -213,7 +217,33 @@ class AnthropicMessagesProvider(BaseProvider):
         return parse_messages_response(resp.json(), self.protocol)
 
     async def test_connection(self) -> dict:
-        # Anthropic 无 models 列表端点：以 1-token 消息探测
+        # Prefer the read-only models endpoint so Test Connection does not
+        # spend tokens when the account exposes a model catalogue.
+        try:
+            models_resp = await self._client.get(
+                f"{self.base_url}/v1/models",
+                headers=self._headers(),
+                timeout=15.0,
+            )
+            if models_resp.status_code == 200:
+                try:
+                    available = openai_style_model_ids(models_resp.json())
+                except Exception:
+                    available = set()
+                return configured_model_detail(
+                    self._test_model,
+                    available,
+                    endpoint_label="models 端点 200",
+                )
+            if models_resp.status_code not in (404, 405):
+                return {
+                    "ok": False,
+                    "detail": f"models 端点 {models_resp.status_code}",
+                }
+        except httpx.HTTPError:
+            # Fall through to the actual configured model probe.
+            pass
+
         try:
             resp = await self._client.post(
                 f"{self.base_url}/v1/messages",
@@ -222,10 +252,13 @@ class AnthropicMessagesProvider(BaseProvider):
                     "max_tokens": 1,
                     "messages": [{"role": "user", "content": "ping"}],
                 },
-                headers=self._headers(), timeout=20.0,
+                headers=self._headers(),
+                timeout=20.0,
             )
-            # 4xx（除 401/403/429/429 类）也算连通（端点可达、鉴权语义可辨）
             ok = resp.status_code == 200
-            return {"ok": ok, "detail": f"messages 探测 {resp.status_code}"}
+            return {
+                "ok": ok,
+                "detail": f"models 端点不可用; messages 探测 {resp.status_code}",
+            }
         except httpx.HTTPError as e:
             return {"ok": False, "detail": str(e)[:200]}
