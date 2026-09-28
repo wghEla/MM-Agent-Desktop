@@ -261,3 +261,39 @@ def test_sidecar_provider_catalog_crud_and_credential_boundary(
             f"/projects/{project_id}/providers",
             headers=_auth(),
         ).json() == []
+
+
+@pytest.mark.asyncio
+async def test_discover_compatible_models_path_can_be_custom_or_disabled() -> None:
+    captures: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        return httpx.Response(200, json={"data": [{"id": "custom-model"}]})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://example.invalid",
+    ) as client:
+        custom = await discover_models(
+            protocol="openai_compatible",
+            base_url="https://example.invalid/v1",
+            api_key="test-secret",
+            extra={"models_path": "/catalog/models"},
+            client=client,
+        )
+        disabled = await discover_models(
+            protocol="openai_compatible",
+            base_url="https://example.invalid/v1",
+            api_key="test-secret",
+            extra={"models_path": ""},
+            client=client,
+        )
+
+    assert custom["models"] == ["custom-model"]
+    assert captures[0].url.path == "/v1/catalog/models"
+    assert disabled["ok"] is False
+    assert disabled["models"] == []
+    assert disabled["endpoint"] == ""
+    assert "关闭模型列表端点" in disabled["detail"]
+    assert len(captures) == 1
