@@ -1,6 +1,4 @@
 import React, { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
-
 import {
   backend,
   type Dashboard,
@@ -10,9 +8,8 @@ import {
 } from "./api";
 import { ArtifactViewer, ImportPanel } from "./WorkspacePanels";
 import { StageRail } from "./StageRail";
-
-const pickFolderDialog = () =>
-  openDialog({ directory: true, multiple: false, title: "选择工作区文件夹" });
+import { WorkspaceDialog, type WorkspaceDialogMode } from "./WorkspaceDialog";
+import { WorkspaceTree } from "./WorkspaceTree";
 
 const protocolDefaults: Record<string, string> = {
   openai_chat: "https://api.openai.com/v1",
@@ -66,6 +63,8 @@ function App() {
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [recentWorkspaces, setRecentWorkspaces] = useState<RecentWorkspace[]>(loadRecentWorkspaces);
+  const [workspaceDialog, setWorkspaceDialog] = useState<WorkspaceDialogMode | null>(null);
+  const [selectedWorkspacePath, setSelectedWorkspacePath] = useState<string | null>(null);
 
   const selected = useMemo(
     () => providers.find((item) => item.model_profile_id === selectedProvider) ?? null,
@@ -126,21 +125,23 @@ function App() {
     });
   }
 
-  async function guarded(action: () => Promise<void>) {
+  async function guarded(action: () => Promise<void>): Promise<boolean> {
     setBusy(true);
     setError("");
     setNotice("");
     try {
       await action();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      return false;
     } finally {
       setBusy(false);
     }
   }
 
   async function createOrOpen(mode: "create" | "open", root: string, name: string, profile: string) {
-    await guarded(async () => {
+    return guarded(async () => {
       const p = mode === "create"
         ? await backend<ProjectView>("POST", "/projects", { root, name, profile })
         : await backend<ProjectView>("POST", "/projects/open", { root });
@@ -156,6 +157,7 @@ function App() {
       setRun(null);
       setRunHistory([]);
       setDashboard(null);
+      setSelectedWorkspacePath(null);
       await refreshProviders(p);
       await loadRunHistory(p, mode === "open");
       setNotice(mode === "create" ? "项目已创建" : "项目已打开");
@@ -228,10 +230,10 @@ function App() {
         <aside className="workspace-sidebar">
           <div className="sidebar-section-title">WORKSPACE</div>
           {!project ? (
-            <ProjectPanel
-              project={project}
+            <WorkspaceLauncher
               busy={busy}
-              onSubmit={createOrOpen}
+              onCreate={() => setWorkspaceDialog("create")}
+              onOpen={() => setWorkspaceDialog("open")}
             />
           ) : (
             <>
@@ -244,7 +246,13 @@ function App() {
                   setRun(null);
                   setRunHistory([]);
                   setDashboard(null);
+                  setSelectedWorkspacePath(null);
                 }}
+              />
+              <WorkspaceTree
+                project={project}
+                selectedPath={selectedWorkspacePath}
+                onOpenFile={setSelectedWorkspacePath}
               />
               <ImportPanel project={project} />
 
@@ -277,7 +285,16 @@ function App() {
             <WelcomeSurface
               recent={recentWorkspaces}
               busy={busy}
-              onOpen={(workspace) => createOrOpen("open", workspace.root, workspace.name, workspace.profile)}
+              onCreate={() => setWorkspaceDialog("create")}
+              onOpenDialog={() => setWorkspaceDialog("open")}
+              onOpenRecent={(workspace) => createOrOpen("open", workspace.root, workspace.name, workspace.profile)}
+              onRemoveRecent={(root) => {
+                setRecentWorkspaces((current) => {
+                  const next = current.filter((item) => item.root !== root);
+                  window.localStorage.setItem(RECENT_WORKSPACES_KEY, JSON.stringify(next));
+                  return next;
+                });
+              }}
             />
           ) : (
             <>
@@ -336,12 +353,21 @@ function App() {
         <aside className="artifact-dock">
           <div className="sidebar-section-title">ARTIFACTS</div>
           {project ? (
-            <ArtifactViewer project={project} />
+            <ArtifactViewer project={project} requestedPath={selectedWorkspacePath} />
           ) : (
             <div className="dock-empty">打开工作区后，这里会显示论文、图表、结果、审稿与交付物。</div>
           )}
         </aside>
       </div>
+
+      {workspaceDialog && (
+        <WorkspaceDialog
+          mode={workspaceDialog}
+          busy={busy}
+          onClose={() => setWorkspaceDialog(null)}
+          onSubmit={createOrOpen}
+        />
+      )}
 
       {settingsOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setSettingsOpen(false)}>
@@ -399,139 +425,109 @@ function WorkspaceSummary({
   );
 }
 
+function WorkspaceLauncher({
+  busy,
+  onCreate,
+  onOpen,
+}: {
+  busy: boolean;
+  onCreate: () => void;
+  onOpen: () => void;
+}) {
+  return (
+    <section className="workspace-launcher">
+      <button className="primary workspace-launch-button" disabled={busy} onClick={onCreate}>
+        <span aria-hidden="true">＋</span>
+        新建工作区
+      </button>
+      <button className="workspace-launch-button" disabled={busy} onClick={onOpen}>
+        <span aria-hidden="true">⌕</span>
+        打开工作区
+      </button>
+      <p>工作区是项目根目录；运行状态与产物仍由 Runtime / SQLite 管理。</p>
+    </section>
+  );
+}
+
 function WelcomeSurface({
   recent,
   busy,
-  onOpen,
+  onCreate,
+  onOpenDialog,
+  onOpenRecent,
+  onRemoveRecent,
 }: {
   recent: RecentWorkspace[];
   busy: boolean;
-  onOpen: (workspace: RecentWorkspace) => Promise<void>;
+  onCreate: () => void;
+  onOpenDialog: () => void;
+  onOpenRecent: (workspace: RecentWorkspace) => Promise<boolean>;
+  onRemoveRecent: (root: string) => void;
 }) {
   return (
-    <div className="welcome-surface">
+    <div className="welcome-surface onboarding-surface">
       <div className="welcome-mark" aria-hidden="true">M</div>
       <span className="eyebrow">MM-AGENT DESKTOP</span>
-      <h2>把题目、求解、审稿和最终论文放在一个可追踪的工作区里。</h2>
-      <p>左侧创建或打开工作区。运行后，中间展示 S0–S6 / Gate 流程，右侧持续展示论文、图表和证据载体。</p>
-      <div className="welcome-points">
-        <span>SQLite durable state</span>
-        <span>Fail-closed gates</span>
-        <span>Frozen Truth</span>
+      <h2>从工作区开始，把建模全过程固定在一个可追踪的桌面工作台里。</h2>
+      <p>第一次使用只需要三步。项目运行以后，中间展示 S0–S6 / Gate，右侧持续展示论文、图表和证据载体。</p>
+
+      <div className="onboarding-steps" aria-label="首次使用步骤">
+        <div className="onboarding-step active">
+          <span>1</span>
+          <div><strong>工作区</strong><small>新建或打开项目目录</small></div>
+        </div>
+        <div className="onboarding-step">
+          <span>2</span>
+          <div><strong>模型</strong><small>配置 Provider 与凭据</small></div>
+        </div>
+        <div className="onboarding-step">
+          <span>3</span>
+          <div><strong>材料</strong><small>导入题目与数据后启动</small></div>
+        </div>
+      </div>
+
+      <div className="welcome-actions">
+        <button className="primary" disabled={busy} onClick={onCreate}>＋ 新建工作区</button>
+        <button disabled={busy} onClick={onOpenDialog}>打开已有工作区</button>
       </div>
 
       {recent.length > 0 && (
         <div className="recent-workspaces">
           <div className="recent-heading">最近工作区</div>
           {recent.map((workspace) => (
-            <button
-              key={workspace.root}
-              disabled={busy}
-              className="recent-workspace"
-              onClick={() => void onOpen(workspace)}
-            >
-              <span className="recent-workspace-icon">Σ</span>
-              <span className="recent-workspace-copy">
-                <strong>{workspace.name}</strong>
-                <span className="mono">{workspace.root}</span>
-              </span>
-              <span className="recent-workspace-profile">{workspace.profile}</span>
-            </button>
+            <div className="recent-workspace-row" key={workspace.root}>
+              <button
+                disabled={busy}
+                className="recent-workspace"
+                onClick={() => void onOpenRecent(workspace)}
+              >
+                <span className="recent-workspace-icon">Σ</span>
+                <span className="recent-workspace-copy">
+                  <strong>{workspace.name}</strong>
+                  <span className="mono">{workspace.root}</span>
+                </span>
+                <span className="recent-workspace-profile">{workspace.profile}</span>
+              </button>
+              <button
+                className="recent-remove"
+                disabled={busy}
+                onClick={() => onRemoveRecent(workspace.root)}
+                title="从最近列表移除（不会删除工作区）"
+                aria-label={`从最近列表移除 ${workspace.name}`}
+              >
+                ×
+              </button>
+            </div>
           ))}
         </div>
       )}
+
+      <div className="welcome-points">
+        <span>SQLite durable state</span>
+        <span>Fail-closed gates</span>
+        <span>Frozen Truth</span>
+      </div>
     </div>
-  );
-}
-
-function ProjectPanel({
-  project,
-  busy,
-  onSubmit,
-}: {
-  project: ProjectView | null;
-  busy: boolean;
-  onSubmit: (mode: "create" | "open", root: string, name: string, profile: string) => Promise<void>;
-}) {
-  const [root, setRoot] = useState("");
-  const [name, setName] = useState("数学建模项目");
-  const [profile, setProfile] = useState("标准");
-  const [pickerError, setPickerError] = useState("");
-
-  async function pickFolder() {
-    setPickerError("");
-    try {
-      const picked = await pickFolderDialog();
-      if (typeof picked === "string" && picked) {
-        setRoot(picked);
-        const folderName = picked.split(/[\\/]/).filter(Boolean).pop() ?? "";
-        if (folderName && (!name.trim() || name === "数学建模项目")) {
-          setName(folderName);
-        }
-      }
-    } catch (err) {
-      setPickerError(
-        `原生文件夹选择器不可用（${err instanceof Error ? err.message : String(err)}）；请使用高级：手动路径。`,
-      );
-    }
-  }
-
-  return (
-    <section className="card">
-      <h2>项目</h2>
-      {project && (
-        <p className="muted mono">{project.root_path}</p>
-      )}
-      <button
-        className="primary picker-button"
-        disabled={busy}
-        onClick={() => void pickFolder()}
-      >
-        浏览选择工作区文件夹…
-      </button>
-      {pickerError && <p className="error">{pickerError}</p>}
-      {root && (
-        <p className="muted mono picker-selected" title={root}>
-          已选择：{root}
-        </p>
-      )}
-      <div className="field">
-        <label>项目名</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} />
-      </div>
-      <div className="field">
-        <label>档位</label>
-        <select value={profile} onChange={(e) => setProfile(e.target.value)}>
-          <option>快速</option>
-          <option>标准</option>
-          <option>深度</option>
-        </select>
-      </div>
-      <div className="row">
-        <button
-          className="primary"
-          disabled={busy || !root.trim() || !name.trim()}
-          onClick={() => void onSubmit("create", root.trim(), name.trim(), profile)}
-        >
-          创建
-        </button>
-        <button
-          disabled={busy || !root.trim()}
-          onClick={() => void onSubmit("open", root.trim(), name.trim(), profile)}
-        >
-          打开
-        </button>
-      </div>
-      <details className="advanced-settings">
-        <summary>高级：手动路径</summary>
-        <div className="advanced-body">
-          <div className="field">
-            <label>工作区路径</label>
-            <input value={root} onChange={(e) => setRoot(e.target.value)} placeholder="D:\\MMProjects\\2026-C" />
-          </div>
-        </div>
-      </details>
-    </section>
   );
 }
 
