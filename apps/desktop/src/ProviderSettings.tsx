@@ -153,6 +153,7 @@ export function ProviderSettings({
   const [presetId, setPresetId] = useState("");
   const [form, setForm] = useState<ProviderFormState>(blankForm);
   const [testResult, setTestResult] = useState("");
+  const [draftTestResult, setDraftTestResult] = useState("");
   const [localError, setLocalError] = useState("");
   const [models, setModels] = useState<string[]>([]);
   const [modelDetail, setModelDetail] = useState("");
@@ -240,6 +241,7 @@ export function ProviderSettings({
     });
     setModels([]);
     setModelDetail("");
+    setDraftTestResult("");
     setLocalError("");
   }
 
@@ -260,6 +262,7 @@ export function ProviderSettings({
     }));
     setModels([]);
     setModelDetail("");
+    setDraftTestResult("");
   }
 
   async function discoverForCreate() {
@@ -306,6 +309,35 @@ export function ProviderSettings({
       setLocalError(err instanceof Error ? err.message : String(err));
     } finally {
       setDiscoverBusy(false);
+    }
+  }
+
+  async function testDraftProvider() {
+    setLocalError("");
+    setDraftTestResult("测试中…");
+    let maxOutputTokens: number | null;
+    let timeoutS: number;
+    try {
+      maxOutputTokens = positiveIntOrNull(form.maxOutputTokens, "Max output tokens");
+      timeoutS = positiveIntOrNull(form.timeoutS, "Timeout") ?? 300;
+      const result = await backend<{ ok: boolean; detail: string }>(
+        "POST",
+        "/providers/test-config",
+        {
+          protocol: form.protocol,
+          base_url: form.baseUrl,
+          model: form.model,
+          api_key: form.authMode === "api_key" ? form.apiKey || null : null,
+          reasoning: form.reasoning || null,
+          max_output_tokens: maxOutputTokens,
+          timeout_s: timeoutS,
+          extra: providerExtra(form),
+        },
+      );
+      setDraftTestResult((result.ok ? "✓ " : "✗ ") + result.detail);
+    } catch (err) {
+      setDraftTestResult("");
+      setLocalError(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -483,6 +515,7 @@ export function ProviderSettings({
     setEditing(false);
     setLocalError("");
     setTestResult("");
+    setDraftTestResult("");
     setModels([]);
     setModelDetail("");
     if (catalog.length) applyPreset(catalog[0]);
@@ -506,7 +539,10 @@ export function ProviderSettings({
           <input
             list="mmagent-provider-models"
             value={form.model}
-            onChange={(event) => setForm((current) => ({ ...current, model: event.target.value }))}
+            onChange={(event) => {
+              setForm((current) => ({ ...current, model: event.target.value }));
+              setDraftTestResult("");
+            }}
             placeholder="精确模型 ID；列表不可用时可手动输入"
           />
           {allowDiscovery && (
@@ -811,7 +847,10 @@ export function ProviderSettings({
                     type="password"
                     autoComplete="off"
                     value={form.apiKey}
-                    onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
+                    onChange={(event) => {
+                      setForm((current) => ({ ...current, apiKey: event.target.value }));
+                      setDraftTestResult("");
+                    }}
                     placeholder="仅写入 Windows Credential Manager"
                   />
                   <span className="field-hint">保存后不会在 UI、SQLite、文档或日志中回显真实密钥。</span>
@@ -847,7 +886,19 @@ export function ProviderSettings({
 
             {renderAdvanced()}
 
-            <div className="settings-actions">
+            <div className="settings-actions provider-create-actions">
+              <button
+                type="button"
+                disabled={
+                  busy
+                  || !form.baseUrl.trim()
+                  || !form.model.trim()
+                  || (form.authMode === "api_key" && !form.apiKey.trim())
+                }
+                onClick={() => void testDraftProvider()}
+              >
+                Test Connection
+              </button>
               <button
                 className="primary"
                 disabled={
@@ -860,7 +911,11 @@ export function ProviderSettings({
               >
                 保存 Provider
               </button>
+              {draftTestResult && <span className="test-result">{draftTestResult}</span>}
             </div>
+            <span className="field-hint">
+              预检不会保存 Provider 或凭据；若模型列表端点不可用，部分协议会按既有 Test Connection 规则执行一次最小模型 probe。
+            </span>
           </form>
         ) : editing ? (
           <form onSubmit={(event) => void saveEdit(event)}>
