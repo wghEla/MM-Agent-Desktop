@@ -131,7 +131,11 @@ export function ArtifactViewer({
     try {
       const list = await backend<ArtifactItem[]>("GET", `/projects/${project.id}/artifacts`);
       setItems(list);
-      if (selected && !list.some((item) => item.path === selected)) {
+      if (
+        selected
+        && selected !== requestedPath
+        && !list.some((item) => item.path === selected)
+      ) {
         setSelected("");
         setPreview(null);
       }
