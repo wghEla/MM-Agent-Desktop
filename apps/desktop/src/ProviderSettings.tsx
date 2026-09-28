@@ -159,6 +159,7 @@ export function ProviderSettings({
   const [discoverBusy, setDiscoverBusy] = useState(false);
   const [credentialMode, setCredentialMode] = useState(false);
   const [replacementKey, setReplacementKey] = useState("");
+  const [replacementAuthStyle, setReplacementAuthStyle] = useState<"bearer" | "x-api-key">("bearer");
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   useEffect(() => {
@@ -196,6 +197,7 @@ export function ProviderSettings({
       setModelDetail("");
       setCredentialMode(false);
       setReplacementKey("");
+      setReplacementAuthStyle("bearer");
       setDeleteConfirm(false);
     }
   }, [selected?.model_profile_id]);
@@ -382,6 +384,35 @@ export function ProviderSettings({
   async function replaceCredential() {
     if (!selected || !replacementKey) return;
     const ok = await onGuarded(async () => {
+      const currentAuthStyle =
+        selected.protocol === "openai_compatible"
+          ? String(selected.extra.auth_style || "bearer")
+          : "bearer";
+
+      if (
+        selected.protocol === "openai_compatible"
+        && !selected.has_api_key
+        && currentAuthStyle === "none"
+      ) {
+        await backend(
+          "POST",
+          "/projects/" + project.id + "/providers/" + selected.model_profile_id,
+          {
+            name: selected.name,
+            protocol: selected.protocol,
+            base_url: selected.base_url,
+            model: selected.model,
+            reasoning: selected.reasoning,
+            max_output_tokens: selected.max_output_tokens,
+            timeout_s: selected.timeout_s,
+            extra: {
+              ...selected.extra,
+              auth_style: replacementAuthStyle,
+            },
+          },
+        );
+      }
+
       await backend(
         "POST",
         "/projects/" + project.id + "/providers/" + selected.model_profile_id + "/credential",
@@ -391,6 +422,7 @@ export function ProviderSettings({
     });
     if (ok) {
       setReplacementKey("");
+      setReplacementAuthStyle("bearer");
       setCredentialMode(false);
     }
   }
@@ -951,6 +983,20 @@ export function ProviderSettings({
                 </>
               ) : (
                 <>
+                  {selected.protocol === "openai_compatible"
+                    && !selected.has_api_key
+                    && String(selected.extra.auth_style || "bearer") === "none" && (
+                    <select
+                      value={replacementAuthStyle}
+                      onChange={(event) => setReplacementAuthStyle(
+                        event.target.value as "bearer" | "x-api-key",
+                      )}
+                      aria-label="API Key 鉴权方式"
+                    >
+                      <option value="bearer">Bearer</option>
+                      <option value="x-api-key">x-api-key</option>
+                    </select>
+                  )}
                   <input
                     type="password"
                     autoComplete="off"
@@ -969,6 +1015,7 @@ export function ProviderSettings({
                     onClick={() => {
                       setCredentialMode(false);
                       setReplacementKey("");
+                      setReplacementAuthStyle("bearer");
                     }}
                     disabled={busy}
                   >
