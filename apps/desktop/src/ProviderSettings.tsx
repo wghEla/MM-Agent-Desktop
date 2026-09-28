@@ -150,6 +150,7 @@ export function ProviderSettings({
   const selected = providers.find((item) => item.model_profile_id === selectedProvider) ?? null;
   const [catalog, setCatalog] = useState<ProviderPreset[]>([]);
   const [catalogError, setCatalogError] = useState("");
+  const [protocolCapabilities, setProtocolCapabilities] = useState<ProviderCapabilities | null>(null);
   const [showCreate, setShowCreate] = useState(providers.length === 0);
   const [editing, setEditing] = useState(false);
   const [presetId, setPresetId] = useState("");
@@ -213,6 +214,25 @@ export function ProviderSettings({
   }, []);
 
   useEffect(() => {
+    if (form.protocol === "openai_compatible") {
+      setProtocolCapabilities(null);
+      return;
+    }
+    let active = true;
+    void backend<ProviderCapabilities>(
+      "GET",
+      "/providers/capabilities/" + encodeURIComponent(form.protocol),
+    )
+      .then((value) => {
+        if (active) setProtocolCapabilities(value);
+      })
+      .catch(() => {
+        if (active) setProtocolCapabilities(null);
+      });
+    return () => { active = false; };
+  }, [form.protocol]);
+
+  useEffect(() => {
     if (!selected) return;
     if (!editing) {
       setModels([]);
@@ -241,7 +261,7 @@ export function ProviderSettings({
       };
     }
     const matching = catalog.find((item) => item.protocol === form.protocol);
-    return matching?.capabilities ?? {
+    return protocolCapabilities ?? matching?.capabilities ?? {
       protocol: form.protocol,
       tool_calling: true,
       image_input: false,
@@ -249,7 +269,13 @@ export function ProviderSettings({
       reasoning_levels: [],
       max_output_tokens_limit: null,
     };
-  }, [catalog, form.protocol, form.imageInput, form.reasoningEffort]);
+  }, [
+    catalog,
+    protocolCapabilities,
+    form.protocol,
+    form.imageInput,
+    form.reasoningEffort,
+  ]);
 
   function applyPreset(preset: ProviderPreset) {
     setPresetId(preset.id);
