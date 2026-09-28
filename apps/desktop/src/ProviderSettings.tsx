@@ -128,6 +128,7 @@ export function ProviderSettings({
   onSelect,
   onChanged,
   onGuarded,
+  externalError = "",
 }: {
   project: ProjectView;
   providers: ProviderProfile[];
@@ -136,6 +137,7 @@ export function ProviderSettings({
   onSelect: (value: string) => void;
   onChanged: () => Promise<void>;
   onGuarded: (action: () => Promise<void>) => Promise<boolean>;
+  externalError?: string;
 }) {
   const selected = providers.find((item) => item.model_profile_id === selectedProvider) ?? null;
   const [catalog, setCatalog] = useState<ProviderPreset[]>([]);
@@ -691,6 +693,9 @@ export function ProviderSettings({
       <section className="provider-settings-detail">
         {catalogError && <div className="settings-inline-error">{catalogError}</div>}
         {localError && <div className="settings-inline-error">{localError}</div>}
+        {externalError && !localError && (
+          <div className="settings-inline-error">{externalError}</div>
+        )}
 
         {showCreate || !selected ? (
           <form onSubmit={(event) => void createProvider(event)}>
