@@ -8,6 +8,7 @@ import {
   type RunStatus,
 } from "./api";
 import { ArtifactViewer, ImportPanel } from "./WorkspacePanels";
+import { StageRail } from "./StageRail";
 
 const protocolDefaults: Record<string, string> = {
   openai_chat: "https://api.openai.com/v1",
@@ -27,6 +28,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const selected = useMemo(
     () => providers.find((item) => item.model_profile_id === selectedProvider) ?? null,
@@ -147,87 +149,173 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell ui-v2">
       <header className="topbar">
-        <div className="brand">
-          <h1>MM-Agent Desktop</h1>
-          <p>MM-Final-Skill · paper-foundry 独立客户端</p>
+        <div className="brand compact">
+          <div className="brand-mark" aria-hidden="true">M</div>
+          <div>
+            <h1>MM-Agent</h1>
+            <p>数学建模智能工作台</p>
+          </div>
         </div>
-        <div className="badge">
-          {project ? `${project.name} · ${project.profile}` : "尚未打开项目"}
+
+        <div className="topbar-context">
+          {project ? (
+            <>
+              <strong>{project.name}</strong>
+              <span className="context-separator">/</span>
+              <span>{selected?.model || "未配置模型"}</span>
+              <span className="context-separator">/</span>
+              <span>{run?.status || "Ready"}</span>
+            </>
+          ) : (
+            <span>选择工作区开始</span>
+          )}
         </div>
+
+        <button className="icon-button settings-button" onClick={() => setSettingsOpen(true)}>
+          <span aria-hidden="true">⚙</span>
+          设置
+        </button>
       </header>
 
-      <div className="layout">
-        <aside className="sidebar">
-          <ProjectPanel
-            project={project}
-            busy={busy}
-            onSubmit={createOrOpen}
-          />
-
-          {project && <ImportPanel project={project} />}
-
-          {project && (
-            <ProviderPanel
-              project={project}
-              providers={providers}
-              selectedProvider={selectedProvider}
-              busy={busy}
-              onSelect={setSelectedProvider}
-              onRefresh={() => guarded(async () => refreshProviders(project))}
-              onCreated={async () => {
-                await refreshProviders(project);
-                setNotice("Provider 已保存到项目配置；密钥仅保存到系统凭据库");
-              }}
-              onGuarded={guarded}
-            />
-          )}
-
-          {project && runHistory.length > 0 && (
-            <RunHistoryPanel
-              runs={runHistory}
-              currentRunId={run?.id ?? null}
-              busy={busy}
-              onSelect={selectHistoricalRun}
-              onNew={() => {
-                setRun(null);
-                setDashboard(null);
-              }}
-            />
-          )}
-
-          {project && (
-            <RunPanel
-              provider={selected}
-              run={run}
-              busy={busy}
-              onStart={startRun}
-              onControl={control}
-            />
-          )}
-
-          {notice && <p className="success">{notice}</p>}
-          {error && <p className="error">{error}</p>}
-        </aside>
-
-        <main className="main">
+      <div className="workspace-layout">
+        <aside className="workspace-sidebar">
+          <div className="sidebar-section-title">WORKSPACE</div>
           {!project ? (
-            <div className="empty">创建或打开一个 MM-Agent 工作区后开始。</div>
+            <ProjectPanel
+              project={project}
+              busy={busy}
+              onSubmit={createOrOpen}
+            />
           ) : (
             <>
-              {!run ? (
-                <div className="empty">
-                  已打开 <span className="mono">{project.root_path}</span>。导入题目、配置 Provider 后启动一炉。
-                </div>
-              ) : (
-                <DashboardView run={run} dashboard={dashboard} onRefresh={() => void refreshRun()} />
+              <WorkspaceSummary project={project} />
+              <ImportPanel project={project} />
+
+              {runHistory.length > 0 && (
+                <RunHistoryPanel
+                  runs={runHistory}
+                  currentRunId={run?.id ?? null}
+                  busy={busy}
+                  onSelect={selectHistoricalRun}
+                  onNew={() => {
+                    setRun(null);
+                    setDashboard(null);
+                  }}
+                />
               )}
-              <ArtifactViewer project={project} />
+            </>
+          )}
+
+          <div className="sidebar-spacer" />
+
+          <button className="sidebar-settings" onClick={() => setSettingsOpen(true)}>
+            <span aria-hidden="true">⚙</span>
+            Models & Providers
+            {providers.length > 0 && <span className="count-badge">{providers.length}</span>}
+          </button>
+        </aside>
+
+        <main className="workbench-main">
+          {!project ? (
+            <WelcomeSurface />
+          ) : (
+            <>
+              <div className="workbench-toolbar">
+                <div className="toolbar-provider">
+                  <span className="toolbar-label">MODEL</span>
+                  {providers.length > 0 ? (
+                    <select
+                      value={selectedProvider}
+                      onChange={(event) => setSelectedProvider(event.target.value)}
+                      aria-label="当前模型"
+                    >
+                      {providers.map((item) => (
+                        <option key={item.model_profile_id} value={item.model_profile_id}>
+                          {item.name} · {item.model}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <button onClick={() => setSettingsOpen(true)}>配置 Provider</button>
+                  )}
+                </div>
+
+                <RunToolbar
+                  provider={selected}
+                  run={run}
+                  busy={busy}
+                  onStart={startRun}
+                  onControl={control}
+                />
+              </div>
+
+              <StageRail dashboard={dashboard} />
+
+              {notice && <div className="notice-banner success">{notice}</div>}
+              {error && <div className="notice-banner error">{error}</div>}
+
+              <div className="pipeline-surface">
+                {!run ? (
+                  <div className="workbench-empty">
+                    <div className="empty-kicker">WORKSPACE READY</div>
+                    <h2>材料准备完成后，从这里启动一次建模运行。</h2>
+                    <p>
+                      当前工作区：<span className="mono">{project.root_path}</span>
+                    </p>
+                    <p>Provider 配置、历史运行与交付物分别位于顶部、左侧和右侧，不再挤在同一个控制栏里。</p>
+                  </div>
+                ) : (
+                  <DashboardView run={run} dashboard={dashboard} onRefresh={() => void refreshRun()} />
+                )}
+              </div>
             </>
           )}
         </main>
+
+        <aside className="artifact-dock">
+          <div className="sidebar-section-title">ARTIFACTS</div>
+          {project ? (
+            <ArtifactViewer project={project} />
+          ) : (
+            <div className="dock-empty">打开工作区后，这里会显示论文、图表、结果、审稿与交付物。</div>
+          )}
+        </aside>
       </div>
+
+      {settingsOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setSettingsOpen(false)}>
+          <div className="settings-modal" role="dialog" aria-modal="true" aria-label="Models & Providers" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="settings-header">
+              <div>
+                <span className="eyebrow">SETTINGS</span>
+                <h2>Models & Providers</h2>
+                <p>模型配置与凭据独立于主工作台；API Key 只进入系统凭据库。</p>
+              </div>
+              <button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="关闭设置">×</button>
+            </div>
+
+            {!project ? (
+              <div className="settings-empty">请先创建或打开工作区，再配置该项目使用的 Provider。</div>
+            ) : (
+              <ProviderPanel
+                project={project}
+                providers={providers}
+                selectedProvider={selectedProvider}
+                busy={busy}
+                onSelect={setSelectedProvider}
+                onRefresh={() => guarded(async () => refreshProviders(project))}
+                onCreated={async () => {
+                  await refreshProviders(project);
+                  setNotice("Provider 已保存；密钥仅保存在 Windows Credential Manager");
+                }}
+                onGuarded={guarded}
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
