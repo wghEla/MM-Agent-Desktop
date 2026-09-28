@@ -335,9 +335,9 @@ It must not silently mutate ledger/gate state. Human actions become explicit dur
 
 - recent workspace bookmarks — implemented + locally verified;
 - native folder picker — implemented + locally verified;
-- workspace file tree — source implemented, local validation pending;
-- first-run onboarding — source implemented, local validation pending;
-- project/open/create dialogs — source implemented, local validation pending.
+- workspace file tree — implemented + locally verified;
+- first-run onboarding — implemented + locally verified;
+- project/open/create dialogs — implemented + locally verified.
 
 Workspace tree security contract:
 
@@ -349,11 +349,26 @@ Workspace tree security contract:
 
 ### Phase 3 — provider UX
 
-- provider preset registry;
-- model discovery / manual fallback;
-- API-key status presentation;
-- capability-driven advanced fields;
-- formal OAuth extension point.
+Source implementation is complete; Windows/Tauri local validation is pending.
+
+- Runtime-backed provider catalog with OpenAI / Anthropic / Gemini / Groq / DeepSeek /
+  ZCode / OpenAI Compatible presets;
+- read-only model discovery with manual Model ID fallback;
+- pre-save Test Connection that does not persist a profile or credential;
+- provider edit/delete and credential replace/clear flows;
+- API-key state projected from Credential Manager references only;
+- capability-driven Advanced fields and conservative Compatible opt-ins;
+- configurable/disable-able Compatible models endpoint;
+- endpoint/protocol changes are blocked while a credential is bound, preventing a saved
+  secret from following a profile to another host;
+- Compatible `auth_style=none` is only valid without a credential;
+- transient discovery and persisted profiles share the same URL/header/path secret boundary;
+- model discovery never spends generation tokens;
+- existing Test Connection may perform the already-documented minimal model probe when a
+  list endpoint is unavailable;
+- formal OAuth adapter/registry contract exists, but **no OAuth provider is registered or
+  advertised yet**. Account login becomes visible only after a documented third-party flow
+  is implemented under MM-Agent's own client registration.
 
 ### Phase 4 — local validation
 
@@ -394,11 +409,10 @@ on a real Windows/Tauri runtime. Report: `docs/reviews/v1.0.0-rebuild-ui-v2-loca
 - Package/version alignment note: the release build rejects mismatched npm/crate minors
   (e.g. `@tauri-apps/api` 2.12 vs crate 2.11) — keep them on the same minor.
 - The first local-validation round covered Phase 1 plus native picker/recent bookmarks.
-- Phase 2 is now source-complete on the branch: Runtime-backed workspace file tree,
-  workspace file preview, first-run onboarding, and dedicated create/open dialogs are
-  implemented after the verified `ffe1793` baseline. These Phase-2 additions are
-  source-only until the next Windows/Tauri local validation.
-- Phases 3–4 remain open; nothing here declares Product Release GO.
+- Phase 2 is fully locally validated; see the Phase-2 record below.
+- Phase 3 Provider UX is source-complete after the Phase-2 validated baseline and awaits
+  its own Windows/Tauri/Credential Manager validation.
+- Nothing here declares Product Release GO.
 
 ## Phase-2 local validation record (2026-09-28, Windows)
 
