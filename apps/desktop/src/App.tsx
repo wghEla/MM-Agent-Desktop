@@ -320,6 +320,35 @@ function App() {
   );
 }
 
+function WorkspaceSummary({ project }: { project: ProjectView }) {
+  return (
+    <section className="workspace-summary">
+      <div className="workspace-icon" aria-hidden="true">Σ</div>
+      <div className="workspace-summary-copy">
+        <strong>{project.name}</strong>
+        <span className="mono" title={project.root_path}>{project.root_path}</span>
+        <span>{project.profile}档 · Runtime-owned workspace</span>
+      </div>
+    </section>
+  );
+}
+
+function WelcomeSurface() {
+  return (
+    <div className="welcome-surface">
+      <div className="welcome-mark" aria-hidden="true">M</div>
+      <span className="eyebrow">MM-AGENT DESKTOP</span>
+      <h2>把题目、求解、审稿和最终论文放在一个可追踪的工作区里。</h2>
+      <p>左侧创建或打开工作区。运行后，中间展示 S0–S6 / Gate 流程，右侧持续展示论文、图表和证据载体。</p>
+      <div className="welcome-points">
+        <span>SQLite durable state</span>
+        <span>Fail-closed gates</span>
+        <span>Frozen Truth</span>
+      </div>
+    </div>
+  );
+}
+
 function ProjectPanel({
   project,
   busy,
@@ -582,7 +611,7 @@ function RunHistoryPanel({
   );
 }
 
-function RunPanel({
+function RunToolbar({
   provider,
   run,
   busy,
@@ -596,44 +625,53 @@ function RunPanel({
   onControl: (kind: "pause" | "resume" | "cancel") => Promise<void>;
 }) {
   const [profile, setProfile] = useState("标准");
+
   return (
-    <section className="card">
-      <h2>运行控制</h2>
-      <div className="field">
-        <label>档位</label>
-        <select value={profile} onChange={(e) => setProfile(e.target.value)}>
-          <option>快速</option>
-          <option>标准</option>
-          <option>深度</option>
-        </select>
-      </div>
+    <div className="run-toolbar">
+      <select
+        className="profile-select"
+        value={profile}
+        onChange={(event) => setProfile(event.target.value)}
+        aria-label="运行档位"
+      >
+        <option>快速</option>
+        <option>标准</option>
+        <option>深度</option>
+      </select>
+
       {!run ? (
-        <button className="primary" disabled={busy || !provider} onClick={() => void onStart(profile)}>
-          Start
+        <button
+          className="primary run-primary"
+          disabled={busy || !provider}
+          onClick={() => void onStart(profile)}
+        >
+          ▶ 启动
         </button>
       ) : (
         <>
-          <p><span className={`status ${run.status}`}>{run.status}</span></p>
-          <div className="row wrap">
-            <button
-              disabled={busy || run.status !== "RUNNING" || !run.active_in_sidecar}
-              onClick={() => void onControl("pause")}
-            >Pause</button>
-            <button
-              disabled={busy || !["PAUSED", "RUNNING"].includes(run.status) || run.active_in_sidecar || !provider}
-              onClick={() => void onControl("resume")}
-            >Resume</button>
-            <button
-              className="danger"
-              disabled={busy || !["RUNNING", "PAUSED"].includes(run.status)}
-              onClick={() => void onControl("cancel")}
-            >Cancel</button>
-          </div>
-          <p className="muted mono">{run.id}</p>
-          <p className="muted">{run.active_in_sidecar ? "当前 sidecar 已接管" : "未接管，可从断点继续"}</p>
+          <span className={`status ${run.status}`}>{run.status}</span>
+          <button
+            disabled={busy || run.status !== "RUNNING" || !run.active_in_sidecar}
+            onClick={() => void onControl("pause")}
+          >
+            暂停
+          </button>
+          <button
+            disabled={busy || !["PAUSED", "RUNNING"].includes(run.status) || run.active_in_sidecar || !provider}
+            onClick={() => void onControl("resume")}
+          >
+            继续
+          </button>
+          <button
+            className="danger subtle"
+            disabled={busy || !["RUNNING", "PAUSED"].includes(run.status)}
+            onClick={() => void onControl("cancel")}
+          >
+            取消
+          </button>
         </>
       )}
-    </section>
+    </div>
   );
 }
 
