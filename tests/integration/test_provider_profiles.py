@@ -349,6 +349,82 @@ def test_provider_profile_normalizes_safe_compatible_endpoint_paths(tmp_path) ->
         handle.workspace.db.close()
 
 
+def test_provider_profile_requires_credential_clear_before_endpoint_or_protocol_change(
+    tmp_path,
+) -> None:
+    from mmagent.api.providers import (
+        clear_provider_credential,
+        update_provider_profile,
+    )
+
+    handle = create_project(
+        tmp_path / "proj-credential-scope",
+        name="providers-credential-scope",
+        profile="标准",
+    )
+    store = MemoryCredentialStore()
+    db = handle.workspace.db
+    try:
+        profile = create_provider_profile(
+            db,
+            store,
+            name="Scoped",
+            protocol="openai_compatible",
+            base_url="https://relay-one.invalid/v1",
+            model="model-a",
+            api_key="test-scoped-secret",
+            extra={"auth_style": "bearer"},
+        )
+        ref = profile.api_key_ref
+        assert ref is not None
+        assert store.get(ref) == "test-scoped-secret"
+
+        with pytest.raises(ValueError, match="clear the saved credential"):
+            update_provider_profile(
+                db,
+                model_profile_id=profile.model_profile_id,
+                name="Scoped",
+                protocol="openai_compatible",
+                base_url="https://relay-two.invalid/v1",
+                model="model-a",
+                extra={"auth_style": "bearer"},
+            )
+
+        with pytest.raises(ValueError, match="clear the saved credential"):
+            update_provider_profile(
+                db,
+                model_profile_id=profile.model_profile_id,
+                name="Scoped",
+                protocol="openai_chat",
+                base_url="https://relay-one.invalid/v1",
+                model="model-a",
+            )
+
+        unchanged = handle.workspace.db.query_one(
+            "SELECT protocol, base_url, api_key_ref FROM providers WHERE id = ?",
+            (profile.provider_id,),
+        )
+        assert unchanged["protocol"] == "openai_compatible"
+        assert unchanged["base_url"] == "https://relay-one.invalid/v1"
+        assert unchanged["api_key_ref"] == ref
+        assert store.get(ref) == "test-scoped-secret"
+
+        clear_provider_credential(db, store, profile.model_profile_id)
+        updated = update_provider_profile(
+            db,
+            model_profile_id=profile.model_profile_id,
+            name="Scoped",
+            protocol="openai_compatible",
+            base_url="https://relay-two.invalid/v1",
+            model="model-b",
+            extra={"auth_style": "bearer"},
+        )
+        assert updated.base_url == "https://relay-two.invalid/v1"
+        assert updated.api_key_ref is None
+    finally:
+        db.close()
+
+
 def test_provider_profile_accepts_https_and_local_http_base_urls(tmp_path) -> None:
     store = MemoryCredentialStore()
 
