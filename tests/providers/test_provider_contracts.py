@@ -583,13 +583,30 @@ async def test_openai_chat_connection_falls_back_to_configured_model():
 
 
 @pytest.mark.asyncio
-async def test_openai_chat_connection_models_200_no_fallback():
-    """A working /models endpoint must pass directly without any chat call."""
+@pytest.mark.parametrize(
+    ("models_payload", "expected"),
+    [
+        (
+            {"data": [{"id": "cfg-model"}, {"id": "other"}]},
+            {"ok": True, "detail": "models 端点 200; 已确认模型 cfg-model"},
+        ),
+        (
+            {"data": []},
+            {"ok": False, "detail": "models 端点 200; 未能从响应识别模型，无法确认 cfg-model"},
+        ),
+        (
+            {"data": [{"id": "other"}]},
+            {"ok": False, "detail": "models 端点 200; 配置模型不存在或当前账户不可用: cfg-model"},
+        ),
+    ],
+)
+async def test_openai_chat_connection_models_200_no_fallback(models_payload, expected):
+    """A 200 /models endpoint answers directly (configured-model verdict) with no chat call."""
     captures: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         captures.append(request)
-        return httpx.Response(200, json={"data": []})
+        return httpx.Response(200, json=models_payload)
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     p = OpenAIChatProvider(
@@ -597,7 +614,7 @@ async def test_openai_chat_connection_models_200_no_fallback():
     )
     try:
         result = await p.test_connection()
-        assert result == {"ok": True, "detail": "models 端点 200"}
+        assert result == expected
         assert all(r.method == "GET" for r in captures)
     finally:
         await client.aclose()
