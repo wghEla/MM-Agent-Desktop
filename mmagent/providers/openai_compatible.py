@@ -10,7 +10,11 @@ import httpx
 
 from mmagent.agent.errors import ErrorKind, ProviderError, RateLimitError
 from mmagent.providers import redact_secret
-from mmagent.providers._http_util import parse_retry_after
+from mmagent.providers._http_util import (
+    configured_model_detail,
+    openai_style_model_ids,
+    parse_retry_after,
+)
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
 from mmagent.providers.normalized import (
@@ -142,10 +146,15 @@ class OpenAICompatibleProvider(BaseProvider):
                     timeout=15.0,
                 )
                 if resp.status_code == 200:
-                    return {
-                        "ok": True,
-                        "detail": f"models 端点 200 ({self.models_path})",
-                    }
+                    try:
+                        available = openai_style_model_ids(resp.json())
+                    except Exception:
+                        available = set()
+                    return configured_model_detail(
+                        self._test_model,
+                        available,
+                        endpoint_label=f"models 端点 200 ({self.models_path})",
+                    )
                 models_detail = (
                     f"models 端点 {resp.status_code} ({self.models_path})"
                 )
