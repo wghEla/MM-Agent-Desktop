@@ -32,10 +32,14 @@ export function WorkspaceTree({
   project,
   selectedPath,
   onOpenFile,
+  refreshKey = 0,
+  live = false,
 }: {
   project: ProjectView;
   selectedPath: string | null;
   onOpenFile: (path: string) => void;
+  refreshKey?: number;
+  live?: boolean;
 }) {
   const [items, setItems] = useState<WorkspaceTreeItem[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -59,7 +63,13 @@ export function WorkspaceTree({
   useEffect(() => {
     setCollapsed(new Set());
     void refresh();
-  }, [project.id]);
+  }, [project.id, refreshKey]);
+
+  useEffect(() => {
+    if (!live) return;
+    const timer = window.setInterval(() => void refresh(), 4000);
+    return () => window.clearInterval(timer);
+  }, [project.id, live]);
 
   const visibleItems = useMemo(() => {
     const hiddenByCollapsed = (item: WorkspaceTreeItem) => {
