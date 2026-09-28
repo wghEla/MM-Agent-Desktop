@@ -23,6 +23,7 @@ type ProviderFormState = {
   reasoningEffort: boolean;
   authStyle: "bearer" | "x-api-key" | "none";
   completionsPath: string;
+  modelsPath: string;
   baseExtra: Record<string, unknown>;
 };
 
@@ -49,6 +50,7 @@ function blankForm(): ProviderFormState {
     reasoningEffort: false,
     authStyle: "bearer",
     completionsPath: "/chat/completions",
+    modelsPath: "/models",
     baseExtra: {},
   };
 }
@@ -77,6 +79,10 @@ function formFromProfile(profile: ProviderProfile): ProviderFormState {
       typeof profile.extra.completions_path === "string"
         ? profile.extra.completions_path
         : "/chat/completions",
+    modelsPath:
+      typeof profile.extra.models_path === "string"
+        ? profile.extra.models_path
+        : "/models",
     baseExtra: { ...profile.extra },
   };
 }
@@ -91,6 +97,7 @@ function providerExtra(form: ProviderFormState) {
     reasoning_effort: form.reasoningEffort,
     auth_style: form.authStyle,
     completions_path: form.completionsPath || "/chat/completions",
+    models_path: form.modelsPath,
   };
 }
 
@@ -241,6 +248,7 @@ export function ProviderSettings({
       reasoningEffort: false,
       authStyle: "bearer",
       completionsPath: "/chat/completions",
+      modelsPath: "/models",
       baseExtra: {},
     }));
     setModels([]);
@@ -581,6 +589,24 @@ export function ProviderSettings({
                     }))}
                   />
                 </div>
+              </div>
+              <div className="field">
+                <label>Models path</label>
+                <input
+                  value={form.modelsPath}
+                  onChange={(event) => {
+                    setForm((current) => ({
+                      ...current,
+                      modelsPath: event.target.value,
+                    }));
+                    setModels([]);
+                    setModelDetail("");
+                  }}
+                  placeholder="/models；留空表示不提供模型列表端点"
+                />
+                <span className="field-hint">
+                  仅用于“发现模型/Test Connection”的列表探测；留空时不会生成额外请求来猜模型。
+                </span>
               </div>
             </>
           )}
