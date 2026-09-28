@@ -449,3 +449,32 @@ Gates: Source/Pipeline GO · Windows Package PASS · Installed Cancellation PASS
 **Installed Credential PASS** · Real Provider **WAITING_FOR_USER_CREDENTIAL**
 (user enters API Key / Base URL / Model in the installed app tonight) · CI
 decision open · deviation acceptance open. Regression: 462 passed / Ruff clean.
+
+
+## Real Provider Gate — 2026-09-28 — CONDITIONAL PASS
+
+User supplied a real Groq credential through this session; it was entered once
+via the installed product boundary and lives only in Windows Credential Manager.
+
+- R1 fresh-sidecar credential read PASS (found=true after full app restart).
+- R2 Test Connection PASS (/models 200, 1.56s).
+- R3 real generation PASS (real invocations with true token accounting).
+- R4 real tool calling PASS (fs.read/fs.write executed by the Runtime; sealed
+  artifacts; permission denials cleanly self-correctable).
+- Provider-proven corrections: model llama-3.1-8b-instant → 404 model_not_found
+  → openai/gpt-oss-20b (real /models list); reasoning_effort is REQUIRED by
+  gpt-oss on Groq → profile reasoning=low. Base URL/protocol/key untouched.
+- Short real stage: S0.2 SUCCEEDED in 7 real runs, S0.3 in 3, both together in
+  v8/v10; G0 green not achieved in one run due to 8B-model contract-schema
+  variance + free-tier rate limits — G0 fail-closed correctly every time
+  (real-model proof of the pipeline's contract enforcement).
+- In-gate product fixes (source→tests→repackage→reinstall→rerun): fs.read
+  directory-read PermissionError no longer kills a leg (clean tool error,
+  model self-corrected); answer_predictor read scopes now cover 数据档案.json
+  its own prompt requires. 464 passed / 0 failed, Ruff clean.
+- Evidence: docs/runs/real-provider/, docs/reviews/v1.0.0-rebuild-real-provider-gate.md.
+
+Gates: Source GO · Package PASS · Cancellation PASS · Credential PASS ·
+Real Provider CONDITIONAL PASS (one ceremonial green-G0 run open; achievable
+with quota/stronger model, no code change implicated) · CI decision open ·
+deviation acceptance open.

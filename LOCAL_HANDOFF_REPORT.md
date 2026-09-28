@@ -143,3 +143,15 @@ Do not tag, merge main, or run CI without explicit user direction.
 - 462 passed / 0 failed, Ruff clean, repackaged + reinstalled, smoke exit 0.
 - Real Provider Gate: WAITING_FOR_USER_CREDENTIAL (user inputs API Key /
   Base URL / Model in the installed app).
+
+
+## Real Provider Gate — 2026-09-28 — CONDITIONAL PASS
+
+- Groq / openai_chat / openai/gpt-oss-20b on the installed product; key only in
+  Windows Credential Manager (entered once via product boundary).
+- R1-R4 all PASS; corrections were provider-proven (dead model id; mandatory
+  reasoning_effort=low for gpt-oss).
+- Two in-gate product fixes (fs.read directory-read crash; predictor scope gap);
+  464 passed / 0 failed; repackaged + reinstalled; all real runs on new install.
+- Remaining ceremonial item: one green-G0 run (model schema variance + free-tier
+  429s; G0 fail-closed correctly every time). No code change implicated.

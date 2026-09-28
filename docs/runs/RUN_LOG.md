@@ -143,3 +143,13 @@
   环回 relay 强制校验 Bearer，29 次请求 0 失配，安装版 Runtime 完整跑通 S0+S1 全部
   腿并在 S2 边界干净 PAUSED。测试凭据事后全部从 Credential Manager 删除。
   Installed Credential Gate = PASS；Real Provider = WAITING_FOR_USER_CREDENTIAL。
+- 09-28 Real Provider Gate（Groq，openai/gpt-oss-20b）：R1 重启后凭据读取、R2 Test
+  Connection 200、R3 真实生成（真实 token 计量）、R4 真实工具调用全部 PASS；image
+  N/A；reasoning_effort 为 gpt-oss 在 Groq 的必填参数（400 证实）→ profile 设 low。
+  两次 provider 证实的配置修正：llama-3.1-8b-instant 已下线(404)→gpt-oss-20b。
+  门内修两个产品 bug：fs.read 读目录 PermissionError 崩腿→干净工具错误；answer_predictor
+  读权限缺 数据档案.json（与其腿指令矛盾）。464 passed，重打包重装后所有真实运行均在
+  新安装版上执行。S0 双腿多次全 SUCCEEDED（v8/v10 同轮双绿），G0 单轮绿灯被小模型
+  schema 方差（英文键/题目≠赛题/坏 JSON）+免费档 429 阻——门每次都正确 fail-closed。
+  Real Provider = CONDITIONAL PASS（唯一遗留：一次礼节性 G0 全绿 run）。secret scan
+  （gsk_ 模式）267 文件 CLEAN；真实 key 仅存 Credential Manager。

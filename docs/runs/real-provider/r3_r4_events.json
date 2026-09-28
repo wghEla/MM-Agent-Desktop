@@ -1,0 +1,16 @@
+{
+ "run_id": "run_1076cd6951be",
+ "tasks": {
+  "S0.2:读题": "SUCCEEDED",
+  "S0.3:预测": "QUEUED"
+ },
+ "run_state": "FAILED",
+ "elapsed_s": 15.6,
+ "g0_latest": {
+  "gate": "G0",
+  "pass": false,
+  "issues": [
+   "S0.3:预测 未成功"
+  ]
+ }
+}

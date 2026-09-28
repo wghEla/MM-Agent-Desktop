@@ -1,0 +1,12 @@
+{
+ "project_id": "proj_66a2bca2511a",
+ "model_profile_id": "model_365a6133904f",
+ "provider_name": "groq-real",
+ "protocol": "openai_chat",
+ "base_url_host": "api.groq.com",
+ "model": "llama-3.1-8b-instant",
+ "reasoning_omitted": true,
+ "image_input_declared": false,
+ "sqlite_contains_secret": false,
+ "has_api_key_in_public_profile": true
+}
