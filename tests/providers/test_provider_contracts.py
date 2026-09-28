@@ -651,11 +651,42 @@ async def test_native_provider_4xx_error_never_echoes_api_key(
 
 
 @pytest.mark.asyncio
-async def test_anthropic_connection_probe_uses_configured_model() -> None:
+async def test_anthropic_connection_prefers_model_list_and_validates_configured_model() -> None:
     captures: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         captures.append(request)
+        if request.url.path == "/v1/models":
+            return httpx.Response(
+                200,
+                json={"data": [{"id": "claude-configured"}]},
+            )
+        return httpx.Response(500)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AnthropicMessagesProvider(
+        "https://api.test",
+        lambda: "test-key",
+        client=client,
+        test_model="claude-configured",
+    )
+    try:
+        result = await provider.test_connection()
+        assert result["ok"] is True
+        assert "claude-configured" in result["detail"]
+        assert [request.url.path for request in captures] == ["/v1/models"]
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_anthropic_connection_falls_back_to_configured_model_when_models_missing() -> None:
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        if request.url.path == "/v1/models":
+            return httpx.Response(404)
         return httpx.Response(
             200,
             json={
@@ -679,7 +710,11 @@ async def test_anthropic_connection_probe_uses_configured_model() -> None:
     try:
         result = await provider.test_connection()
         assert result["ok"] is True
-        body = json.loads(captures[0].content)
+        assert [request.url.path for request in captures] == [
+            "/v1/models",
+            "/v1/messages",
+        ]
+        body = json.loads(captures[1].content)
         assert body["model"] == "claude-configured"
     finally:
         await client.aclose()
@@ -735,5 +770,100 @@ async def test_openai_compatible_can_disable_models_probe_and_use_chat_fallback(
         assert result["ok"] is True
         assert "models 端点已禁用" in result["detail"]
         assert [request.url.path for request in captures] == ["/v1/chat/completions"]
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_compatible_connection_rejects_configured_model_missing_from_list() -> None:
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        return httpx.Response(200, json={"data": [{"id": "other-model"}]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenAICompatibleProvider(
+        "https://compat.test/v1",
+        lambda: "k",
+        test_model="configured-model",
+        client=client,
+    )
+    try:
+        result = await provider.test_connection()
+        assert result["ok"] is False
+        assert "configured-model" in result["detail"]
+        assert "不存在" in result["detail"]
+        assert [request.url.path for request in captures] == ["/v1/models"]
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_connection_rejects_configured_model_missing_from_list() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [{"id": "other-model"}]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenAIChatProvider(
+        "https://api.test/v1",
+        lambda: "k",
+        test_model="configured-model",
+        client=client,
+    )
+    try:
+        result = await provider.test_connection()
+        assert result["ok"] is False
+        assert "configured-model" in result["detail"]
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_responses_connection_accepts_configured_model_present_in_list() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [{"id": "configured-model"}]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenAIResponsesProvider(
+        "https://api.test/v1",
+        lambda: "k",
+        test_model="configured-model",
+        client=client,
+    )
+    try:
+        result = await provider.test_connection()
+        assert result["ok"] is True
+        assert "configured-model" in result["detail"]
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_gemini_connection_rejects_configured_model_missing_from_list() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "models": [
+                    {
+                        "name": "models/other-model",
+                        "supportedGenerationMethods": ["generateContent"],
+                    }
+                ]
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = GeminiProvider(
+        "https://generativelanguage.test",
+        lambda: "k",
+        test_model="configured-model",
+        client=client,
+    )
+    try:
+        result = await provider.test_connection()
+        assert result["ok"] is False
+        assert "configured-model" in result["detail"]
     finally:
         await client.aclose()
