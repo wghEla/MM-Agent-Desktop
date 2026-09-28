@@ -539,7 +539,11 @@ export function ProviderSettings({
           <div className="settings-section two-column-fields">
             <div className="field">
               <label>协议</label>
-              <select value={form.protocol} onChange={(event) => changeProtocol(event.target.value)}>
+              <select
+                value={form.protocol}
+                disabled={Boolean(editing && selected?.has_api_key)}
+                onChange={(event) => changeProtocol(event.target.value)}
+              >
                 <option value="openai_responses">OpenAI Responses</option>
                 <option value="openai_chat">OpenAI Chat</option>
                 <option value="anthropic_messages">Anthropic Messages</option>
@@ -564,6 +568,7 @@ export function ProviderSettings({
             <label>Base URL</label>
             <input
               value={form.baseUrl}
+              disabled={Boolean(editing && selected?.has_api_key)}
               onChange={(event) => {
                 setForm((current) => ({ ...current, baseUrl: event.target.value }));
                 setModels([]);
@@ -571,6 +576,11 @@ export function ProviderSettings({
               }}
               placeholder="https://…/v1"
             />
+            {editing && selected?.has_api_key && (
+              <span className="field-hint">
+                当前 Provider 已保存凭据。为防止密钥被发送到新的 endpoint，修改 Protocol/Base URL 前请先返回详情页清除 Key。
+              </span>
+            )}
           </div>
 
           <div className="settings-section two-column-fields">
