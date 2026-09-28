@@ -221,12 +221,6 @@ export function ProviderSettings({
     };
   }, [catalog, form.protocol, form.imageInput, form.reasoningEffort]);
 
-  const requiresApiKey = Boolean(
-    selectedPreset
-      && selectedPreset.auth_methods.includes("api_key")
-      && !selectedPreset.auth_methods.includes("none"),
-  );
-
   function applyPreset(preset: ProviderPreset) {
     setPresetId(preset.id);
     setForm({
@@ -480,7 +474,11 @@ export function ProviderSettings({
           {allowDiscovery && (
             <button
               type="button"
-              disabled={discoverBusy || !form.baseUrl.trim()}
+              disabled={
+                discoverBusy
+                || !form.baseUrl.trim()
+                || (form.authMode === "api_key" && !form.apiKey.trim())
+              }
               onClick={() => void discoverForCreate()}
             >
               {discoverBusy ? "发现中…" : "发现模型"}
@@ -803,7 +801,7 @@ export function ProviderSettings({
                   || !form.name.trim()
                   || !form.baseUrl.trim()
                   || !form.model.trim()
-                  || (requiresApiKey && form.authMode === "api_key" && !form.apiKey.trim())
+                  || (form.authMode === "api_key" && !form.apiKey.trim())
                 }
               >
                 保存 Provider
