@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from mmagent.agent.errors import ErrorKind, ProviderError, RateLimitError
+from mmagent.providers import redact_secret
 from mmagent.providers._http_util import parse_retry_after
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
@@ -148,12 +149,20 @@ def parse_messages_response(data: dict[str, Any], protocol: str = "anthropic_mes
 class AnthropicMessagesProvider(BaseProvider):
     protocol = "anthropic_messages"
 
-    def __init__(self, base_url: str, api_key_getter, *, client: httpx.AsyncClient | None = None,
-                 api_version: str = _ANTHROPIC_VERSION):
+    def __init__(
+        self,
+        base_url: str,
+        api_key_getter,
+        *,
+        client: httpx.AsyncClient | None = None,
+        api_version: str = _ANTHROPIC_VERSION,
+        test_model: str | None = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self._key_getter = api_key_getter
         self._client = client or httpx.AsyncClient(timeout=600.0)
         self._api_version = api_version
+        self._test_model = (test_model or "").strip()
 
     def capabilities(self) -> CapabilitySet:
         return CapabilitySet(
@@ -196,8 +205,11 @@ class AnthropicMessagesProvider(BaseProvider):
         if resp.status_code >= 500:
             raise ProviderError(f"服务端错误 {resp.status_code}", kind=ErrorKind.PROVIDER_SERVER, retryable=True)
         if resp.status_code >= 400:
-            raise ProviderError(f"请求错误 {resp.status_code}: {resp.text[:300]}",
-                                kind=ErrorKind.PROVIDER_BAD_REQUEST)
+            detail = redact_secret(resp.text[:300], self._key_getter())
+            raise ProviderError(
+                f"请求错误 {resp.status_code}: {detail}",
+                kind=ErrorKind.PROVIDER_BAD_REQUEST,
+            )
         return parse_messages_response(resp.json(), self.protocol)
 
     async def test_connection(self) -> dict:
@@ -205,8 +217,11 @@ class AnthropicMessagesProvider(BaseProvider):
         try:
             resp = await self._client.post(
                 f"{self.base_url}/v1/messages",
-                json={"model": "claude-3-5-haiku-20241022", "max_tokens": 1,
-                      "messages": [{"role": "user", "content": "ping"}]},
+                json={
+                    "model": self._test_model or "claude-3-5-haiku-20241022",
+                    "max_tokens": 1,
+                    "messages": [{"role": "user", "content": "ping"}],
+                },
                 headers=self._headers(), timeout=20.0,
             )
             # 4xx（除 401/403/429/429 类）也算连通（端点可达、鉴权语义可辨）
