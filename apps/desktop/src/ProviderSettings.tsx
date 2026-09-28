@@ -235,6 +235,7 @@ export function ProviderSettings({
       ...current,
       protocol,
       baseUrl: protocolDefaults[protocol] ?? "",
+      authMode: "api_key",
       reasoning: "",
       imageInput: false,
       reasoningEffort: false,
@@ -430,8 +431,6 @@ export function ProviderSettings({
     setShowCreate(false);
     setEditing(true);
     setLocalError("");
-    setModels([]);
-    setModelDetail("");
   }
 
   function renderModelField(allowDiscovery: boolean) {
@@ -670,14 +669,23 @@ export function ProviderSettings({
                   <button
                     type="button"
                     className={form.authMode === "api_key" ? "selected" : ""}
-                    onClick={() => setForm((current) => ({ ...current, authMode: "api_key" }))}
+                    onClick={() => setForm((current) => ({
+                      ...current,
+                      authMode: "api_key",
+                      authStyle: current.authStyle === "none" ? "bearer" : current.authStyle,
+                    }))}
                   >
                     API Key
                   </button>
                   <button
                     type="button"
                     className={form.authMode === "none" ? "selected" : ""}
-                    onClick={() => setForm((current) => ({ ...current, authMode: "none", apiKey: "" }))}
+                    onClick={() => setForm((current) => ({
+                      ...current,
+                      authMode: "none",
+                      apiKey: "",
+                      authStyle: "none",
+                    }))}
                   >
                     No auth
                   </button>
