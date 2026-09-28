@@ -15,8 +15,18 @@ const protocolDefaults: Record<string, string> = {
   openai_responses: "https://api.openai.com/v1",
   anthropic_messages: "https://api.anthropic.com",
   gemini: "https://generativelanguage.googleapis.com",
-  openai_compatible: "http://127.0.0.1:8000/v1",
+  openai_compatible: "",
 };
+
+const providerPresets = [
+  { id: "openai", label: "OpenAI", protocol: "openai_responses", baseUrl: "https://api.openai.com/v1" },
+  { id: "anthropic", label: "Anthropic", protocol: "anthropic_messages", baseUrl: "https://api.anthropic.com" },
+  { id: "gemini", label: "Gemini", protocol: "gemini", baseUrl: "https://generativelanguage.googleapis.com" },
+  { id: "groq", label: "Groq", protocol: "openai_compatible", baseUrl: "https://api.groq.com/openai/v1" },
+  { id: "deepseek", label: "DeepSeek", protocol: "openai_compatible", baseUrl: "https://api.deepseek.com" },
+  { id: "zcode", label: "ZCode", protocol: "openai_compatible", baseUrl: "" },
+  { id: "compatible", label: "OpenAI Compatible", protocol: "openai_compatible", baseUrl: "" },
+] as const;
 
 function App() {
   const [project, setProject] = useState<ProjectView | null>(null);
@@ -427,7 +437,7 @@ function ProviderPanel({
   const [baseUrl, setBaseUrl] = useState(protocolDefaults.openai_responses);
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [reasoning, setReasoning] = useState("high");
+  const [reasoning, setReasoning] = useState("");
   const [compatibleImageInput, setCompatibleImageInput] = useState(false);
   const [compatibleReasoningEffort, setCompatibleReasoningEffort] = useState(false);
   const [testResult, setTestResult] = useState("");
