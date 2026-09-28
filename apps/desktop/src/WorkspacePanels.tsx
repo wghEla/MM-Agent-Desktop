@@ -20,7 +20,13 @@ type ArtifactPreview = {
   base64?: string;
 };
 
-export function ImportPanel({ project }: { project: ProjectView }) {
+export function ImportPanel({
+  project,
+  onImported,
+}: {
+  project: ProjectView;
+  onImported?: () => void;
+}) {
   const [kind, setKind] = useState("problem");
   const [sources, setSources] = useState("");
   const [result, setResult] = useState("");
@@ -65,6 +71,7 @@ export function ImportPanel({ project }: { project: ProjectView }) {
       );
       setResult(`已导入 ${response.imported.length} 个文件：${response.imported.map((x) => x.path).join("，")}`);
       setSources("");
+      onImported?.();
     } catch (err) {
       setResult(err instanceof Error ? err.message : String(err));
     } finally {
@@ -106,9 +113,13 @@ export function ImportPanel({ project }: { project: ProjectView }) {
 export function ArtifactViewer({
   project,
   requestedPath = null,
+  refreshKey = 0,
+  live = false,
 }: {
   project: ProjectView;
   requestedPath?: string | null;
+  refreshKey?: number;
+  live?: boolean;
 }) {
   const [items, setItems] = useState<ArtifactItem[]>([]);
   const [selected, setSelected] = useState<string>("");
@@ -149,7 +160,13 @@ export function ArtifactViewer({
     setSelected("");
     setPreview(null);
     void refresh();
-  }, [project.id]);
+  }, [project.id, refreshKey]);
+
+  useEffect(() => {
+    if (!live) return;
+    const timer = window.setInterval(() => void refresh(), 4000);
+    return () => window.clearInterval(timer);
+  }, [project.id, live]);
 
   useEffect(() => {
     if (!requestedPath) return;
