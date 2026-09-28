@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 from mmagent.api.provider_catalog import capability_descriptor
 from mmagent.providers.anthropic_messages import AnthropicMessagesProvider
@@ -44,6 +45,24 @@ class ProviderProfile:
 
 def _credential_ref(provider_id: str) -> str:
     return f"provider/{provider_id}/api-key"
+
+
+def _validate_base_url(base_url: str) -> str:
+    value = base_url.strip().rstrip("/")
+    if not value:
+        raise ValueError("base_url must be non-empty")
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("base_url must be an absolute http(s) URL")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError(
+            "base_url must not contain credentials; use Windows Credential Manager"
+        )
+    if parsed.query or parsed.fragment:
+        raise ValueError(
+            "base_url must not contain query/fragment credentials or parameters"
+        )
+    return value
 
 
 _SECRET_HEADER_NAMES = frozenset(
@@ -97,8 +116,7 @@ def create_provider_profile(
         raise ValueError(f"unsupported provider protocol: {protocol}")
     if not name.strip():
         raise ValueError("provider name must be non-empty")
-    if not base_url.strip():
-        raise ValueError("base_url must be non-empty")
+    base_url = _validate_base_url(base_url)
     if not model.strip():
         raise ValueError("model must be non-empty")
     if timeout_s is not None and timeout_s <= 0:
@@ -123,7 +141,7 @@ def create_provider_profile(
                     provider_id,
                     name.strip(),
                     protocol,
-                    base_url.rstrip("/"),
+                    base_url,
                     ref,
                     json.dumps(extra, ensure_ascii=False),
                     repositories.now_iso(),
@@ -201,8 +219,7 @@ def update_provider_profile(
         raise ValueError(f"unsupported provider protocol: {protocol}")
     if not name.strip():
         raise ValueError("provider name must be non-empty")
-    if not base_url.strip():
-        raise ValueError("base_url must be non-empty")
+    base_url = _validate_base_url(base_url)
     if not model.strip():
         raise ValueError("model must be non-empty")
     if timeout_s is not None and timeout_s <= 0:
@@ -217,7 +234,7 @@ def update_provider_profile(
             (
                 name.strip(),
                 protocol,
-                base_url.rstrip("/"),
+                base_url,
                 json.dumps(extra, ensure_ascii=False),
                 current.provider_id,
             ),
