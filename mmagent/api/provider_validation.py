@@ -77,6 +77,30 @@ def validate_relative_endpoint_path(
     return path
 
 
+def validate_provider_auth_binding(
+    protocol: str,
+    *,
+    has_credential: bool,
+    extra: dict[str, Any] | None,
+) -> None:
+    """Reject contradictory authentication states at the API/runtime boundary.
+
+    A compatible profile may be keyless, but when a credential exists it must
+    have an auth style that actually transmits that credential.  This invariant
+    is enforced below the UI so direct sidecar callers cannot create a
+    "credential saved but never sent" profile.
+    """
+    if protocol != "openai_compatible" or not has_credential:
+        return
+    value = dict(extra or {})
+    auth_style = str(value.get("auth_style") or "bearer").strip()
+    if auth_style == "none":
+        raise ValueError(
+            "openai_compatible credential requires bearer or x-api-key auth_style; "
+            "use explicit no-auth mode only without a saved credential"
+        )
+
+
 def validate_provider_extra(extra: dict[str, Any] | None) -> dict[str, Any]:
     value = dict(extra or {})
 
