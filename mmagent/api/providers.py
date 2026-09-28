@@ -4,9 +4,11 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlsplit
-
 from mmagent.api.provider_catalog import capability_descriptor
+from mmagent.api.provider_validation import (
+    validate_provider_base_url,
+    validate_provider_extra,
+)
 from mmagent.providers.anthropic_messages import AnthropicMessagesProvider
 from mmagent.providers.base import BaseProvider, ModelBoundProvider
 from mmagent.providers.gemini import GeminiProvider
@@ -47,56 +49,6 @@ def _credential_ref(provider_id: str) -> str:
     return f"provider/{provider_id}/api-key"
 
 
-def _validate_base_url(base_url: str) -> str:
-    value = base_url.strip().rstrip("/")
-    if not value:
-        raise ValueError("base_url must be non-empty")
-    parsed = urlsplit(value)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        raise ValueError("base_url must be an absolute http(s) URL")
-    if parsed.username is not None or parsed.password is not None:
-        raise ValueError(
-            "base_url must not contain credentials; use Windows Credential Manager"
-        )
-    if parsed.query or parsed.fragment:
-        raise ValueError(
-            "base_url must not contain query/fragment credentials or parameters"
-        )
-    return value
-
-
-_SECRET_HEADER_NAMES = frozenset(
-    {
-        "authorization",
-        "proxy-authorization",
-        "x-api-key",
-        "api-key",
-        "cookie",
-        "set-cookie",
-    }
-)
-
-
-def _validate_extra_secret_boundary(extra: dict[str, Any] | None) -> dict[str, Any]:
-    value = dict(extra or {})
-    raw_headers = value.get("extra_headers")
-    if raw_headers is None:
-        return value
-    if not isinstance(raw_headers, dict):
-        raise ValueError("extra_headers must be an object")
-    forbidden = sorted(
-        str(name)
-        for name in raw_headers
-        if str(name).strip().lower() in _SECRET_HEADER_NAMES
-    )
-    if forbidden:
-        raise ValueError(
-            "secret-bearing extra_headers are forbidden; use Windows Credential Manager: "
-            + ", ".join(forbidden)
-        )
-    return value
-
-
 def create_provider_profile(
     db: Database,
     credentials: CredentialStore,
@@ -116,7 +68,7 @@ def create_provider_profile(
         raise ValueError(f"unsupported provider protocol: {protocol}")
     if not name.strip():
         raise ValueError("provider name must be non-empty")
-    base_url = _validate_base_url(base_url)
+    base_url = validate_provider_base_url(base_url)
     if not model.strip():
         raise ValueError("model must be non-empty")
     if timeout_s is not None and timeout_s <= 0:
@@ -124,7 +76,7 @@ def create_provider_profile(
     if max_output_tokens is not None and max_output_tokens <= 0:
         raise ValueError("max_output_tokens must be positive")
 
-    extra = _validate_extra_secret_boundary(extra)
+    extra = validate_provider_extra(extra)
 
     provider_id = repositories.new_id("provider")
     model_profile_id = repositories.new_id("model")
@@ -213,13 +165,13 @@ def update_provider_profile(
     extra: dict[str, Any] | None = None,
 ) -> ProviderProfile:
     current = get_provider_profile(db, model_profile_id)
-    extra = _validate_extra_secret_boundary(extra)
+    extra = validate_provider_extra(extra)
     protocol = protocol.strip()
     if protocol not in SUPPORTED_PROTOCOLS:
         raise ValueError(f"unsupported provider protocol: {protocol}")
     if not name.strip():
         raise ValueError("provider name must be non-empty")
-    base_url = _validate_base_url(base_url)
+    base_url = validate_provider_base_url(base_url)
     if not model.strip():
         raise ValueError("model must be non-empty")
     if timeout_s is not None and timeout_s <= 0:
