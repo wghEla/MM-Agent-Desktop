@@ -108,7 +108,7 @@ def list_workspace_tree(
         if truncated or depth >= max_depth:
             return
         try:
-            children = sorted(directory.iterdir(), key=lambda p: (not p.is_dir(), p.name.casefold()))
+            children = sorted(directory.iterdir(), key=lambda p: p.name.casefold())
         except OSError:
             return
         for child in children:
