@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from mmagent.api.projects import create_project
 from mmagent.api.providers import (
     build_provider,
@@ -121,5 +123,114 @@ def test_openai_compatible_image_input_extra_round_trip(tmp_path) -> None:
         assert build_provider(
             db, store, default.model_profile_id
         ).capabilities().image_input is False
+    finally:
+        db.close()
+
+
+def test_provider_profile_rejects_secret_bearing_extra_headers(tmp_path) -> None:
+    handle = create_project(
+        tmp_path / "proj-secret-headers",
+        name="providers-secret-headers",
+        profile="标准",
+    )
+    store = MemoryCredentialStore()
+    db = handle.workspace.db
+    try:
+        for header_name in (
+            "Authorization",
+            "authorization",
+            "x-api-key",
+            "API-Key",
+            "Cookie",
+            "Proxy-Authorization",
+        ):
+            with pytest.raises(ValueError, match="Credential Manager"):
+                create_provider_profile(
+                    db,
+                    store,
+                    name="Unsafe",
+                    protocol="openai_compatible",
+                    base_url="https://example.invalid/v1",
+                    model="model-x",
+                    extra={
+                        "extra_headers": {
+                            header_name: "secret-that-must-not-enter-sqlite",
+                        }
+                    },
+                )
+
+        rows = db.query("SELECT extra_json FROM providers")
+        assert all(
+            "secret-that-must-not-enter-sqlite" not in row["extra_json"]
+            for row in rows
+        )
+    finally:
+        db.close()
+
+
+def test_provider_profile_allows_non_secret_custom_headers(tmp_path) -> None:
+    handle = create_project(
+        tmp_path / "proj-safe-headers",
+        name="providers-safe-headers",
+        profile="标准",
+    )
+    store = MemoryCredentialStore()
+    db = handle.workspace.db
+    try:
+        profile = create_provider_profile(
+            db,
+            store,
+            name="Safe",
+            protocol="openai_compatible",
+            base_url="https://example.invalid/v1",
+            model="model-x",
+            extra={
+                "extra_headers": {
+                    "X-Client-Version": "mmagent-test",
+                    "X-Organization": "test-org",
+                }
+            },
+        )
+        assert profile.extra["extra_headers"]["X-Client-Version"] == "mmagent-test"
+    finally:
+        db.close()
+
+
+def test_provider_profile_update_rejects_secret_bearing_extra_headers(tmp_path) -> None:
+    from mmagent.api.providers import update_provider_profile
+
+    handle = create_project(
+        tmp_path / "proj-update-secret-headers",
+        name="providers-update-secret-headers",
+        profile="标准",
+    )
+    store = MemoryCredentialStore()
+    db = handle.workspace.db
+    try:
+        profile = create_provider_profile(
+            db,
+            store,
+            name="Safe",
+            protocol="openai_compatible",
+            base_url="https://example.invalid/v1",
+            model="model-x",
+        )
+        with pytest.raises(ValueError, match="Credential Manager"):
+            update_provider_profile(
+                db,
+                model_profile_id=profile.model_profile_id,
+                name="Unsafe Update",
+                protocol="openai_compatible",
+                base_url="https://example.invalid/v1",
+                model="model-x",
+                extra={"extra_headers": {"x-api-key": "must-not-persist"}},
+            )
+
+        unchanged = handle.workspace.db.query_one(
+            "SELECT name, extra_json FROM providers WHERE id = ?",
+            (profile.provider_id,),
+        )
+        assert unchanged["name"] == "Safe"
+        assert "must-not-persist" not in unchanged["extra_json"]
     finally:
         db.close()
