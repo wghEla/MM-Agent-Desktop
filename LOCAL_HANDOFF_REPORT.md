@@ -1,157 +1,123 @@
 # LOCAL_HANDOFF_REPORT
 
+Last updated: 2026-09-28 after UI v2 local validation and GPT external review.
+
 ## Source of truth
 
 | Item | Value |
 |---|---|
 | Repository | `wghEla/MM-Agent-Desktop` |
 | Branch | `gpt/fidelity-rebuild` |
-| Last locally verified HEAD | `8ba323149a35c77166eba2359e3829f0dd0f7a1d` |
-| Verified evidence | 451 passed / 0 failed; Ruff clean; frontend Vite build green; secret scan clean; Windows Package Gate PASS |
-| Current state | Source/Pipeline Gate = GO; Windows Package Gate = PASS; Product Release Gate = PARTIAL / HOLD |
-| Windows | 11 (10.0.26200 x64) |
-| Python | 3.11.9 (uv-managed .venv) + 3.11.16 (bundled relocatable runtime) |
-| Node/npm | v24.18.0 / 11.16.0 |
-| Rust | 1.98.1 (target: x86_64-pc-windows-msvc) |
-| XeLaTeX | TeX Live 2026 available |
-| MATLAB | R2026a available |
-| MSVC Build Tools | `D:\dev\msvc` (v17.14.37710.0, cl 19.44.35229, link 14.44.35229, MSBuild 17.14.60) |
-| Windows SDK | 10.0.26100.0 (`C:\Program Files (x86)\Windows Kits\10`) |
-| WebView2 | Evergreen Runtime 153.0.4234.48 available |
+| Last fully locally verified HEAD | `ffe179354e80a98f9d3a074aeacfaf95712e552a` |
+| Verified regression | 464 passed / 0 failed; Ruff clean; frontend build green |
+| Installed smoke | NSIS rebuilt/reinstalled; `--startup-smoke` exit 0 |
+| UI v2 local validation | PASS |
+| Current remote | contains external-review dependency pin cleanup after the verified HEAD |
+| Product release | not yet final GO |
 
-## External review status
+## Gate status
 
-Rounds 1–4 source-review findings have been fixed and locally regression-tested through
-`c4a38cb`. At that verified baseline:
+| Gate | Status |
+|---|---|
+| Source / Pipeline | GO |
+| Windows Package | PASS |
+| Installed Cancellation | PASS |
+| Installed Credential | PASS |
+| Real Provider | CONDITIONAL PASS |
+| UI v2 Phase 1 + native picker/recent workspace | PASS |
 
-- P0: 0
-- known open source-level P1: 0
-- full pytest: 448 passed
-- Ruff: clean
-- frontend build: green
-- secret scan: clean
+## UI v2 verified state
 
-Round-4 report:
-`docs/reviews/v1.0.0-rebuild-external-review-round4.md`
+The installed Windows build was exercised through real Tauri UI interaction at multiple
+window sizes / high DPI.
 
-## Final source-gate patches after c4a38cb
+Verified:
 
-The final source/release-gate review found two last deterministic delivery-carrier gaps and
-source-patched them:
+- three-pane Workspace / Pipeline / Artifacts shell;
+- S0-S6 / G0-G5 StageRail projected only from Dashboard/Runtime state;
+- Provider Settings modal with presets, credential status, Test Connection and Advanced;
+- native Tauri folder picker for workspace create/open;
+- native multi-file picker for problem/data import;
+- Recent Workspace bookmark persistence across application restart;
+- run history and control gating;
+- text / JSON / image / PDF artifact preview;
+- Runtime fail-closed failure surfaced correctly in the UI.
 
-1. **S6 figure final-fix transaction**
-   - Plotter repair
-   - trusted Runtime plot execution
-   - guarded Writer synchronization of dependent caption/text/numeric references
-   - only then final compile/publication verification
-   - Writer-sync failure blocks harvest
+Evidence:
+- `docs/reviews/v1.0.0-rebuild-ui-v2-local-validation.md`
+- `docs/runs/ui-v2/`
 
-2. **Explicit delivery disclosure**
-   - Runtime writes `交付/交付报告.md`
-   - report mechanically lists exact degraded question/review entries
-   - report also lists non-resolved review-ledger items and run metrics
-   - no model is trusted to hide or summarize unresolved state
+## UI v2 architecture boundary
 
-New/updated tests in `tests/pipeline/test_s6_finalize.py` cover:
-- S6 figure repair requires dependent-text synchronization;
-- Writer-sync failure blocks delivery;
-- delivery report exposes an exact degraded review issue.
+UI remains a projection of the authenticated sidecar and SQLite runtime.
 
-These patches are source-only until ZCode runs the final micro-regression.
+It does not own or infer:
 
-## Fidelity boundary
+- S0-S6 / G0-G5 truth;
+- task status;
+- ledger state;
+- frozen truth;
+- cancellation;
+- credential truth.
 
-High-risk runtime/review mechanisms with focused behavior evidence include:
+Recent Workspace localStorage data is bookmark/presentation state only.
 
-- SQLite single state truth + append-only events
-- task lease / no double owner
-- generation-CAS reviewer verdicts
-- deterministic/idempotent repair receipts
-- fail-closed missed verdicts
-- real S5 fuse escalation
-- verified calc recompute / Red Team / G2 / downstream cascade
-- durable downstream invalidation tombstones
-- Change Guard + Structure Guard with crash-safe pre-repair snapshots
-- S5/G5 figure transactions
-- bounded guarded compile repair
-- fresh current-PDF visual review at G5/S6
-- OpenAI-compatible image capability opt-in
-- OpenAI-compatible reasoning_effort opt-in
-- provider error secret redaction
+## Authentication boundary
 
-Still intentionally PARTIAL / external:
-- A17 exact upstream 18-step parity audit
-- A20 exact R49–R52 / multi-question parity audit
-- B9 core-structure/problem-chapter-count guard representation
-- C1–C17 exact per-role upstream-style schema/package parity
-- E3/E4 installed-product live cancellation/process proof
-- residual low-risk schema/fidelity items in `FIDELITY_MATRIX.md`
+Production credential path remains Windows Credential Manager.
 
-## Product-release blockers
+UI must not implement:
 
-The repository's own acceptance rule still prevents calling the whole product complete
-until all external gates are satisfied.
+- browser cookie import;
+- session-token extraction;
+- borrowed first-party OAuth clients;
+- plaintext key persistence in SQLite/localStorage/logs.
 
-Package Gate status: **PASS**
-- MSVC Build Tools installed at `D:\dev\msvc`
-- Tauri release binary built: `apps/desktop/src-tauri/target/release/mmagent-desktop.exe` (12.87 MB)
-- NSIS installer generated: `apps/desktop/src-tauri/target/release/bundle/nsis/MM-Agent Desktop_1.0.0-rebuild.1_x64-setup.exe` (158.39 MB)
-- Silent install to `D:\dev\MM-Agent-Desktop-release-smoke`: exit code 0
-- Installed runtime smoke: `installed-runtime-ok`
-- Isolated startup smoke (`mmagent-desktop.exe --startup-smoke` without developer Python/paths): exit code 0
-- Orphan process check: 0 orphan processes
+Account login is only enabled in the future for providers with an explicit supported
+third-party OAuth / device flow.
 
-Outstanding external gates:
+## Real Provider state
 
-1. Installed-product cancellation during a live external tool / process-tree cleanup proof.
-2. Real-provider smoke using a user-supplied credential through Provider Settings.
-3. Current-head CI evidence if the project keeps CI as a mandatory acceptance criterion,
-   or an explicit documented decision replacing that criterion.
-4. Explicit acceptance of remaining fidelity deviations.
+Installed product has already proven:
 
-## Next action
+- credential write/restart/fresh-sidecar read;
+- Test Connection;
+- real generation;
+- real tool calling;
+- real S0 legs;
+- Runtime fail-closed schema gate behavior.
 
-Proceed to Installed Live Cancellation Gate, followed by Real Provider Smoke.
-Do not tag, merge main, or run CI without explicit user direction.
+The remaining Real Provider item is one ceremonial full-green G0 run using a stronger or
+more stable model/provider. The prior Groq run was limited by model schema variance and
+free-tier rate limiting; no open product defect is implicated.
 
+## External-review cleanup after ffe1793
 
-## Installed Cancellation Gate — 2026-09-28 — PASS
+GPT external review found one reproducibility issue and one documentation-truth issue:
 
-- Installed product 1.0.0-rebuild.1 (`D:\dev\MM-Agent-Desktop-release-smoke`, rebuilt
-  in-gate with two product fixes: WindowsCredentialStore blob encoding; keyless-provider
-  empty Bearer header).
-- Real long task (managed python parent+child under Job Object) cancelled through the
-  authenticated product boundary: 0.7 s to CANCELLED, process tree dead, 0 orphans,
-  progress frozen, finished-marker absent, no retry/double-writer.
-- Fresh-sidecar restart preserved CANCELLED (no auto-resume); post-cancel new run
-  succeeded and paused cleanly.
-- Evidence: `docs/runs/installed-cancellation/`,
-  `docs/reviews/v1.0.0-rebuild-installed-cancellation-gate.md`.
-- Regression: 456 passed / 0 failed, Ruff clean, NSIS rebuilt, startup smoke exit 0.
-- Deferred to Real Provider Gate: frozen-sidecar credential READ path end-to-end check.
+1. Tauri JS packages had caret ranges even though local validation proved release builds
+   reject incompatible JS/Rust minor combinations. The verified JS minors are now pinned
+   exactly in package.json/package-lock.json.
+2. ZCode created a second `docs/LOCAL_HANDOFF_REPORT.md` while this root file already
+   existed. This root file remains the canonical handoff; the duplicate is removed.
 
+These cleanup edits are source-only until the next local `npm ci && npm run build`.
 
-## Installed Credential Gate — 2026-09-28 — PASS
+## Remaining product work
 
-- Root cause: PyInstaller missing win32timezone (win32cred lazy import); old
-  get() masked read errors as not-found.
-- Fixes: hidden import; NOT_FOUND/READ_FAILED error taxonomy; non-secret
-  diagnostics endpoints; openai_chat Test Connection chat fallback.
-- Installed E2E (fake secret): write → ref-only SQLite → app exit → fresh-sidecar
-  read OK → Test Connection fallback OK → loopback relay Bearer check 29/29 →
-  full S0+S1 authenticated pipeline SUCCEEDED, clean pause at S2 boundary.
-- 462 passed / 0 failed, Ruff clean, repackaged + reinstalled, smoke exit 0.
-- Real Provider Gate: WAITING_FOR_USER_CREDENTIAL (user inputs API Key /
-  Base URL / Model in the installed app).
+1. UI v2 Phase 2 remainder:
+   - workspace file tree;
+   - first-run onboarding;
+   - project/open dialog polish.
+2. UI v2 Phase 3:
+   - provider preset/catalog polish;
+   - capability-driven fields;
+   - formal OAuth extension point (only where compliant).
+3. One stronger-model / ZCode API real-provider green-G0 run.
+4. CI acceptance decision.
+5. Explicit acceptance or closure of remaining low-risk fidelity deviations.
 
+Do not reopen broad Source/Pipeline fidelity review unless a concrete defect appears.
 
-## Real Provider Gate — 2026-09-28 — CONDITIONAL PASS
-
-- Groq / openai_chat / openai/gpt-oss-20b on the installed product; key only in
-  Windows Credential Manager (entered once via product boundary).
-- R1-R4 all PASS; corrections were provider-proven (dead model id; mandatory
-  reasoning_effort=low for gpt-oss).
-- Two in-gate product fixes (fs.read directory-read crash; predictor scope gap);
-  464 passed / 0 failed; repackaged + reinstalled; all real runs on new install.
-- Remaining ceremonial item: one green-G0 run (model schema variance + free-tier
-  429s; G0 fail-closed correctly every time). No code change implicated.
+Do not merge `main`, tag a final release, force-push, or spend GitHub Actions quota without
+explicit user direction.
