@@ -28,6 +28,27 @@ def test_catalog_has_no_unimplemented_oauth_login() -> None:
     assert all("oauth" not in item["auth_methods"] for item in catalog)
 
 
+def test_sidecar_protocol_capabilities_are_runtime_owned(tmp_path) -> None:
+    app = create_app(token=TOKEN, credentials=MemoryCredentialStore())
+    with TestClient(app) as client:
+        response = client.get(
+            "/providers/capabilities/openai_chat",
+            headers=_auth(),
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["protocol"] == "openai_chat"
+        assert body["tool_calling"] is True
+        assert body["image_input"] is True
+        assert body["reasoning_levels"] == ["high", "low", "medium"]
+
+        missing = client.get(
+            "/providers/capabilities/not-a-protocol",
+            headers=_auth(),
+        )
+        assert missing.status_code == 400
+
+
 def test_compatible_capabilities_are_conservative_until_opted_in() -> None:
     default = capability_descriptor("openai_compatible", {})
     assert default["image_input"] is False
