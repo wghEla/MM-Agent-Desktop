@@ -115,6 +115,7 @@ def catalog_payload() -> list[dict[str, Any]]:
     for item in PROVIDER_PRESETS:
         row = asdict(item)
         row["auth_methods"] = list(item.auth_methods)
+        row["capabilities"] = capability_descriptor(item.protocol, {})
         out.append(row)
     return out
 
