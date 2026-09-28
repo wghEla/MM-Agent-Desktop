@@ -248,12 +248,16 @@ def clear_provider_credential(
     profile = get_provider_profile(db, model_profile_id)
     if profile.api_key_ref is None:
         return profile
+
+    # Delete the secret first.  If the subsequent DB update fails, the profile
+    # remains fail-closed with a missing credential reference rather than leaving
+    # an unreferenced secret behind in Credential Manager.
+    credentials.delete(profile.api_key_ref)
     with db.transaction() as conn:
         conn.execute(
             "UPDATE providers SET api_key_ref = NULL WHERE id = ?",
             (profile.provider_id,),
         )
-    credentials.delete(profile.api_key_ref)
     return get_provider_profile(db, model_profile_id)
 
 
@@ -261,6 +265,18 @@ def delete_provider_profile(
     db: Database, credentials: CredentialStore, model_profile_id: str
 ) -> None:
     profile = get_provider_profile(db, model_profile_id)
+    row = db.query_one(
+        "SELECT COUNT(*) AS n FROM model_profiles WHERE provider_id = ?",
+        (profile.provider_id,),
+    )
+    is_last_profile = bool(row and int(row["n"]) == 1)
+
+    # Same secret-first rule as clear_provider_credential: a DB failure after
+    # deletion produces an explicit missing-credential state, never an orphaned
+    # Credential Manager secret that SQLite can no longer identify.
+    if profile.api_key_ref and is_last_profile:
+        credentials.delete(profile.api_key_ref)
+
     with db.transaction() as conn:
         conn.execute("DELETE FROM model_profiles WHERE id = ?", (model_profile_id,))
         remaining = conn.execute(
@@ -269,8 +285,6 @@ def delete_provider_profile(
         ).fetchone()[0]
         if not remaining:
             conn.execute("DELETE FROM providers WHERE id = ?", (profile.provider_id,))
-    if profile.api_key_ref and not remaining:
-        credentials.delete(profile.api_key_ref)
 
 
 def build_provider(
