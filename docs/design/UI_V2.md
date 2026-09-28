@@ -225,6 +225,101 @@ Rules:
 - no full-surface gradients;
 - no excessive borders where spacing/text hierarchy is enough.
 
+## Agent product architecture
+
+UI v2 keeps the proven modeling runtime but adopts several mature agent-product patterns.
+
+### One authoritative runtime
+
+The desktop UI behaves like an app-server client:
+
+```
+Desktop UI
+   |
+Authenticated sidecar API
+   |
+Runtime / SQLite / ProcessManager
+   |
+Providers + Tools + S0-S6
+```
+
+The UI must not infer that a task succeeded because text looks successful.
+
+### Session/run as a durable object
+
+A Run is a resumable durable execution, not a chat tab. The UI therefore presents:
+
+- current run;
+- historical runs;
+- durable status;
+- current owner / resumability;
+- stage/gate projection;
+- artifacts produced by that run.
+
+Conversation-like interaction, when added, is an input surface to the run rather than
+the source of run truth.
+
+### Model routing is configuration, not agent identity
+
+Roles remain semantic modeling roles. A role is not permanently coupled to one provider.
+Future UI may expose a model policy such as:
+
+```
+Default model
+Calculation / solver model
+Review / critic model
+Vision review model
+Fallback model
+```
+
+but Runtime-owned routing decides which concrete model profile serves each role.
+
+### Full-auto vs collaborative operation
+
+The eventual product should distinguish execution mode from quality profile.
+
+Quality profile remains:
+
+- 快速;
+- 标准;
+- 深度.
+
+Execution mode may later become:
+
+- **全自动** — proceed through gates whenever Runtime conditions permit;
+- **协作** — pause at defined human checkpoints for instructions/approval.
+
+This is intentionally not implemented as a UI-only toggle. It requires an explicit Runtime
+policy before the control is enabled.
+
+### Extension surface
+
+Do not hard-code every future capability into the main workspace.
+
+Potential extension domains:
+
+- specialist agents;
+- reusable skills;
+- connectors / MCP;
+- templates;
+- dataset tools;
+- literature/research tools.
+
+They should enter through a capability/extension surface while S0-S6 remains the modeling
+workflow owner.
+
+### Human interaction
+
+A future compact composer may allow:
+
+- additional constraints;
+- answering a Runtime question;
+- approving/rejecting a collaborative checkpoint;
+- attaching a file;
+- requesting a bounded rerun.
+
+It must not silently mutate ledger/gate state. Human actions become explicit durable events.
+
 ## Delivery phases
 
 ### Phase 1 — shell re-layout
