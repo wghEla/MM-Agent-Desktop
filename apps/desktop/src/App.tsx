@@ -359,14 +359,11 @@ function App() {
 
               <div className="pipeline-surface">
                 {!run ? (
-                  <div className="workbench-empty">
-                    <div className="empty-kicker">WORKSPACE READY</div>
-                    <h2>材料准备完成后，从这里启动一次建模运行。</h2>
-                    <p>
-                      当前工作区：<span className="mono">{project.root_path}</span>
-                    </p>
-                    <p>Provider 配置、历史运行与交付物分别位于顶部、左侧和右侧，不再挤在同一个控制栏里。</p>
-                  </div>
+                  <WorkspaceReadySurface
+                    project={project}
+                    hasProvider={Boolean(selected)}
+                    onOpenSettings={() => setSettingsOpen(true)}
+                  />
                 ) : (
                   <DashboardView run={run} dashboard={dashboard} onRefresh={() => void refreshRun()} />
                 )}
@@ -448,6 +445,60 @@ function WorkspaceSummary({
       </div>
       <button className="workspace-switch" onClick={onSwitch} title="切换工作区">↗</button>
     </section>
+  );
+}
+
+function WorkspaceReadySurface({
+  project,
+  hasProvider,
+  onOpenSettings,
+}: {
+  project: ProjectView;
+  hasProvider: boolean;
+  onOpenSettings: () => void;
+}) {
+  return (
+    <div className="workbench-empty workspace-ready-surface">
+      <div className="empty-kicker">WORKSPACE READY</div>
+      <h2>工作区已经就绪，完成模型与材料配置后即可启动。</h2>
+      <p>
+        <span className="mono">{project.root_path}</span>
+      </p>
+
+      <div className="setup-checklist">
+        <div className="setup-check done">
+          <span className="setup-check-mark">✓</span>
+          <div>
+            <strong>1 · 工作区</strong>
+            <small>项目目录与 SQLite Runtime 已建立</small>
+          </div>
+        </div>
+
+        <button
+          className={`setup-check ${hasProvider ? "done" : "actionable"}`}
+          onClick={onOpenSettings}
+        >
+          <span className="setup-check-mark">{hasProvider ? "✓" : "2"}</span>
+          <div>
+            <strong>2 · 模型</strong>
+            <small>{hasProvider ? "Provider 已配置，可在设置中切换" : "配置 Provider、Model 与凭据"}</small>
+          </div>
+          {!hasProvider && <span className="setup-check-action">配置 →</span>}
+        </button>
+
+        <div className="setup-check">
+          <span className="setup-check-mark">3</span>
+          <div>
+            <strong>3 · 材料</strong>
+            <small>从左侧导入题目和数据；文件树会立即刷新</small>
+          </div>
+        </div>
+      </div>
+
+      <p className="workspace-ready-hint">
+        启动按钮位于顶部工具栏。Runtime 会继续通过 Gate 检查缺失材料，不会因为 UI 显示“就绪”而跳过验证。
+      </p>
+    </div>
   );
 }
 
