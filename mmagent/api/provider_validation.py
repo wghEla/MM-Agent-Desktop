@@ -53,7 +53,9 @@ def validate_relative_endpoint_path(
     allow_empty: bool = False,
 ) -> str | None:
     if value is None:
-        return None if allow_empty else "/"
+        if allow_empty:
+            return None
+        raise ValueError(f"{field} must be non-empty")
 
     raw = str(value).strip()
     if not raw:
