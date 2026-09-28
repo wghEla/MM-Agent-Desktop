@@ -310,7 +310,7 @@ function App() {
             <WelcomeSurface
               recent={recentWorkspaces}
               busy={busy}
-              onCreate={() => setWorkspaceDialog("create")}
+              onCreate={() => openWorkspaceDialog("create")}
               onOpenDialog={() => openWorkspaceDialog("open")}
               onOpenRecent={(workspace) => createOrOpen("open", workspace.root, workspace.name, workspace.profile)}
               onRemoveRecent={(root) => {
