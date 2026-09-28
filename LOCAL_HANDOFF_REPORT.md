@@ -113,3 +113,19 @@ Outstanding external gates:
 
 Proceed to Installed Live Cancellation Gate, followed by Real Provider Smoke.
 Do not tag, merge main, or run CI without explicit user direction.
+
+
+## Installed Cancellation Gate — 2026-09-28 — PASS
+
+- Installed product 1.0.0-rebuild.1 (`D:\dev\MM-Agent-Desktop-release-smoke`, rebuilt
+  in-gate with two product fixes: WindowsCredentialStore blob encoding; keyless-provider
+  empty Bearer header).
+- Real long task (managed python parent+child under Job Object) cancelled through the
+  authenticated product boundary: 0.7 s to CANCELLED, process tree dead, 0 orphans,
+  progress frozen, finished-marker absent, no retry/double-writer.
+- Fresh-sidecar restart preserved CANCELLED (no auto-resume); post-cancel new run
+  succeeded and paused cleanly.
+- Evidence: `docs/runs/installed-cancellation/`,
+  `docs/reviews/v1.0.0-rebuild-installed-cancellation-gate.md`.
+- Regression: 456 passed / 0 failed, Ruff clean, NSIS rebuilt, startup smoke exit 0.
+- Deferred to Real Provider Gate: frozen-sidecar credential READ path end-to-end check.

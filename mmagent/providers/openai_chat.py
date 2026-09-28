@@ -176,7 +176,13 @@ class OpenAIChatProvider(BaseProvider):
         )
 
     def _headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self._key_getter()}", **self._extra_headers}
+        # keyless profiles (e.g. local relays) must not send an empty
+        # Authorization value — httpx rejects it outright.
+        key = self._key_getter()
+        headers = dict(self._extra_headers)
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+        return headers
 
     async def generate(
         self,

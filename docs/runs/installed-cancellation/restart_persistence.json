@@ -1,0 +1,30 @@
+{
+ "fresh_sidecar_pid": 34448,
+ "previous_sidecar_pid": 37696,
+ "reopened_same_project": true,
+ "run_status_after_fresh_restart": "CANCELLED",
+ "run_active_in_sidecar": false,
+ "durable_tasks": [
+  [
+   "S0.2:读题",
+   "SUCCEEDED"
+  ],
+  [
+   "S0.3:预测",
+   "SUCCEEDED"
+  ],
+  [
+   "S1:路线侦察",
+   "SUCCEEDED"
+  ],
+  [
+   "S1:问1:原型1",
+   "SUCCEEDED"
+  ],
+  [
+   "S1:问1:原型2",
+   "SUCCEEDED"
+  ]
+ ],
+ "no_auto_resume": true
+}

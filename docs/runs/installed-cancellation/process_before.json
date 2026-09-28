@@ -1,0 +1,28 @@
+{
+ "trees": [
+  {
+   "pid": 34204,
+   "ppid": 41264,
+   "cmdline": "\\\\?\\D:\\dev\\MM-Agent-Desktop-release-smoke\\runtime\\python.exe -c import time; time.sleep(600)",
+   "create_time": 1790579025.95584
+  },
+  {
+   "pid": 41264,
+   "ppid": 37696,
+   "cmdline": "\\\\?\\D:\\dev\\MM-Agent-Desktop-release-smoke\\runtime\\python.exe -X utf8 D:\\dev\\AI_harness\\cancel-gate\\probe-project-r11\\求解\\问题1\\原型_1.py",
+   "create_time": 1790579025.7437153
+  }
+ ],
+ "parent": {
+  "pid": 41264,
+  "ppid": 37696,
+  "cmdline": "\\\\?\\D:\\dev\\MM-Agent-Desktop-release-smoke\\runtime\\python.exe -X utf8 D:\\dev\\AI_harness\\cancel-gate\\probe-project-r11\\求解\\问题1\\原型_1.py",
+  "create_time": 1790579025.7437153
+ },
+ "child": {
+  "pid": 34204,
+  "ppid": 41264,
+  "cmdline": "\\\\?\\D:\\dev\\MM-Agent-Desktop-release-smoke\\runtime\\python.exe -c import time; time.sleep(600)",
+  "create_time": 1790579025.95584
+ }
+}

@@ -122,3 +122,13 @@
 - 12:23 孤儿进程检查：Win32_Process 全局扫描确认无任何残留的 mmagent-desktop.exe / mmagent-sidecar*.exe / runtime/python.exe 孤儿进程。
 - 12:25 Gate 决议：Windows Product Release Package Gate = PASS；Source/Pipeline Gate = GO；整体 Product Release Gate = PARTIAL / HOLD（待办：Installed Live Cancellation Gate、Real Provider Smoke、CI 决议、偏差最终确认）。
 
+- 09-28 Installed Cancellation Gate：安装版（重打包后）通过产品鉴权取消端点取消真实长任务
+  （Runtime 托管 python 父+子 Job Object 树）。0.7s 进入 CANCELLED；父/子进程双亡；0 孤儿；
+  finished 标记不存在；进度冻结；无重试/双写者；全新 sidecar 重启后仍 CANCELLED 且无自动恢复；
+  取消后新 run 原型任务 SUCCEEDED 并干净 PAUSED。证据 docs/runs/installed-cancellation/。
+- 09-28 门内发现并修复两个产品 bug（源码修复→重打包→重装后再跑门）：
+  ① WindowsCredentialStore 在当前 pywin32 下不可用（CredWrite 需 str blob / CredRead 返回
+  utf-16le）——3 focused tests；② 无 key provider 发送空 `Authorization: Bearer ` 被 httpx
+  拒绝——openai_chat/responses 改为省略该头——2 focused tests。全量 456 passed，Ruff clean。
+- 09-28 遗留到 Real Provider Gate：冻结 sidecar 内 Credential READ 路径端到端复验
+  （写路径已在产品内验证，读 round-trip 由 dev 树单测覆盖）。

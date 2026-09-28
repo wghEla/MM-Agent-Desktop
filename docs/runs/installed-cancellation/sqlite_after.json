@@ -1,0 +1,505 @@
+{
+ "runs": [
+  {
+   "id": "run_944f41458b36",
+   "status": "CANCELLED",
+   "profile": "快速",
+   "created_at": "2026-09-28T07:03:45.359Z"
+  }
+ ],
+ "tasks": [
+  {
+   "id": "task_ef98bf01ae75",
+   "run_id": "run_944f41458b36",
+   "node_key": "S0.2:读题",
+   "status": "SUCCEEDED",
+   "attempt": 1,
+   "created_at": "2026-09-28T07:03:45.369Z"
+  },
+  {
+   "id": "task_0823c5031684",
+   "run_id": "run_944f41458b36",
+   "node_key": "S0.3:预测",
+   "status": "SUCCEEDED",
+   "attempt": 1,
+   "created_at": "2026-09-28T07:03:45.465Z"
+  },
+  {
+   "id": "task_68b2c9edafed",
+   "run_id": "run_944f41458b36",
+   "node_key": "S1:路线侦察",
+   "status": "SUCCEEDED",
+   "attempt": 1,
+   "created_at": "2026-09-28T07:03:45.562Z"
+  },
+  {
+   "id": "task_c68b5f483baa",
+   "run_id": "run_944f41458b36",
+   "node_key": "S1:问1:原型1",
+   "status": "SUCCEEDED",
+   "attempt": 1,
+   "created_at": "2026-09-28T07:03:45.621Z"
+  },
+  {
+   "id": "task_8fed1b934edd",
+   "run_id": "run_944f41458b36",
+   "node_key": "S1:问1:原型2",
+   "status": "SUCCEEDED",
+   "attempt": 1,
+   "created_at": "2026-09-28T07:03:45.632Z"
+  }
+ ],
+ "event_count": 74,
+ "last_event": {
+  "id": 74,
+  "type": "pipeline.cancelled",
+  "run_id": "run_944f41458b36",
+  "task_id": null
+ },
+ "events": [
+  {
+   "id": 1,
+   "type": "run.created",
+   "run_id": "run_944f41458b36",
+   "task_id": null
+  },
+  {
+   "id": 2,
+   "type": "run.status",
+   "run_id": "run_944f41458b36",
+   "task_id": null
+  },
+  {
+   "id": 3,
+   "type": "pipeline.stage_started",
+   "run_id": "run_944f41458b36",
+   "task_id": null
+  },
+  {
+   "id": 4,
+   "type": "wave.started",
+   "run_id": "run_944f41458b36",
+   "task_id": null
+  },
+  {
+   "id": 5,
+   "type": "task.created",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_ef98bf01ae75"
+  },
+  {
+   "id": 6,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_ef98bf01ae75"
+  },
+  {
+   "id": 7,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_ef98bf01ae75"
+  },
+  {
+   "id": 8,
+   "type": "task.lease_acquired",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_ef98bf01ae75"
+  },
+  {
+   "id": 9,
+   "type": "task.attempt",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_ef98bf01ae75"
+  },
+  {
+   "id": 10,
+   "type": "invocation.started",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_ef98bf01ae75"
+  },
+  {
+   "id": 11,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_ef98bf01ae75"
+  },
+  {
+   "id": 12,
+   "type": "tool.call",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_ef98bf01ae75"
+  },
+  {
+   "id": 13,
+   "type": "tool.call",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_ef98bf01ae75"
+  },
+  {
+   "id": 14,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_ef98bf01ae75"
+  },
+  {
+   "id": 15,
+   "type": "task.succeeded",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_ef98bf01ae75"
+  },
+  {
+   "id": 16,
+   "type": "invocation.finished",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_ef98bf01ae75"
+  },
+  {
+   "id": 17,
+   "type": "wave.completed",
+   "run_id": "run_944f41458b36",
+   "task_id": null
+  },
+  {
+   "id": 18,
+   "type": "wave.started",
+   "run_id": "run_944f41458b36",
+   "task_id": null
+  },
+  {
+   "id": 19,
+   "type": "task.created",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_0823c5031684"
+  },
+  {
+   "id": 20,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_0823c5031684"
+  },
+  {
+   "id": 21,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_0823c5031684"
+  },
+  {
+   "id": 22,
+   "type": "task.lease_acquired",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_0823c5031684"
+  },
+  {
+   "id": 23,
+   "type": "task.attempt",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_0823c5031684"
+  },
+  {
+   "id": 24,
+   "type": "invocation.started",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_0823c5031684"
+  },
+  {
+   "id": 25,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_0823c5031684"
+  },
+  {
+   "id": 26,
+   "type": "tool.call",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_0823c5031684"
+  },
+  {
+   "id": 27,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_0823c5031684"
+  },
+  {
+   "id": 28,
+   "type": "task.succeeded",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_0823c5031684"
+  },
+  {
+   "id": 29,
+   "type": "invocation.finished",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_0823c5031684"
+  },
+  {
+   "id": 30,
+   "type": "wave.completed",
+   "run_id": "run_944f41458b36",
+   "task_id": null
+  },
+  {
+   "id": 31,
+   "type": "gate.result",
+   "run_id": "run_944f41458b36",
+   "task_id": null
+  },
+  {
+   "id": 32,
+   "type": "checkpoint.stage",
+   "run_id": "run_944f41458b36",
+   "task_id": null
+  },
+  {
+   "id": 33,
+   "type": "checkpoint.stage",
+   "run_id": "run_944f41458b36",
+   "task_id": null
+  },
+  {
+   "id": 34,
+   "type": "pipeline.stage_started",
+   "run_id": "run_944f41458b36",
+   "task_id": null
+  },
+  {
+   "id": 35,
+   "type": "wave.started",
+   "run_id": "run_944f41458b36",
+   "task_id": null
+  },
+  {
+   "id": 36,
+   "type": "task.created",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_68b2c9edafed"
+  },
+  {
+   "id": 37,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_68b2c9edafed"
+  },
+  {
+   "id": 38,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_68b2c9edafed"
+  },
+  {
+   "id": 39,
+   "type": "task.lease_acquired",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_68b2c9edafed"
+  },
+  {
+   "id": 40,
+   "type": "task.attempt",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_68b2c9edafed"
+  },
+  {
+   "id": 41,
+   "type": "invocation.started",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_68b2c9edafed"
+  },
+  {
+   "id": 42,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_68b2c9edafed"
+  },
+  {
+   "id": 43,
+   "type": "tool.call",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_68b2c9edafed"
+  },
+  {
+   "id": 44,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_68b2c9edafed"
+  },
+  {
+   "id": 45,
+   "type": "task.succeeded",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_68b2c9edafed"
+  },
+  {
+   "id": 46,
+   "type": "invocation.finished",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_68b2c9edafed"
+  },
+  {
+   "id": 47,
+   "type": "wave.completed",
+   "run_id": "run_944f41458b36",
+   "task_id": null
+  },
+  {
+   "id": 48,
+   "type": "wave.started",
+   "run_id": "run_944f41458b36",
+   "task_id": null
+  },
+  {
+   "id": 49,
+   "type": "task.created",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_c68b5f483baa"
+  },
+  {
+   "id": 50,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_c68b5f483baa"
+  },
+  {
+   "id": 51,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_c68b5f483baa"
+  },
+  {
+   "id": 52,
+   "type": "task.lease_acquired",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_c68b5f483baa"
+  },
+  {
+   "id": 53,
+   "type": "task.attempt",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_c68b5f483baa"
+  },
+  {
+   "id": 54,
+   "type": "invocation.started",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_c68b5f483baa"
+  },
+  {
+   "id": 55,
+   "type": "task.created",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_8fed1b934edd"
+  },
+  {
+   "id": 56,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_8fed1b934edd"
+  },
+  {
+   "id": 57,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_8fed1b934edd"
+  },
+  {
+   "id": 58,
+   "type": "task.lease_acquired",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_8fed1b934edd"
+  },
+  {
+   "id": 59,
+   "type": "task.attempt",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_8fed1b934edd"
+  },
+  {
+   "id": 60,
+   "type": "invocation.started",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_8fed1b934edd"
+  },
+  {
+   "id": 61,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_c68b5f483baa"
+  },
+  {
+   "id": 62,
+   "type": "tool.call",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_c68b5f483baa"
+  },
+  {
+   "id": 63,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_c68b5f483baa"
+  },
+  {
+   "id": 64,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_8fed1b934edd"
+  },
+  {
+   "id": 65,
+   "type": "tool.call",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_8fed1b934edd"
+  },
+  {
+   "id": 66,
+   "type": "task.status",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_8fed1b934edd"
+  },
+  {
+   "id": 67,
+   "type": "task.succeeded",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_c68b5f483baa"
+  },
+  {
+   "id": 68,
+   "type": "invocation.finished",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_c68b5f483baa"
+  },
+  {
+   "id": 69,
+   "type": "task.succeeded",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_8fed1b934edd"
+  },
+  {
+   "id": 70,
+   "type": "invocation.finished",
+   "run_id": "run_944f41458b36",
+   "task_id": "task_8fed1b934edd"
+  },
+  {
+   "id": 71,
+   "type": "wave.completed",
+   "run_id": "run_944f41458b36",
+   "task_id": null
+  },
+  {
+   "id": 72,
+   "type": "pipeline.stage_failed",
+   "run_id": "run_944f41458b36",
+   "task_id": null
+  },
+  {
+   "id": 73,
+   "type": "run.status",
+   "run_id": "run_944f41458b36",
+   "task_id": null
+  },
+  {
+   "id": 74,
+   "type": "pipeline.cancelled",
+   "run_id": "run_944f41458b36",
+   "task_id": null
+  }
+ ]
+}

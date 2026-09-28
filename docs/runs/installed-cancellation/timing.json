@@ -1,0 +1,9 @@
+{
+ "cancel_requested_epoch": 1790579186.653236,
+ "terminal_within_s": 0.7,
+ "progress_at_pre_cancel": "15",
+ "progress_after_wait": "160",
+ "progress_after_second_wait": "160",
+ "progress_frozen": true,
+ "finished_marker_exists": false
+}

@@ -488,3 +488,59 @@ def test_native_multimodal_payload_shapes():
     inline = gemini["contents"][0]["parts"][1]["inlineData"]
     assert inline["mimeType"] == "image/png"
     assert inline["data"] == "YWJj"
+
+
+# ==================== keyless provider profiles (local relays) ====================
+
+@pytest.mark.asyncio
+async def test_keyless_openai_chat_omits_authorization_header():
+    """A provider profile without an API key (e.g. a local relay) must not send
+    an empty `Authorization: Bearer ` header — httpx rejects it outright."""
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        return httpx.Response(200, json={
+            "id": "c", "object": "chat.completion", "created": 1, "model": "m",
+            "choices": [{"index": 0, "finish_reason": "stop",
+                         "message": {"role": "assistant", "content": "ok"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        })
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    p = OpenAIChatProvider("https://relay.test/v1", lambda: "", client=client)
+    try:
+        resp = await p.generate(
+            [NormalizedMessage(role="user", content=[TextPart(text="hi")])],
+            [], model="m1",
+        )
+        assert resp.message.content[0].text == "ok"
+        assert "Authorization" not in captures[0].headers
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_keyed_openai_chat_keeps_bearer_header():
+    """A keyed profile still sends the Bearer header."""
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        return httpx.Response(200, json={
+            "id": "c", "object": "chat.completion", "created": 1, "model": "m",
+            "choices": [{"index": 0, "finish_reason": "stop",
+                         "message": {"role": "assistant", "content": "ok"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        })
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    p = OpenAIChatProvider("https://api.test/v1", lambda: "sk-test", client=client)
+    try:
+        await p.generate(
+            [NormalizedMessage(role="user", content=[TextPart(text="hi")])],
+            [], model="m1",
+        )
+        assert captures[0].headers["Authorization"] == "Bearer sk-test"
+    finally:
+        await client.aclose()

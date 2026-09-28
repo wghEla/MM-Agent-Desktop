@@ -148,7 +148,9 @@ class OpenAIResponsesProvider(BaseProvider):
         )
 
     def _headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self._key_getter()}"}
+        # keyless profiles must not send an empty Authorization value.
+        key = self._key_getter()
+        return {"Authorization": f"Bearer {key}"} if key else {}
 
     async def generate(
         self,

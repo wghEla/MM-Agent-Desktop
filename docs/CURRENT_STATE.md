@@ -355,11 +355,12 @@ files clean; fake keys are clearly test-only.
 - **A12 → MATCH** (producer + exact consumption + G5 fail-closed + S6 delivery disclosure,
   all with focused tests). A17/A20/B9 remain PARTIAL (parity audits / P2-1 invariants) and
   must not be force-promoted.
-- **Overall Product Release Gate = PARTIAL / HOLD** — remaining external evidence:
-  1. installed-product live cancellation/process-tree proof;
-  2. real-provider smoke with a user credential;
-  3. current-head CI evidence or an explicit ADR replacing that acceptance rule;
-  4. explicit acceptance of remaining fidelity deviations.
+- **Overall Product Release Gate = HOLD** — remaining external evidence:
+  1. real-provider smoke with a user credential;
+  2. current-head CI evidence or an explicit ADR replacing that acceptance rule;
+  3. explicit acceptance of remaining fidelity deviations.
+
+  Installed live cancellation/process-tree proof: **PASS** (2026-09-28).
 
 ## Windows Product Release Package Gate — 2026-09-28 — PASS
 
@@ -397,3 +398,33 @@ All pre-packaging checks, build steps, installers, and runtime isolations passed
 - **Orphan Process Check**:
   - Win32_Process inspection across `mmagent-desktop.exe`, `mmagent-sidecar*.exe`, `runtime/python.exe`: 0 orphan processes found.
 
+
+
+## Installed Cancellation Gate — 2026-09-28 — PASS
+
+The **installed** product (1.0.0-rebuild.1, `D:\dev\MM-Agent-Desktop-release-smoke`)
+started a real long task (S1 prototype executed by the Runtime's `python.run` under the
+Windows Job Object: managed python parent + sleeping child), cancelled through the
+product's authenticated cancel endpoint:
+
+- Terminal within **0.7 s**: durable run CANCELLED, parent+child processes dead,
+  0 owned orphans, `cancel_probe_finished.txt` absent, progress file frozen.
+- No retry/double-writer; fresh-sidecar restart reconstructed CANCELLED from SQLite
+  with no auto-resume; a post-cancel new run executed short prototype tasks
+  SUCCEEDED and paused cleanly at the safe boundary.
+- Evidence: `docs/runs/installed-cancellation/` +
+  `docs/reviews/v1.0.0-rebuild-installed-cancellation-gate.md`.
+
+Two real product defects were found and fixed during the gate (source fixes → full
+repackage → reinstall before the gate run):
+1. `WindowsCredentialStore` unusable on current pywin32 (CredWrite bytes→str blob,
+   CredRead utf-16le decode) — 3 focused tests;
+2. keyless provider profiles sent an empty `Authorization: Bearer ` header which httpx
+   rejects — openai_chat/openai_responses now omit it — 2 focused tests.
+
+Regression at gate HEAD: **456 passed / 0 failed**, Ruff clean, frontend build green,
+NSIS rebuilt, startup smoke exit 0.
+
+Gate decisions: Source/Pipeline = GO · Windows Package = PASS · Installed Cancellation =
+**PASS** · Product Release = HOLD (Real Provider Smoke, CI acceptance decision,
+fidelity-deviation acceptance remaining).
