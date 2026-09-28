@@ -283,6 +283,7 @@ def build_provider(
             profile.base_url,
             key,
             api_version=str(extra.get("api_version") or "2023-06-01"),
+            test_model=profile.model,
         )
     elif profile.protocol == "gemini":
         inner = GeminiProvider(profile.base_url, key)
