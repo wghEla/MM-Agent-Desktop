@@ -586,6 +586,7 @@ export function ProviderSettings({
               type="button"
               disabled={
                 discoverBusy
+                || testBusy
                 || !form.baseUrl.trim()
                 || (form.authMode === "api_key" && !form.apiKey.trim())
               }
@@ -640,7 +641,10 @@ export function ProviderSettings({
             <label>Base URL</label>
             <input
               value={form.baseUrl}
-              disabled={Boolean(editing && selected?.has_api_key)}
+              disabled={Boolean(
+                (editing && selected?.has_api_key)
+                || (!editing && selectedPreset && !selectedPreset.base_url_editable)
+              )}
               onChange={(event) => {
                 setForm((current) => ({ ...current, baseUrl: event.target.value }));
                 setModels([]);
@@ -648,11 +652,15 @@ export function ProviderSettings({
               }}
               placeholder="https://…/v1"
             />
-            {editing && selected?.has_api_key && (
+            {editing && selected?.has_api_key ? (
               <span className="field-hint">
                 当前 Provider 已保存凭据。为防止密钥被发送到新的 endpoint，修改 Protocol/Base URL 前请先返回详情页清除 Key。
               </span>
-            )}
+            ) : !editing && selectedPreset && !selectedPreset.base_url_editable ? (
+              <span className="field-hint">
+                当前官方预设固定此 Endpoint，避免预设名称与实际密钥目标不一致。需要自定义 endpoint 时请选择 ZCode / OpenAI Compatible，或在 Advanced 中切换协议脱离预设。
+              </span>
+            ) : null}
           </div>
 
           <div className="settings-section two-column-fields">
@@ -928,6 +936,7 @@ export function ProviderSettings({
                 disabled={
                   busy
                   || testBusy
+                  || discoverBusy
                   || !form.baseUrl.trim()
                   || !form.model.trim()
                   || (form.authMode === "api_key" && !form.apiKey.trim())
@@ -941,6 +950,7 @@ export function ProviderSettings({
                 disabled={
                   busy
                   || testBusy
+                  || discoverBusy
                   || !form.name.trim()
                   || !form.baseUrl.trim()
                   || !form.model.trim()
@@ -1071,7 +1081,7 @@ export function ProviderSettings({
               <button
                 className="primary"
                 onClick={() => void testSelected()}
-                disabled={busy || testBusy}
+                disabled={busy || testBusy || discoverBusy}
               >
                 {testBusy ? "测试中…" : "Test Connection"}
               </button>
