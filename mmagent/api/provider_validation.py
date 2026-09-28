@@ -68,7 +68,7 @@ def validate_relative_endpoint_path(
         raise ValueError(f"{field} must be a relative endpoint path, not a URL")
     if parsed.query or parsed.fragment:
         raise ValueError(f"{field} must not contain query or fragment")
-    if "\" in raw:
+    if "\\" in raw:
         raise ValueError(f"{field} must use URL forward slashes")
 
     path = raw if raw.startswith("/") else "/" + raw
