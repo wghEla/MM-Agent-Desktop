@@ -117,3 +117,35 @@ def test_decode_blob_accepts_str_and_both_byte_encodings() -> None:
     assert _decode_blob(b"ascii-key", "r") == "ascii-key"
     assert _decode_blob("ascii-key".encode("utf-16-le"), "r") == "ascii-key"
     assert _decode_blob("密钥测试".encode("utf-16-le"), "r") == "密钥测试"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows Credential Manager only")
+def test_windows_credential_delete_only_ignores_not_found(monkeypatch) -> None:
+    import win32cred
+
+    from mmagent.runtime.credentials import (
+        CredentialDeleteError,
+        WindowsCredentialStore,
+    )
+
+    store = WindowsCredentialStore()
+
+    class DeleteDenied(Exception):
+        winerror = 5
+
+    def denied(*_args):
+        raise DeleteDenied("access denied")
+
+    monkeypatch.setattr(win32cred, "CredDelete", denied)
+    with pytest.raises(CredentialDeleteError, match="delete failed"):
+        store.delete("gate-test/delete-denied")
+
+    class AlreadyMissing(Exception):
+        winerror = 1168
+
+    def missing(*_args):
+        raise AlreadyMissing("not found")
+
+    monkeypatch.setattr(win32cred, "CredDelete", missing)
+    # ERROR_NOT_FOUND is the only deletion error treated as idempotent success.
+    store.delete("gate-test/already-missing")
