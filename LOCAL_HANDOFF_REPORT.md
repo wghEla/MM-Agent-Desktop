@@ -12,7 +12,7 @@ Last updated: 2026-09-28 after UI v2 local validation and GPT external review.
 | Verified regression | 464 passed / 0 failed; Ruff clean; frontend build green |
 | Installed smoke | NSIS rebuilt/reinstalled; `--startup-smoke` exit 0 |
 | UI v2 local validation | PASS |
-| Current remote | contains external-review dependency pin cleanup after the verified HEAD |
+| Current remote | contains UI v2 Phase-2 source implementation after the verified HEAD; local validation pending |
 | Product release | not yet final GO |
 
 ## Gate status
@@ -25,6 +25,7 @@ Last updated: 2026-09-28 after UI v2 local validation and GPT external review.
 | Installed Credential | PASS |
 | Real Provider | CONDITIONAL PASS |
 | UI v2 Phase 1 + native picker/recent workspace | PASS |
+| UI v2 Phase 2 (tree/onboarding/dialogs) | SOURCE COMPLETE / LOCAL VALIDATION PENDING |
 
 ## UI v2 verified state
 
@@ -103,14 +104,27 @@ GPT external review found one reproducibility issue and one documentation-truth 
 
 These cleanup edits are source-only until the next local `npm ci && npm run build`.
 
+## Phase-2 source work after the verified ffe1793 baseline
+
+Implemented on the current remote, but not yet locally validated:
+
+- bounded authenticated Runtime-backed workspace file tree;
+- workspace file preview through the existing Artifact dock;
+- automatic file-tree/artifact refresh after imports and during active runs;
+- first-run onboarding (工作区 → 模型 → 材料);
+- dedicated native-picker create/open dialogs with in-dialog backend errors;
+- remove-from-recent bookmark action that never deletes a workspace;
+- focused sidecar integration test for tree/read scope and .mmagent denial;
+- exact pinning of the Tauri JS minors already proven compatible with the release build.
+
+Runtime/Gate/Credential semantics were not intentionally changed.
+
 ## Remaining product work
 
-1. UI v2 Phase 2 remainder:
-   - workspace file tree;
-   - first-run onboarding;
-   - project/open dialog polish.
+1. ZCode local validation of the current Phase-2 source HEAD.
 2. UI v2 Phase 3:
    - provider preset/catalog polish;
+   - model discovery / manual fallback;
    - capability-driven fields;
    - formal OAuth extension point (only where compliant).
 3. One stronger-model / ZCode API real-provider green-G0 run.
