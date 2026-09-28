@@ -200,12 +200,24 @@ def _discovery_headers(
     raise ValueError(f"unsupported provider protocol: {protocol}")
 
 
-def _models_url(protocol: str, base_url: str) -> str:
+def _models_url(
+    protocol: str,
+    base_url: str,
+    extra: dict[str, Any],
+) -> str | None:
     base = base_url.rstrip("/")
     if protocol == "gemini":
         return f"{base}/v1beta/models"
     if protocol == "anthropic_messages":
         return f"{base}/v1/models"
+    if protocol == "openai_compatible":
+        raw = extra.get("models_path", "/models")
+        if raw is None or str(raw).strip() == "":
+            return None
+        path = str(raw).strip()
+        if not path.startswith("/"):
+            path = "/" + path
+        return f"{base}{path}"
     return f"{base}/models"
 
 
@@ -260,7 +272,15 @@ async def discover_models(
 
     extra = extra or {}
     headers = _discovery_headers(protocol, api_key, extra)
-    url = _models_url(protocol, base_url)
+    url = _models_url(protocol, base_url, extra)
+    if url is None:
+        return {
+            "ok": False,
+            "models": [],
+            "detail": "该渠道已关闭模型列表端点；请手动输入 Model ID",
+            "endpoint": "",
+        }
+
     owned = client is None
     http = client or httpx.AsyncClient(timeout=15.0)
     try:
