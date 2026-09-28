@@ -1,6 +1,6 @@
 # LOCAL_HANDOFF_REPORT
 
-Last updated: 2026-09-28 after UI v2 local validation and GPT external review.
+Last updated: 2026-09-28 after UI v2 Phase-2 local validation.
 
 ## Source of truth
 
@@ -8,11 +8,12 @@ Last updated: 2026-09-28 after UI v2 local validation and GPT external review.
 |---|---|
 | Repository | `wghEla/MM-Agent-Desktop` |
 | Branch | `gpt/fidelity-rebuild` |
-| Last fully locally verified HEAD | `ffe179354e80a98f9d3a074aeacfaf95712e552a` |
-| Verified regression | 464 passed / 0 failed; Ruff clean; frontend build green |
-| Installed smoke | NSIS rebuilt/reinstalled; `--startup-smoke` exit 0 |
-| UI v2 local validation | PASS |
-| Current remote | contains UI v2 Phase-2 source implementation after the verified HEAD; local validation pending |
+| Source HEAD under validation | `3d83004d43ae64dd30949d5ea5d1abfda0bc0d6d` (phase-2 source) |
+| Final tested state | `3d83004` + phase-2 local fix commits (sidecar OSError→409/400 detail) |
+| Verified regression | 466 passed / 0 failed; Ruff clean; frontend build green |
+| Installed smoke | NSIS rebuilt/reinstalled; `--startup-smoke` exit 0; 0 orphan |
+| UI v2 Phase 1 | PASS (`ffe1793` baseline) |
+| UI v2 Phase 2 | PASS (this round) |
 | Product release | not yet final GO |
 
 ## Gate status
@@ -25,7 +26,7 @@ Last updated: 2026-09-28 after UI v2 local validation and GPT external review.
 | Installed Credential | PASS |
 | Real Provider | CONDITIONAL PASS |
 | UI v2 Phase 1 + native picker/recent workspace | PASS |
-| UI v2 Phase 2 (tree/onboarding/dialogs) | SOURCE COMPLETE / LOCAL VALIDATION PENDING |
+| UI v2 Phase 2 (tree/onboarding/dialogs) | PASS |
 
 ## UI v2 verified state
 
