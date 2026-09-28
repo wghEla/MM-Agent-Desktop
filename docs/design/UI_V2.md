@@ -333,11 +333,19 @@ It must not silently mutate ledger/gate state. Human actions become explicit dur
 
 ### Phase 2 — workspace UX
 
-- recent workspace bookmarks;
-- native folder picker;
-- workspace file tree;
-- first-run onboarding;
-- project/open/create dialogs.
+- recent workspace bookmarks — implemented + locally verified;
+- native folder picker — implemented + locally verified;
+- workspace file tree — source implemented, local validation pending;
+- first-run onboarding — source implemented, local validation pending;
+- project/open/create dialogs — source implemented, local validation pending.
+
+Workspace tree security contract:
+
+- sidecar enumerates only fixed user-visible roots;
+- `.mmagent` and arbitrary filesystem paths are excluded;
+- every returned existing path is revalidated by `PathPolicy`;
+- traversal is bounded by item count and depth;
+- preview is read-only and shares the same authenticated sidecar boundary.
 
 ### Phase 3 — provider UX
 
@@ -385,5 +393,9 @@ on a real Windows/Tauri runtime. Report: `docs/reviews/v1.0.0-rebuild-ui-v2-loca
   semantics; PDF/PNG/JSON previews verified against a live run's artifacts.
 - Package/version alignment note: the release build rejects mismatched npm/crate minors
   (e.g. `@tauri-apps/api` 2.12 vs crate 2.11) — keep them on the same minor.
-- Remaining Phase-2 items (workspace file tree, first-run onboarding) and Phases 3–4 are
-  still open; nothing here declares Product Release GO.
+- The first local-validation round covered Phase 1 plus native picker/recent bookmarks.
+- Phase 2 is now source-complete on the branch: Runtime-backed workspace file tree,
+  workspace file preview, first-run onboarding, and dedicated create/open dialogs are
+  implemented after the verified `ffe1793` baseline. These Phase-2 additions are
+  source-only until the next Windows/Tauri local validation.
+- Phases 3–4 remain open; nothing here declares Product Release GO.
