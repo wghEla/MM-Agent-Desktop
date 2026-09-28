@@ -428,3 +428,24 @@ NSIS rebuilt, startup smoke exit 0.
 Gate decisions: Source/Pipeline = GO · Windows Package = PASS · Installed Cancellation =
 **PASS** · Product Release = HOLD (Real Provider Smoke, CI acceptance decision,
 fidelity-deviation acceptance remaining).
+
+
+## Installed Credential Gate — 2026-09-28 — PASS
+
+Root cause of the deferred frozen-sidecar read failure: PyInstaller missed
+win32cred's lazy `win32timezone` import; the old get() masked every read error
+as "not found". Fixed (hidden import + explicit NOT_FOUND/READ_FAILED taxonomy
++ non-secret diagnostics endpoints + openai_chat /models→chat fallback), full
+repackage + reinstall, then installed-product E2E with a fake secret:
+product-boundary write → SQLite stores only the ref → full app exit → fresh
+sidecar reads the credential → Test Connection falls back to authenticated
+chat → a loopback relay requiring that exact Bearer served 29/29 authenticated
+requests (0 mismatches) while the installed Runtime completed all of S0+S1 and
+paused at the safe boundary. All test credentials deleted from Credential
+Manager afterwards. Evidence: `docs/runs/installed-credential/`,
+`docs/reviews/v1.0.0-rebuild-installed-credential-gate.md`.
+
+Gates: Source/Pipeline GO · Windows Package PASS · Installed Cancellation PASS ·
+**Installed Credential PASS** · Real Provider **WAITING_FOR_USER_CREDENTIAL**
+(user enters API Key / Base URL / Model in the installed app tonight) · CI
+decision open · deviation acceptance open. Regression: 462 passed / Ruff clean.

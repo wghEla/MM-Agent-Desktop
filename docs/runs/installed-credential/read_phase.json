@@ -1,0 +1,17 @@
+{
+ "fresh_sidecar_pid": 51280,
+ "reopened_same_project": true,
+ "diagnostic_fresh_sidecar": {
+  "ref": "provider/provider_d5a98cc9de8f/api-key",
+  "target_name": "MM-Agent-Desktop/provider/provider_d5a98cc9de8f/api-key",
+  "found": true,
+  "blob_len": 86,
+  "sha256_prefix": "7701f017d6a1",
+  "blob_kind": "bytes"
+ },
+ "test_connection": {
+  "ok": true,
+  "detail": "models 端点 404; chat fallback 成功"
+ },
+ "relay_log_auth": "see credential_relay.log (auth_match lines only)"
+}

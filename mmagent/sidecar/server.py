@@ -89,6 +89,10 @@ class CancelRequest(BaseModel):
     reason: str = "user cancelled"
 
 
+class CredentialDiagnosticRequest(BaseModel):
+    ref: str
+
+
 @dataclass
 class SidecarState:
     token: str
@@ -314,6 +318,34 @@ def create_app(
             extra=req.extra,
         )
         return public_profile(profile)
+
+    @app.post(
+        "/diagnostics/credential",
+        dependencies=auth,
+    )
+    async def credential_diagnostic(req: CredentialDiagnosticRequest) -> dict[str, Any]:
+        """Non-secret credential probe (installed-credential gate).
+
+        Requires bearer auth.  Returns existence/shape only — never the secret.
+        """
+        store = _default_credentials()
+        return store.describe(req.ref)
+
+    @app.post(
+        "/diagnostics/credentials/enumerate",
+        dependencies=auth,
+    )
+    async def credential_enumerate() -> dict[str, Any]:
+        """List our credential TARGET NAMES only (no blobs, no secrets)."""
+        store = _default_credentials()
+        import win32cred
+
+        targets: list[str] = []
+        for item in win32cred.CredEnumerate(None, 0) or []:
+            target = str(item.get("TargetName", ""))
+            if target.startswith(store.PREFIX + "/"):
+                targets.append(target)
+        return {"targets": sorted(targets), "count": len(targets)}
 
     @app.post(
         "/projects/{project_id}/providers/{model_profile_id}/test",

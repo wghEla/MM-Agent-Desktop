@@ -544,3 +544,60 @@ async def test_keyed_openai_chat_keeps_bearer_header():
         assert captures[0].headers["Authorization"] == "Bearer sk-test"
     finally:
         await client.aclose()
+
+
+# ==================== openai_chat /models-404 chat fallback ====================
+
+@pytest.mark.asyncio
+async def test_openai_chat_connection_falls_back_to_configured_model():
+    """/models 404 must fall back to a real minimal chat call using the
+    configured model (max_tokens=1) — relays without /models are valid."""
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        if request.url.path.endswith("/models"):
+            return httpx.Response(404)
+        return httpx.Response(200, json={
+            "id": "c", "object": "chat.completion", "created": 1, "model": "m",
+            "choices": [{"index": 0, "finish_reason": "stop",
+                         "message": {"role": "assistant", "content": "OK"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        })
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    p = OpenAIChatProvider(
+        "https://relay.test/v1", lambda: "sk-fake", client=client, test_model="cfg-model"
+    )
+    try:
+        result = await p.test_connection()
+        assert result["ok"] is True
+        assert "chat fallback 成功" in result["detail"]
+        posts = [r for r in captures if r.method == "POST"]
+        assert len(posts) == 1
+        body = json.loads(posts[0].content)
+        assert body["model"] == "cfg-model"
+        assert body["max_tokens"] == 1
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_connection_models_200_no_fallback():
+    """A working /models endpoint must pass directly without any chat call."""
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        return httpx.Response(200, json={"data": []})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    p = OpenAIChatProvider(
+        "https://api.test/v1", lambda: "sk-fake", client=client, test_model="cfg-model"
+    )
+    try:
+        result = await p.test_connection()
+        assert result == {"ok": True, "detail": "models 端点 200"}
+        assert all(r.method == "GET" for r in captures)
+    finally:
+        await client.aclose()

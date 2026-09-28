@@ -51,6 +51,12 @@ def build_sidecar() -> Path:
             "--noconfirm",
             "--clean",
             "--onefile",
+            # win32cred lazily imports win32timezone inside CredRead/CredWrite
+            # paths; PyInstaller's static analysis misses it, which made the
+            # frozen sidecar fail every credential read with
+            # "No module named 'win32timezone'" while the dev tree worked.
+            "--hidden-import",
+            "win32timezone",
             "--name",
             NAME,
             "--distpath",

@@ -158,12 +158,15 @@ class OpenAIChatProvider(BaseProvider):
         *,
         client: httpx.AsyncClient | None = None,
         extra_headers: dict[str, str] | None = None,
+        test_model: str | None = None,
     ):
         self.base_url = base_url.rstrip("/")
         self._key = api_key_getter()  # 初始化时取一次（脱敏 + 头部共用）
         self._key_getter = lambda: self._key
         self._client = client or httpx.AsyncClient(timeout=600.0)
         self._extra_headers = extra_headers or {}
+        # Test Connection 的 /models 404 回退用：用 profile 配置的真实模型探测
+        self._test_model = test_model
 
     def capabilities(self) -> CapabilitySet:
         return CapabilitySet(
@@ -230,6 +233,27 @@ class OpenAIChatProvider(BaseProvider):
         # 无 key/模型列表端点依赖：以最小 models 请求探测（兼容 OpenAI 语义）
         try:
             resp = await self._client.get(f"{self.base_url}/models", headers=self._headers(), timeout=15.0)
-            return {"ok": resp.status_code == 200, "detail": f"models 端点 {resp.status_code}"}
+            if resp.status_code == 200:
+                return {"ok": True, "detail": "models 端点 200"}
+            models_detail = f"models 端点 {resp.status_code}"
         except httpx.HTTPError as e:
-            return {"ok": False, "detail": str(e)[:200]}
+            models_detail = f"models 探测失败: {str(e)[:120]}"
+
+        # 许多真实 OpenAI 兼容中转（one-api/new-api/部分 vLLM/Ollama 网关）
+        # 没有 /models 端点但 chat 可用。回退到用配置的模型做一次真实最小
+        # chat 请求（max_tokens=1），避免把可用渠道误报为不可用。这是真实
+        # API 调用，可能消耗极少量 token——与 openai_compatible 的行为一致。
+        try:
+            await self.generate(
+                [NormalizedMessage(role="user", content=[TextPart(text="Reply with OK.")])],
+                [],
+                model=self._test_model or "default",
+                reasoning=None,
+                max_output_tokens=1,
+                timeout_s=15.0,
+            )
+            return {"ok": True, "detail": f"{models_detail}; chat fallback 成功"}
+        except httpx.HTTPError as e:
+            return {"ok": False, "detail": f"{models_detail}; chat fallback 网络失败: {str(e)[:160]}"}
+        except Exception as e:
+            return {"ok": False, "detail": f"{models_detail}; chat fallback 失败: {str(e)[:160]}"}

@@ -176,7 +176,9 @@ def build_provider(
 
     extra = profile.extra
     if profile.protocol == "openai_chat":
-        inner: BaseProvider = OpenAIChatProvider(profile.base_url, key)
+        inner: BaseProvider = OpenAIChatProvider(
+            profile.base_url, key, test_model=profile.model
+        )
     elif profile.protocol == "openai_responses":
         inner = OpenAIResponsesProvider(profile.base_url, key)
     elif profile.protocol == "anthropic_messages":

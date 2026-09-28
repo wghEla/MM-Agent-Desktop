@@ -2,12 +2,26 @@
 
 Production Windows builds use Credential Manager.  SQLite stores only the
 opaque reference returned by this layer; secrets never enter project.db.
+
+Error taxonomy (never mask an existing-but-unreadable credential as missing):
+- CredentialNotFound: Windows reports the target does not exist;
+- CredentialReadError: the target exists but read/decode failed — the original
+  OS error and blob shape are carried in the message for diagnosis.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 from dataclasses import dataclass, field
 from typing import Protocol
+
+
+class CredentialNotFound(KeyError):
+    """Windows reports the credential target does not exist."""
+
+
+class CredentialReadError(RuntimeError):
+    """The credential target exists but reading/decoding it failed."""
 
 
 class CredentialStore(Protocol):
@@ -29,10 +43,48 @@ class MemoryCredentialStore:
         try:
             return self.values[ref]
         except KeyError as exc:
-            raise KeyError(f"credential not found: {ref}") from exc
+            raise CredentialNotFound(f"credential not found: {ref}") from exc
 
     def delete(self, ref: str) -> None:
         self.values.pop(ref, None)
+
+
+def _decode_blob(blob: bytes | str, ref: str) -> str:
+    """Decode a CredentialBlob without guessing wildly.
+
+    pywin32 builds differ: current builds return the wide string written via
+    CredWrite as raw UTF-16LE bytes; legacy builds return raw UTF-8 bytes.
+    - Bytes containing NUL are certainly UTF-16LE (printable UTF-8 never has
+      NUL, while ASCII secrets written as str always do);
+    - otherwise try strict UTF-8 first (legacy write path), then strict
+      UTF-16LE (non-ASCII str write without NUL bytes);
+    - anything that still fails raises CredentialReadError explicitly — it must
+      NOT surface as "credential not found".
+    """
+    if isinstance(blob, str):
+        return blob
+    if isinstance(blob, bytes):
+        attempts = []
+        if blob.count(0) > 0:
+            attempts = [("utf-16-le", lambda: blob.decode("utf-16-le"))]
+        else:
+            attempts = [
+                ("utf-8", lambda: blob.decode("utf-8")),
+                ("utf-16-le", lambda: blob.decode("utf-16-le")),
+            ]
+        for encoding, decode in attempts:
+            try:
+                return decode() if callable(decode) else decode
+            except UnicodeDecodeError:
+                continue
+        digest = hashlib.sha256(blob).hexdigest()[:12]
+        raise CredentialReadError(
+            f"credential decode failed for {ref}: blob_len={len(blob)} "
+            f"sha256_prefix={digest} (neither utf-8 nor utf-16-le)"
+        )
+    raise CredentialReadError(
+        f"credential blob has unexpected shape for {ref}: {type(blob).__name__}"
+    )
 
 
 class WindowsCredentialStore:
@@ -76,28 +128,55 @@ class WindowsCredentialStore:
     def get(self, ref: str) -> str:
         import win32cred
 
+        target = self._target(ref)
         try:
-            item = win32cred.CredRead(
-                self._target(ref), win32cred.CRED_TYPE_GENERIC, 0
-            )
+            item = win32cred.CredRead(target, win32cred.CRED_TYPE_GENERIC, 0)
         except Exception as exc:
-            raise KeyError(f"credential not found: {ref}") from exc
-        blob = item.get("CredentialBlob", b"")
-        if isinstance(blob, bytes):
-            # 当前 pywin32 把 str 写入后读回 UTF-16LE 字节；旧版本写入的
-            # utf-8 字节不含 NUL。API key 均为可打印 ASCII，可安全区分。
-            if b"\x00" in blob:
-                return blob.decode("utf-16-le")
-            return blob.decode("utf-8")
-        return str(blob)
+            winerror = getattr(exc, "winerror", None)
+            # 1168 = ERROR_NOT_FOUND, 1169 = ERROR_NO_SUCH_LOGON_SESSION
+            if winerror == 1168:
+                raise CredentialNotFound(f"credential not found: {ref}") from exc
+            raise CredentialReadError(
+                f"credential read failed for {ref} (target={target!r}): "
+                f"{type(exc).__name__} winerror={winerror} {exc}"
+            ) from exc
+        return _decode_blob(item.get("CredentialBlob", b""), ref)
 
     def delete(self, ref: str) -> None:
         import win32cred
 
         try:
-            win32cred.CredDelete(
-                self._target(ref), win32cred.CRED_TYPE_GENERIC, 0
-            )
+            win32cred.CredDelete(self._target(ref), win32cred.CRED_TYPE_GENERIC, 0)
         except Exception:
             # Deleting an already-missing secret is idempotent for cleanup paths.
             pass
+
+    def describe(self, ref: str) -> dict:
+        """Non-secret diagnostic: does the target exist and what is its shape."""
+        import win32cred
+
+        target = self._target(ref)
+        try:
+            item = win32cred.CredRead(target, win32cred.CRED_TYPE_GENERIC, 0)
+        except Exception as exc:
+            winerror = getattr(exc, "winerror", None)
+            return {
+                "ref": ref,
+                "target_name": target,
+                "found": False,
+                "error_class": (
+                    "NOT_FOUND" if winerror == 1168 else "READ_FAILED"
+                ),
+                "winerror": winerror,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+        blob = item.get("CredentialBlob", b"")
+        raw = blob.encode("utf-16-le") if isinstance(blob, str) else blob
+        return {
+            "ref": ref,
+            "target_name": target,
+            "found": True,
+            "blob_len": len(raw),
+            "sha256_prefix": hashlib.sha256(raw).hexdigest()[:12],
+            "blob_kind": type(blob).__name__,
+        }

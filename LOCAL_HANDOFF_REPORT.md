@@ -129,3 +129,17 @@ Do not tag, merge main, or run CI without explicit user direction.
   `docs/reviews/v1.0.0-rebuild-installed-cancellation-gate.md`.
 - Regression: 456 passed / 0 failed, Ruff clean, NSIS rebuilt, startup smoke exit 0.
 - Deferred to Real Provider Gate: frozen-sidecar credential READ path end-to-end check.
+
+
+## Installed Credential Gate — 2026-09-28 — PASS
+
+- Root cause: PyInstaller missing win32timezone (win32cred lazy import); old
+  get() masked read errors as not-found.
+- Fixes: hidden import; NOT_FOUND/READ_FAILED error taxonomy; non-secret
+  diagnostics endpoints; openai_chat Test Connection chat fallback.
+- Installed E2E (fake secret): write → ref-only SQLite → app exit → fresh-sidecar
+  read OK → Test Connection fallback OK → loopback relay Bearer check 29/29 →
+  full S0+S1 authenticated pipeline SUCCEEDED, clean pause at S2 boundary.
+- 462 passed / 0 failed, Ruff clean, repackaged + reinstalled, smoke exit 0.
+- Real Provider Gate: WAITING_FOR_USER_CREDENTIAL (user inputs API Key /
+  Base URL / Model in the installed app).

@@ -132,3 +132,14 @@
   拒绝——openai_chat/responses 改为省略该头——2 focused tests。全量 456 passed，Ruff clean。
 - 09-28 遗留到 Real Provider Gate：冻结 sidecar 内 Credential READ 路径端到端复验
   （写路径已在产品内验证，读 round-trip 由 dev 树单测覆盖）。
+- 09-28 Installed Credential Gate：根因为 PyInstaller 漏掉 win32cred 惰性导入的
+  win32timezone（旧 get() 把一切读失败伪装成 not found）。修复：build 脚本加
+  --hidden-import；credentials.py 引入 CredentialNotFound/CredentialReadError 分级
+  + describe() 非机密诊断；sidecar 新增鉴权诊断端点；openai_chat Test Connection
+  补 /models-404→配置模型最小 chat fallback。462 passed（新增跨进程/错误分级/fallback
+  等测试），Ruff clean，重打包+静默重装+smoke 0。
+- 09-28 安装版 E2E（fake secret）：产品边界写 → SQLite 仅存 ref（字节扫描无 secret）
+  → 完全退出 → 全新 sidecar 读到（found=true）→ Test Connection 404→fallback 成功 →
+  环回 relay 强制校验 Bearer，29 次请求 0 失配，安装版 Runtime 完整跑通 S0+S1 全部
+  腿并在 S2 边界干净 PAUSED。测试凭据事后全部从 Credential Manager 删除。
+  Installed Credential Gate = PASS；Real Provider = WAITING_FOR_USER_CREDENTIAL。
