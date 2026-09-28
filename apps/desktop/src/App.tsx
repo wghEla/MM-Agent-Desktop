@@ -1,4 +1,4 @@
-import React, { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   backend,
   type Dashboard,
@@ -7,17 +7,10 @@ import {
   type RunStatus,
 } from "./api";
 import { ArtifactViewer, ImportPanel } from "./WorkspacePanels";
+import { ProviderSettings } from "./ProviderSettings";
 import { StageRail } from "./StageRail";
 import { WorkspaceDialog, type WorkspaceDialogMode } from "./WorkspaceDialog";
 import { WorkspaceTree } from "./WorkspaceTree";
-
-const protocolDefaults: Record<string, string> = {
-  openai_chat: "https://api.openai.com/v1",
-  openai_responses: "https://api.openai.com/v1",
-  anthropic_messages: "https://api.anthropic.com",
-  gemini: "https://generativelanguage.googleapis.com",
-  openai_compatible: "",
-};
 
 type RecentWorkspace = {
   root: string;
@@ -53,16 +46,6 @@ function loadRecentWorkspaces(): RecentWorkspace[] {
     return [];
   }
 }
-
-const providerPresets = [
-  { id: "openai", label: "OpenAI", protocol: "openai_responses", baseUrl: "https://api.openai.com/v1" },
-  { id: "anthropic", label: "Anthropic", protocol: "anthropic_messages", baseUrl: "https://api.anthropic.com" },
-  { id: "gemini", label: "Gemini", protocol: "gemini", baseUrl: "https://generativelanguage.googleapis.com" },
-  { id: "groq", label: "Groq", protocol: "openai_compatible", baseUrl: "https://api.groq.com/openai/v1" },
-  { id: "deepseek", label: "DeepSeek", protocol: "openai_compatible", baseUrl: "https://api.deepseek.com" },
-  { id: "zcode", label: "ZCode", protocol: "openai_compatible", baseUrl: "" },
-  { id: "compatible", label: "OpenAI Compatible", protocol: "openai_compatible", baseUrl: "" },
-] as const;
 
 function App() {
   const [project, setProject] = useState<ProjectView | null>(null);
@@ -411,16 +394,15 @@ function App() {
             {!project ? (
               <div className="settings-empty">请先创建或打开工作区，再配置该项目使用的 Provider。</div>
             ) : (
-              <ProviderPanel
+              <ProviderSettings
                 project={project}
                 providers={providers}
                 selectedProvider={selectedProvider}
                 busy={busy}
                 onSelect={setSelectedProvider}
-                onRefresh={() => guarded(async () => refreshProviders(project))}
-                onCreated={async () => {
+                onChanged={async () => {
                   await refreshProviders(project);
-                  setNotice("Provider 已保存；密钥仅保存在 Windows Credential Manager");
+                  setNotice("Provider 设置已更新");
                 }}
                 onGuarded={guarded}
               />
@@ -608,307 +590,6 @@ function WelcomeSurface({
         <span>Fail-closed gates</span>
         <span>Frozen Truth</span>
       </div>
-    </div>
-  );
-}
-
-function ProviderPanel({
-  project,
-  providers,
-  selectedProvider,
-  busy,
-  onSelect,
-  onRefresh,
-  onCreated,
-  onGuarded,
-}: {
-  project: ProjectView;
-  providers: ProviderProfile[];
-  selectedProvider: string;
-  busy: boolean;
-  onSelect: (value: string) => void;
-  onRefresh: () => void;
-  onCreated: () => Promise<void>;
-  onGuarded: (action: () => Promise<void>) => Promise<void>;
-}) {
-  const selected = providers.find((item) => item.model_profile_id === selectedProvider) ?? null;
-  const [showCreate, setShowCreate] = useState(providers.length === 0);
-  const [name, setName] = useState("Primary");
-  const [protocol, setProtocol] = useState("openai_responses");
-  const [baseUrl, setBaseUrl] = useState(protocolDefaults.openai_responses);
-  const [model, setModel] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [reasoning, setReasoning] = useState("");
-  const [compatibleImageInput, setCompatibleImageInput] = useState(false);
-  const [compatibleReasoningEffort, setCompatibleReasoningEffort] = useState(false);
-  const [testResult, setTestResult] = useState("");
-
-  function changeProtocol(value: string) {
-    setProtocol(value);
-    setBaseUrl(protocolDefaults[value] ?? "");
-    if (value !== "openai_compatible") {
-      setCompatibleImageInput(false);
-      setCompatibleReasoningEffort(false);
-    }
-  }
-
-  function applyPreset(preset: (typeof providerPresets)[number]) {
-    setName(preset.label);
-    setProtocol(preset.protocol);
-    setBaseUrl(preset.baseUrl);
-    setModel("");
-    setReasoning("");
-    setCompatibleImageInput(false);
-    setCompatibleReasoningEffort(false);
-  }
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    await onGuarded(async () => {
-      await backend("POST", `/projects/${project.id}/providers`, {
-        name,
-        protocol,
-        base_url: baseUrl,
-        model,
-        api_key: apiKey || null,
-        reasoning: reasoning || null,
-        timeout_s: 300,
-        extra: protocol === "openai_compatible"
-          ? {
-              image_input: compatibleImageInput,
-              reasoning_effort: compatibleReasoningEffort,
-            }
-          : {},
-      });
-      setApiKey("");
-      setShowCreate(false);
-      await onCreated();
-    });
-  }
-
-  async function testSelected() {
-    if (!selectedProvider) return;
-    setTestResult("测试中…");
-    try {
-      const result = await backend<{ ok: boolean; detail: string }>(
-        "POST",
-        `/projects/${project.id}/providers/${selectedProvider}/test`,
-      );
-      setTestResult(`${result.ok ? "✓" : "✗"} ${result.detail}`);
-    } catch (err) {
-      setTestResult(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  return (
-    <div className="provider-settings-grid">
-      <aside className="provider-settings-list">
-        <div className="provider-list-heading">
-          <span>Providers</span>
-          <button className="small-button" onClick={() => setShowCreate(true)}>＋</button>
-        </div>
-
-        {providers.map((item) => (
-          <button
-            key={item.model_profile_id}
-            className={`provider-nav-item ${selectedProvider === item.model_profile_id && !showCreate ? "selected" : ""}`}
-            onClick={() => {
-              onSelect(item.model_profile_id);
-              setShowCreate(false);
-              setTestResult("");
-            }}
-          >
-            <span className="provider-avatar">{item.name.slice(0, 1).toUpperCase()}</span>
-            <span className="provider-nav-copy">
-              <strong>{item.name}</strong>
-              <span>{item.model}</span>
-            </span>
-            {item.has_api_key && <span className="credential-dot" title="API Key 已保存" />}
-          </button>
-        ))}
-
-        <button
-          className={`provider-nav-item add-provider ${showCreate ? "selected" : ""}`}
-          onClick={() => setShowCreate(true)}
-        >
-          <span className="provider-avatar">＋</span>
-          <span className="provider-nav-copy">
-            <strong>添加 Provider</strong>
-            <span>API Key / Compatible</span>
-          </span>
-        </button>
-      </aside>
-
-      <section className="provider-settings-detail">
-        {showCreate || !selected ? (
-          <form onSubmit={(e) => void submit(e)}>
-            <div className="detail-heading">
-              <div>
-                <span className="eyebrow">NEW PROVIDER</span>
-                <h3>添加模型渠道</h3>
-                <p>选择常见渠道只会预填协议和 Endpoint；Runtime 仍使用现有适配器。</p>
-              </div>
-            </div>
-
-            <div className="preset-grid">
-              {providerPresets.map((preset) => (
-                <button
-                  type="button"
-                  key={preset.id}
-                  className="preset-button"
-                  onClick={() => applyPreset(preset)}
-                >
-                  <span className="preset-mark">{preset.label.slice(0, 1)}</span>
-                  <span>{preset.label}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="settings-section">
-              <h4>Authentication</h4>
-              <div className="field">
-                <label>API Key</label>
-                <input
-                  type="password"
-                  autoComplete="off"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="仅写入 Windows Credential Manager"
-                />
-                <span className="field-hint">保存后不会在界面、SQLite 或日志中回显真实密钥。</span>
-              </div>
-            </div>
-
-            <div className="settings-section two-column-fields">
-              <div className="field">
-                <label>名称</label>
-                <input value={name} onChange={(e) => setName(e.target.value)} />
-              </div>
-              <div className="field">
-                <label>Model ID</label>
-                <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="精确模型 ID" />
-              </div>
-            </div>
-
-            <details className="advanced-settings">
-              <summary>Advanced</summary>
-              <div className="advanced-body">
-                <div className="settings-section two-column-fields">
-                  <div className="field">
-                    <label>协议</label>
-                    <select value={protocol} onChange={(e) => changeProtocol(e.target.value)}>
-                      <option value="openai_responses">OpenAI Responses</option>
-                      <option value="openai_chat">OpenAI Chat</option>
-                      <option value="anthropic_messages">Anthropic Messages</option>
-                      <option value="gemini">Gemini</option>
-                      <option value="openai_compatible">OpenAI Compatible</option>
-                    </select>
-                  </div>
-                  <div className="field">
-                    <label>Reasoning</label>
-                    <select value={reasoning} onChange={(e) => setReasoning(e.target.value)}>
-                      <option value="">Provider 默认</option>
-                      <option value="low">low</option>
-                      <option value="medium">medium</option>
-                      <option value="high">high</option>
-                      <option value="xhigh">xhigh</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="field">
-                  <label>Base URL</label>
-                  <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://…/v1" />
-                </div>
-                {protocol === "openai_compatible" && (
-                  <div className="capability-options">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={compatibleImageInput}
-                        onChange={(e) => setCompatibleImageInput(e.target.checked)}
-                      />
-                      支持图片输入
-                    </label>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={compatibleReasoningEffort}
-                        onChange={(e) => setCompatibleReasoningEffort(e.target.checked)}
-                      />
-                      支持 reasoning_effort
-                    </label>
-                  </div>
-                )}
-              </div>
-            </details>
-
-            <div className="settings-actions">
-              <button
-                className="primary"
-                disabled={busy || !name.trim() || !baseUrl.trim() || !model.trim()}
-              >
-                保存 Provider
-              </button>
-            </div>
-          </form>
-        ) : (
-          <>
-            <div className="detail-heading provider-current-heading">
-              <div>
-                <span className="eyebrow">PROVIDER</span>
-                <h3>{selected.name}</h3>
-                <p className="mono">{selected.model}</p>
-              </div>
-              <button onClick={onRefresh} disabled={busy}>刷新</button>
-            </div>
-
-            <div className="provider-status-card">
-              <div>
-                <span className="status-kicker">Authentication</span>
-                <strong>{selected.has_api_key ? "API Key 已保存" : "未保存 API Key"}</strong>
-                <span>{selected.has_api_key ? "Windows Credential Manager" : "Keyless / local relay"}</span>
-              </div>
-              <span className={`credential-state ${selected.has_api_key ? "ok" : "neutral"}`}>
-                {selected.has_api_key ? "Secure" : "Keyless"}
-              </span>
-            </div>
-
-            <div className="provider-facts">
-              <div>
-                <span>Protocol</span>
-                <strong>{selected.protocol}</strong>
-              </div>
-              <div>
-                <span>Model</span>
-                <strong className="mono">{selected.model}</strong>
-              </div>
-              <div className="wide">
-                <span>Endpoint</span>
-                <strong className="mono">{selected.base_url}</strong>
-              </div>
-              <div>
-                <span>Reasoning</span>
-                <strong>{selected.reasoning || "Provider default"}</strong>
-              </div>
-            </div>
-
-            <div className="settings-actions test-connection-row">
-              <button
-                className="primary"
-                onClick={() => void testSelected()}
-                disabled={!selectedProvider || busy}
-              >
-                Test Connection
-              </button>
-              {testResult && <span className="test-result">{testResult}</span>}
-            </div>
-
-            <div className="settings-note">
-              账号登录只会在厂商提供并明确允许第三方桌面应用使用的 OAuth / Device Flow 接入后出现；不会导入浏览器 Cookie 或复用其他客户端 Token。
-            </div>
-          </>
-        )}
-      </section>
     </div>
   );
 }
