@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from mmagent.api.provider_catalog import capability_descriptor
 from mmagent.providers.anthropic_messages import AnthropicMessagesProvider
 from mmagent.providers.base import BaseProvider, ModelBoundProvider
 from mmagent.providers.gemini import GeminiProvider
@@ -322,4 +323,6 @@ def public_profile(profile: ProviderProfile) -> dict[str, Any]:
         "max_output_tokens": profile.max_output_tokens,
         "timeout_s": profile.timeout_s,
         "extra": profile.extra,
+        "auth_kind": "api_key" if profile.api_key_ref else "none",
+        "capabilities": capability_descriptor(profile.protocol, profile.extra),
     }
