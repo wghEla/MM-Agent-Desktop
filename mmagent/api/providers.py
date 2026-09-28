@@ -46,6 +46,38 @@ def _credential_ref(provider_id: str) -> str:
     return f"provider/{provider_id}/api-key"
 
 
+_SECRET_HEADER_NAMES = frozenset(
+    {
+        "authorization",
+        "proxy-authorization",
+        "x-api-key",
+        "api-key",
+        "cookie",
+        "set-cookie",
+    }
+)
+
+
+def _validate_extra_secret_boundary(extra: dict[str, Any] | None) -> dict[str, Any]:
+    value = dict(extra or {})
+    raw_headers = value.get("extra_headers")
+    if raw_headers is None:
+        return value
+    if not isinstance(raw_headers, dict):
+        raise ValueError("extra_headers must be an object")
+    forbidden = sorted(
+        str(name)
+        for name in raw_headers
+        if str(name).strip().lower() in _SECRET_HEADER_NAMES
+    )
+    if forbidden:
+        raise ValueError(
+            "secret-bearing extra_headers are forbidden; use Windows Credential Manager: "
+            + ", ".join(forbidden)
+        )
+    return value
+
+
 def create_provider_profile(
     db: Database,
     credentials: CredentialStore,
@@ -74,6 +106,8 @@ def create_provider_profile(
     if max_output_tokens is not None and max_output_tokens <= 0:
         raise ValueError("max_output_tokens must be positive")
 
+    extra = _validate_extra_secret_boundary(extra)
+
     provider_id = repositories.new_id("provider")
     model_profile_id = repositories.new_id("model")
     ref = _credential_ref(provider_id) if api_key else None
@@ -91,7 +125,7 @@ def create_provider_profile(
                     protocol,
                     base_url.rstrip("/"),
                     ref,
-                    json.dumps(extra or {}, ensure_ascii=False),
+                    json.dumps(extra, ensure_ascii=False),
                     repositories.now_iso(),
                 ),
             )
@@ -161,6 +195,7 @@ def update_provider_profile(
     extra: dict[str, Any] | None = None,
 ) -> ProviderProfile:
     current = get_provider_profile(db, model_profile_id)
+    extra = _validate_extra_secret_boundary(extra)
     protocol = protocol.strip()
     if protocol not in SUPPORTED_PROTOCOLS:
         raise ValueError(f"unsupported provider protocol: {protocol}")
@@ -183,7 +218,7 @@ def update_provider_profile(
                 name.strip(),
                 protocol,
                 base_url.rstrip("/"),
-                json.dumps(extra or {}, ensure_ascii=False),
+                json.dumps(extra, ensure_ascii=False),
                 current.provider_id,
             ),
         )
