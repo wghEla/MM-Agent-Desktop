@@ -34,7 +34,20 @@ function loadRecentWorkspaces(): RecentWorkspace[] {
     const parsed = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(parsed)) return [];
     return parsed
-      .filter((item) => item && typeof item.root === "string" && typeof item.name === "string")
+      .filter(
+        (item) =>
+          item
+          && typeof item.root === "string"
+          && typeof item.name === "string"
+          && typeof item.profile === "string",
+      )
+      .map((item) => ({
+        root: item.root,
+        name: item.name,
+        profile: item.profile,
+        lastOpened: typeof item.lastOpened === "number" ? item.lastOpened : 0,
+      }))
+      .sort((a, b) => b.lastOpened - a.lastOpened)
       .slice(0, 8);
   } catch {
     return [];
