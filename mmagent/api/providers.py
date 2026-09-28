@@ -287,46 +287,60 @@ def delete_provider_profile(
             conn.execute("DELETE FROM providers WHERE id = ?", (profile.provider_id,))
 
 
-def build_provider(
-    db: Database,
-    credentials: CredentialStore,
-    model_profile_id: str,
+def build_provider_from_config(
+    *,
+    protocol: str,
+    base_url: str,
+    model: str,
+    api_key: str = "",
+    reasoning: str | None = None,
+    max_output_tokens: int | None = None,
+    timeout_s: int | None = 300,
+    extra: dict[str, Any] | None = None,
 ) -> BaseProvider:
-    profile = get_provider_profile(db, model_profile_id)
+    protocol = protocol.strip()
+    if protocol not in SUPPORTED_PROTOCOLS:
+        raise ValueError(f"unsupported provider protocol: {protocol}")
+    base_url = validate_provider_base_url(base_url)
+    model = model.strip()
+    if not model:
+        raise ValueError("model must be non-empty")
+    if timeout_s is not None and timeout_s <= 0:
+        raise ValueError("timeout_s must be positive")
+    if max_output_tokens is not None and max_output_tokens <= 0:
+        raise ValueError("max_output_tokens must be positive")
+    extra = validate_provider_extra(extra)
 
     def key() -> str:
-        if not profile.api_key_ref:
-            return ""
-        return credentials.get(profile.api_key_ref)
+        return api_key
 
-    extra = profile.extra
-    if profile.protocol == "openai_chat":
+    if protocol == "openai_chat":
         inner: BaseProvider = OpenAIChatProvider(
-            profile.base_url, key, test_model=profile.model
+            base_url, key, test_model=model
         )
-    elif profile.protocol == "openai_responses":
+    elif protocol == "openai_responses":
         inner = OpenAIResponsesProvider(
-            profile.base_url,
+            base_url,
             key,
-            test_model=profile.model,
+            test_model=model,
         )
-    elif profile.protocol == "anthropic_messages":
+    elif protocol == "anthropic_messages":
         inner = AnthropicMessagesProvider(
-            profile.base_url,
+            base_url,
             key,
             api_version=str(extra.get("api_version") or "2023-06-01"),
-            test_model=profile.model,
+            test_model=model,
         )
-    elif profile.protocol == "gemini":
+    elif protocol == "gemini":
         inner = GeminiProvider(
-            profile.base_url,
+            base_url,
             key,
-            test_model=profile.model,
+            test_model=model,
         )
-    elif profile.protocol == "openai_compatible":
+    elif protocol == "openai_compatible":
         models_path_raw = extra.get("models_path", "/models")
         inner = OpenAICompatibleProvider(
-            profile.base_url,
+            base_url,
             key,
             completions_path=str(extra.get("completions_path") or "/chat/completions"),
             models_path=(
@@ -338,17 +352,40 @@ def build_provider(
             extra_headers=dict(extra.get("extra_headers") or {}),
             image_input=bool(extra.get("image_input", False)),
             reasoning_effort=bool(extra.get("reasoning_effort", False)),
-            test_model=profile.model,
+            test_model=model,
         )
-    else:
-        raise ValueError(f"unsupported provider protocol: {profile.protocol}")
+    else:  # pragma: no cover - guarded by SUPPORTED_PROTOCOLS
+        raise ValueError(f"unsupported provider protocol: {protocol}")
 
     return ModelBoundProvider(
         inner,
-        profile.model,
+        model,
+        reasoning=reasoning,
+        max_output_tokens=max_output_tokens,
+        timeout_s=float(timeout_s) if timeout_s else None,
+    )
+
+
+def build_provider(
+    db: Database,
+    credentials: CredentialStore,
+    model_profile_id: str,
+) -> BaseProvider:
+    profile = get_provider_profile(db, model_profile_id)
+    api_key = (
+        credentials.get(profile.api_key_ref)
+        if profile.api_key_ref
+        else ""
+    )
+    return build_provider_from_config(
+        protocol=profile.protocol,
+        base_url=profile.base_url,
+        model=profile.model,
+        api_key=api_key,
         reasoning=profile.reasoning,
         max_output_tokens=profile.max_output_tokens,
-        timeout_s=float(profile.timeout_s) if profile.timeout_s else None,
+        timeout_s=profile.timeout_s,
+        extra=profile.extra,
     )
 
 
