@@ -9,7 +9,7 @@ or consumer-session-token integration.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
 OAuthFlow = Literal["authorization_code_pkce", "device_code"]
@@ -35,8 +35,8 @@ class OAuthCredentialResult:
     never be returned to the UI, persisted in SQLite, logged, or included in evidence.
     """
 
-    credential: str
-    metadata: dict[str, Any]
+    credential: str = field(repr=False)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class ProviderOAuthAdapter(Protocol):
