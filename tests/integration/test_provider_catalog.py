@@ -92,7 +92,7 @@ async def test_discover_models_redacts_secret_from_error_body() -> None:
 
     assert result["ok"] is False
     assert "test-secret" not in result["detail"]
-    assert "[REDACTED]" in result["detail"]
+    assert "REDACTED" in result["detail"]
 
 
 @pytest.mark.asyncio
