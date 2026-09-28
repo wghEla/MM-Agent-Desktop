@@ -542,3 +542,73 @@ ledger files, can preview a user-visible input file, and rejects `.mmagent/proje
 sidecar test, full Python/Ruff regression, frontend build, real Tauri interaction, and
 release/startup smoke. Existing product Gates remain at their previously verified states;
 do not promote Product Release based on this source-only section.
+
+
+## UI v2 Phase 2 local validation — 2026-09-28 — PASS
+
+ZCode locally validated the complete Phase-2 workspace UX on Windows/Tauri.
+
+Final tested Phase-2 branch state: `3fbc6bc887151051c56b7b8ece31e3fe2d7a8253`.
+
+Evidence:
+
+- focused provider/workspace regressions green;
+- full pytest **466 passed / 0 failed**;
+- Ruff clean;
+- frontend production build green;
+- native create/open workspace dialogs verified;
+- backend create/open errors remain visible in-dialog;
+- Runtime-backed workspace tree verified, including PathPolicy traversal denial and
+  `.mmagent` exclusion;
+- text/image/PDF/binary preview verified;
+- import-triggered refresh + RUNNING live refresh verified;
+- selected preview remained stable across multiple live polling cycles;
+- Recent Workspace restart persistence and bookmark-only removal verified;
+- Tauri dev visual sweep / high DPI / release / NSIS / reinstall / startup smoke PASS;
+- 0 orphan processes.
+
+Evidence:
+- `docs/reviews/v1.0.0-rebuild-ui-v2-phase2-local-validation.md`
+- `docs/runs/ui-v2-phase2/`
+
+UI v2 Phase 2 = **PASS**.
+
+## UI v2 Phase 3 Provider UX — SOURCE COMPLETE / LOCAL VALIDATION PENDING
+
+Verified baseline for this source round: Phase-2 tested HEAD
+`3fbc6bc887151051c56b7b8ece31e3fe2d7a8253`.
+
+Current Phase-3 source adds:
+
+- Runtime-owned provider catalog and capability descriptors;
+- OpenAI / Anthropic / Gemini / Groq / DeepSeek / ZCode / OpenAI Compatible presets;
+- read-only model discovery with bounded, deduplicated model lists and manual fallback;
+- configured-model validation in provider Test Connection paths;
+- configurable/disable-able OpenAI-Compatible `models_path`;
+- create/edit/delete Provider UX;
+- Credential Manager replace/clear UX;
+- pre-save Test Connection through ephemeral provider construction, with no SQLite or
+  Credential Manager persistence;
+- shared Base URL / endpoint path / custom-header secret-boundary validation for both
+  persisted profiles and transient discovery/preflight;
+- persisted credential binding to the current protocol + Base URL: changing either requires
+  clearing the credential first;
+- Compatible credential/auth consistency: a saved or transient credential cannot coexist
+  with `auth_style=none`;
+- secret-first credential cleanup and fail-closed Windows Credential Manager deletion:
+  only ERROR_NOT_FOUND is idempotently ignored;
+- compliant OAuth adapter/registry contract, with no provider registered or advertised.
+
+Important billing/behavior distinction:
+
+- **Discover Models** only performs a read-only list request and never falls back to
+  generation;
+- **Test Connection** may perform a minimal configured-model generation probe only when the
+  protocol's existing connection-test behavior requires a fallback.
+
+OAuth/account login is **not operational** in this source state. The catalog hides OAuth
+unless both a provider descriptor and a real registered adapter exist.
+
+Evidence boundary: all Phase-3 changes after `3fbc6bc` are source-reviewed but have not
+yet received Windows/Tauri/full-regression validation. Existing proven product gates remain
+unchanged until that validation is complete.
