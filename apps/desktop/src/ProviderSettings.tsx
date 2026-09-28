@@ -160,7 +160,7 @@ export function ProviderSettings({
                   name: value[0].label,
                   protocol: value[0].protocol,
                   baseUrl: value[0].base_url,
-                  authMode: value[0].auth_methods.includes("none") ? "none" : "api_key",
+                  authMode: value[0].auth_methods.includes("api_key") ? "api_key" : "none",
                 },
           );
         }
@@ -222,7 +222,7 @@ export function ProviderSettings({
       name: preset.label,
       protocol: preset.protocol,
       baseUrl: preset.base_url,
-      authMode: preset.auth_methods.includes("none") ? "none" : "api_key",
+      authMode: preset.auth_methods.includes("api_key") ? "api_key" : "none",
     });
     setModels([]);
     setModelDetail("");
