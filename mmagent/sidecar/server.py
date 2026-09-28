@@ -27,6 +27,7 @@ from mmagent.api.projects import ProjectHandle, create_project, open_project
 from mmagent.api.provider_catalog import catalog_payload, discover_models
 from mmagent.api.providers import (
     build_provider,
+    build_provider_from_config,
     clear_provider_credential,
     create_provider_profile,
     delete_provider_profile,
@@ -109,6 +110,17 @@ class ProviderDiscoverRequest(BaseModel):
     protocol: str
     base_url: str
     api_key: SecretStr | None = Field(default=None, repr=False)
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProviderTestConfigRequest(BaseModel):
+    protocol: str
+    base_url: str
+    model: str
+    api_key: SecretStr | None = Field(default=None, repr=False)
+    reasoning: str | None = None
+    max_output_tokens: int | None = None
+    timeout_s: int | None = 300
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -373,6 +385,23 @@ def create_app(
             api_key=req.api_key.get_secret_value() if req.api_key else "",
             extra=req.extra,
         )
+
+    @app.post("/providers/test-config", dependencies=auth)
+    async def provider_test_config(req: ProviderTestConfigRequest) -> dict[str, Any]:
+        provider = build_provider_from_config(
+            protocol=req.protocol,
+            base_url=req.base_url,
+            model=req.model,
+            api_key=req.api_key.get_secret_value() if req.api_key else "",
+            reasoning=req.reasoning,
+            max_output_tokens=req.max_output_tokens,
+            timeout_s=req.timeout_s,
+            extra=req.extra,
+        )
+        try:
+            return await provider.test_connection()
+        finally:
+            await provider.aclose()
 
     @app.get("/projects/{project_id}/providers", dependencies=auth)
     async def providers_list(project_id: str) -> list[dict[str, Any]]:
