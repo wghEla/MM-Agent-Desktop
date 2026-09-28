@@ -15,7 +15,13 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, SecretStr
 
-from mmagent.api.artifacts import import_files, list_artifacts, read_artifact
+from mmagent.api.artifacts import (
+    import_files,
+    list_artifacts,
+    list_workspace_tree,
+    read_artifact,
+    read_workspace_file,
+)
 from mmagent.api.dashboard import dashboard
 from mmagent.api.projects import ProjectHandle, create_project, open_project
 from mmagent.api.providers import (
@@ -280,6 +286,16 @@ def create_app(
     async def project_import(project_id: str, req: ImportRequest) -> dict[str, Any]:
         handle = state.project(project_id)
         return {"imported": import_files(handle.workspace.root, req.sources, kind=req.kind)}
+
+    @app.get("/projects/{project_id}/workspace/tree", dependencies=auth)
+    async def workspace_tree(project_id: str) -> dict[str, Any]:
+        handle = state.project(project_id)
+        return list_workspace_tree(handle.workspace.root)
+
+    @app.post("/projects/{project_id}/workspace/read", dependencies=auth)
+    async def workspace_read(project_id: str, req: ArtifactReadRequest) -> dict[str, Any]:
+        handle = state.project(project_id)
+        return read_workspace_file(handle.workspace.root, req.path)
 
     @app.get("/projects/{project_id}/artifacts", dependencies=auth)
     async def artifacts_list(project_id: str) -> list[dict[str, Any]]:
