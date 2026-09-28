@@ -432,6 +432,8 @@ function ProviderPanel({
   onCreated: () => Promise<void>;
   onGuarded: (action: () => Promise<void>) => Promise<void>;
 }) {
+  const selected = providers.find((item) => item.model_profile_id === selectedProvider) ?? null;
+  const [showCreate, setShowCreate] = useState(providers.length === 0);
   const [name, setName] = useState("Primary");
   const [protocol, setProtocol] = useState("openai_responses");
   const [baseUrl, setBaseUrl] = useState(protocolDefaults.openai_responses);
@@ -449,6 +451,16 @@ function ProviderPanel({
       setCompatibleImageInput(false);
       setCompatibleReasoningEffort(false);
     }
+  }
+
+  function applyPreset(preset: (typeof providerPresets)[number]) {
+    setName(preset.label);
+    setProtocol(preset.protocol);
+    setBaseUrl(preset.baseUrl);
+    setModel("");
+    setReasoning("");
+    setCompatibleImageInput(false);
+    setCompatibleReasoningEffort(false);
   }
 
   async function submit(e: FormEvent) {
@@ -470,6 +482,7 @@ function ProviderPanel({
           : {},
       });
       setApiKey("");
+      setShowCreate(false);
       await onCreated();
     });
   }
@@ -489,98 +502,215 @@ function ProviderPanel({
   }
 
   return (
-    <section className="card">
-      <div className="provider-title">
-        <h2>Provider</h2>
-        <button onClick={onRefresh} disabled={busy}>刷新</button>
-      </div>
+    <div className="provider-settings-grid">
+      <aside className="provider-settings-list">
+        <div className="provider-list-heading">
+          <span>Providers</span>
+          <button className="small-button" onClick={() => setShowCreate(true)}>＋</button>
+        </div>
 
-      {providers.length > 0 && (
-        <>
-          <div className="field">
-            <label>当前模型配置</label>
-            <select value={selectedProvider} onChange={(e) => onSelect(e.target.value)}>
-              {providers.map((item) => (
-                <option key={item.model_profile_id} value={item.model_profile_id}>
-                  {item.name} · {item.model}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="row">
-            <button onClick={() => void testSelected()} disabled={!selectedProvider || busy}>Test Connection</button>
-            {testResult && <span className="muted">{testResult}</span>}
-          </div>
-        </>
-      )}
+        {providers.map((item) => (
+          <button
+            key={item.model_profile_id}
+            className={`provider-nav-item ${selectedProvider === item.model_profile_id && !showCreate ? "selected" : ""}`}
+            onClick={() => {
+              onSelect(item.model_profile_id);
+              setShowCreate(false);
+              setTestResult("");
+            }}
+          >
+            <span className="provider-avatar">{item.name.slice(0, 1).toUpperCase()}</span>
+            <span className="provider-nav-copy">
+              <strong>{item.name}</strong>
+              <span>{item.model}</span>
+            </span>
+            {item.has_api_key && <span className="credential-dot" title="API Key 已保存" />}
+          </button>
+        ))}
 
-      <form onSubmit={(e) => void submit(e)}>
-        <h3 style={{ marginTop: 16 }}>新增配置</h3>
-        <div className="field">
-          <label>名称</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} />
-        </div>
-        <div className="field">
-          <label>协议</label>
-          <select value={protocol} onChange={(e) => changeProtocol(e.target.value)}>
-            <option value="openai_responses">OpenAI Responses</option>
-            <option value="openai_chat">OpenAI Chat</option>
-            <option value="anthropic_messages">Anthropic Messages</option>
-            <option value="gemini">Gemini</option>
-            <option value="openai_compatible">OpenAI Compatible</option>
-          </select>
-        </div>
-        <div className="field">
-          <label>Base URL</label>
-          <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
-        </div>
-        <div className="field">
-          <label>Model</label>
-          <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="模型 ID" />
-        </div>
-        <div className="field">
-          <label>API Key（不会写入 SQLite）</label>
-          <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-        </div>
-        {protocol === "openai_compatible" && (
-          <>
-            <div className="field">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={compatibleImageInput}
-                  onChange={(e) => setCompatibleImageInput(e.target.checked)}
-                />
-                {" "}该兼容渠道支持图片输入（用于 G5/S6 PDF 页图终审）
-              </label>
+        <button
+          className={`provider-nav-item add-provider ${showCreate ? "selected" : ""}`}
+          onClick={() => setShowCreate(true)}
+        >
+          <span className="provider-avatar">＋</span>
+          <span className="provider-nav-copy">
+            <strong>添加 Provider</strong>
+            <span>API Key / Compatible</span>
+          </span>
+        </button>
+      </aside>
+
+      <section className="provider-settings-detail">
+        {showCreate || !selected ? (
+          <form onSubmit={(e) => void submit(e)}>
+            <div className="detail-heading">
+              <div>
+                <span className="eyebrow">NEW PROVIDER</span>
+                <h3>添加模型渠道</h3>
+                <p>选择常见渠道只会预填协议和 Endpoint；Runtime 仍使用现有适配器。</p>
+              </div>
             </div>
-            <div className="field">
-              <label>
+
+            <div className="preset-grid">
+              {providerPresets.map((preset) => (
+                <button
+                  type="button"
+                  key={preset.id}
+                  className="preset-button"
+                  onClick={() => applyPreset(preset)}
+                >
+                  <span className="preset-mark">{preset.label.slice(0, 1)}</span>
+                  <span>{preset.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="settings-section">
+              <h4>Authentication</h4>
+              <div className="field">
+                <label>API Key</label>
                 <input
-                  type="checkbox"
-                  checked={compatibleReasoningEffort}
-                  onChange={(e) => setCompatibleReasoningEffort(e.target.checked)}
+                  type="password"
+                  autoComplete="off"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="仅写入 Windows Credential Manager"
                 />
-                {" "}该兼容渠道支持 reasoning_effort 参数
-              </label>
+                <span className="field-hint">保存后不会在界面、SQLite 或日志中回显真实密钥。</span>
+              </div>
+            </div>
+
+            <div className="settings-section two-column-fields">
+              <div className="field">
+                <label>名称</label>
+                <input value={name} onChange={(e) => setName(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>Model ID</label>
+                <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="精确模型 ID" />
+              </div>
+            </div>
+
+            <details className="advanced-settings">
+              <summary>Advanced</summary>
+              <div className="advanced-body">
+                <div className="settings-section two-column-fields">
+                  <div className="field">
+                    <label>协议</label>
+                    <select value={protocol} onChange={(e) => changeProtocol(e.target.value)}>
+                      <option value="openai_responses">OpenAI Responses</option>
+                      <option value="openai_chat">OpenAI Chat</option>
+                      <option value="anthropic_messages">Anthropic Messages</option>
+                      <option value="gemini">Gemini</option>
+                      <option value="openai_compatible">OpenAI Compatible</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label>Reasoning</label>
+                    <select value={reasoning} onChange={(e) => setReasoning(e.target.value)}>
+                      <option value="">Provider 默认</option>
+                      <option value="low">low</option>
+                      <option value="medium">medium</option>
+                      <option value="high">high</option>
+                      <option value="xhigh">xhigh</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="field">
+                  <label>Base URL</label>
+                  <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://…/v1" />
+                </div>
+                {protocol === "openai_compatible" && (
+                  <div className="capability-options">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={compatibleImageInput}
+                        onChange={(e) => setCompatibleImageInput(e.target.checked)}
+                      />
+                      支持图片输入
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={compatibleReasoningEffort}
+                        onChange={(e) => setCompatibleReasoningEffort(e.target.checked)}
+                      />
+                      支持 reasoning_effort
+                    </label>
+                  </div>
+                )}
+              </div>
+            </details>
+
+            <div className="settings-actions">
+              <button
+                className="primary"
+                disabled={busy || !name.trim() || !baseUrl.trim() || !model.trim()}
+              >
+                保存 Provider
+              </button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <div className="detail-heading provider-current-heading">
+              <div>
+                <span className="eyebrow">PROVIDER</span>
+                <h3>{selected.name}</h3>
+                <p className="mono">{selected.model}</p>
+              </div>
+              <button onClick={onRefresh} disabled={busy}>刷新</button>
+            </div>
+
+            <div className="provider-status-card">
+              <div>
+                <span className="status-kicker">Authentication</span>
+                <strong>{selected.has_api_key ? "API Key 已保存" : "未保存 API Key"}</strong>
+                <span>{selected.has_api_key ? "Windows Credential Manager" : "Keyless / local relay"}</span>
+              </div>
+              <span className={`credential-state ${selected.has_api_key ? "ok" : "neutral"}`}>
+                {selected.has_api_key ? "Secure" : "Keyless"}
+              </span>
+            </div>
+
+            <div className="provider-facts">
+              <div>
+                <span>Protocol</span>
+                <strong>{selected.protocol}</strong>
+              </div>
+              <div>
+                <span>Model</span>
+                <strong className="mono">{selected.model}</strong>
+              </div>
+              <div className="wide">
+                <span>Endpoint</span>
+                <strong className="mono">{selected.base_url}</strong>
+              </div>
+              <div>
+                <span>Reasoning</span>
+                <strong>{selected.reasoning || "Provider default"}</strong>
+              </div>
+            </div>
+
+            <div className="settings-actions test-connection-row">
+              <button
+                className="primary"
+                onClick={() => void testSelected()}
+                disabled={!selectedProvider || busy}
+              >
+                Test Connection
+              </button>
+              {testResult && <span className="test-result">{testResult}</span>}
+            </div>
+
+            <div className="settings-note">
+              账号登录只会在厂商提供并明确允许第三方桌面应用使用的 OAuth / Device Flow 接入后出现；不会导入浏览器 Cookie 或复用其他客户端 Token。
             </div>
           </>
         )}
-        <div className="field">
-          <label>Reasoning</label>
-          <select value={reasoning} onChange={(e) => setReasoning(e.target.value)}>
-            <option value="">Provider 默认</option>
-            <option value="low">low</option>
-            <option value="medium">medium</option>
-            <option value="high">high</option>
-            <option value="xhigh">xhigh</option>
-          </select>
-        </div>
-        <button className="primary" disabled={busy || !name.trim() || !baseUrl.trim() || !model.trim()}>
-          保存 Provider
-        </button>
-      </form>
-    </section>
+      </section>
+    </div>
   );
 }
 
