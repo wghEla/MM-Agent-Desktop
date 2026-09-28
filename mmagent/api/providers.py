@@ -7,6 +7,7 @@ from typing import Any
 
 from mmagent.api.provider_catalog import capability_descriptor
 from mmagent.api.provider_validation import (
+    validate_provider_auth_binding,
     validate_provider_base_url,
     validate_provider_extra,
 )
@@ -78,6 +79,11 @@ def create_provider_profile(
         raise ValueError("max_output_tokens must be positive")
 
     extra = validate_provider_extra(extra)
+    validate_provider_auth_binding(
+        protocol,
+        has_credential=bool(api_key),
+        extra=extra,
+    )
 
     provider_id = repositories.new_id("provider")
     model_profile_id = repositories.new_id("model")
@@ -180,6 +186,12 @@ def update_provider_profile(
     if max_output_tokens is not None and max_output_tokens <= 0:
         raise ValueError("max_output_tokens must be positive")
 
+    validate_provider_auth_binding(
+        protocol,
+        has_credential=current.api_key_ref is not None,
+        extra=extra,
+    )
+
     if (
         current.api_key_ref is not None
         and (protocol != current.protocol or base_url != current.base_url)
@@ -225,6 +237,11 @@ def set_provider_credential(
     if not api_key:
         raise ValueError("api_key must be non-empty")
     profile = get_provider_profile(db, model_profile_id)
+    validate_provider_auth_binding(
+        profile.protocol,
+        has_credential=True,
+        extra=profile.extra,
+    )
     ref = profile.api_key_ref or _credential_ref(profile.provider_id)
 
     credentials.set(ref, api_key)
@@ -311,6 +328,11 @@ def build_provider_from_config(
     if max_output_tokens is not None and max_output_tokens <= 0:
         raise ValueError("max_output_tokens must be positive")
     extra = validate_provider_extra(extra)
+    validate_provider_auth_binding(
+        protocol,
+        has_credential=bool(api_key),
+        extra=extra,
+    )
 
     def key() -> str:
         return api_key
