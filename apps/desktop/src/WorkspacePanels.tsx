@@ -161,8 +161,10 @@ export function ArtifactViewer({
   }
 
   useEffect(() => {
-    setSelected("");
-    setPreview(null);
+    if (!requestedPath) {
+      setSelected("");
+      setPreview(null);
+    }
     void refresh();
   }, [project.id, refreshKey]);
 
@@ -175,7 +177,7 @@ export function ArtifactViewer({
   useEffect(() => {
     if (!requestedPath) return;
     void open(requestedPath);
-  }, [project.id, requestedPath]);
+  }, [project.id, requestedPath, refreshKey]);
 
   return (
     <section className="card artifact-card">
