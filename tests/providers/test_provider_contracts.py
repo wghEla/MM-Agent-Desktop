@@ -683,3 +683,57 @@ async def test_anthropic_connection_probe_uses_configured_model() -> None:
         assert body["model"] == "claude-configured"
     finally:
         await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_test_connection_respects_custom_models_path():
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        if request.url.path == "/v1/catalog/models":
+            return httpx.Response(200, json={"data": [{"id": "m1"}]})
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenAICompatibleProvider(
+        "https://compat.test/v1",
+        lambda: "k",
+        models_path="/catalog/models",
+        test_model="m1",
+        client=client,
+    )
+    try:
+        result = await provider.test_connection()
+        assert result["ok"] is True
+        assert captures[0].url.path == "/v1/catalog/models"
+        assert "/catalog/models" in result["detail"]
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_can_disable_models_probe_and_use_chat_fallback():
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        if request.url.path == "/v1/chat/completions":
+            return _resp_200_openai_chat()
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenAICompatibleProvider(
+        "https://compat.test/v1",
+        lambda: "k",
+        models_path=None,
+        test_model="m1",
+        client=client,
+    )
+    try:
+        result = await provider.test_connection()
+        assert result["ok"] is True
+        assert "models 端点已禁用" in result["detail"]
+        assert [request.url.path for request in captures] == ["/v1/chat/completions"]
+    finally:
+        await client.aclose()
