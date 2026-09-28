@@ -349,6 +349,99 @@ def test_provider_profile_normalizes_safe_compatible_endpoint_paths(tmp_path) ->
         handle.workspace.db.close()
 
 
+def test_clear_provider_credential_deletes_secret_before_sqlite_ref(tmp_path) -> None:
+    from mmagent.api.providers import clear_provider_credential
+
+    handle = create_project(
+        tmp_path / "proj-clear-order",
+        name="providers-clear-order",
+        profile="标准",
+    )
+    db = handle.workspace.db
+
+    class ObservingStore(MemoryCredentialStore):
+        def __init__(self):
+            super().__init__()
+            self.provider_id = ""
+            self.saw_ref_during_delete = False
+
+        def delete(self, ref: str) -> None:
+            row = db.query_one(
+                "SELECT api_key_ref FROM providers WHERE id = ?",
+                (self.provider_id,),
+            )
+            self.saw_ref_during_delete = bool(row and row["api_key_ref"] == ref)
+            super().delete(ref)
+
+    store = ObservingStore()
+    try:
+        profile = create_provider_profile(
+            db,
+            store,
+            name="Clear Order",
+            protocol="openai_compatible",
+            base_url="https://example.invalid/v1",
+            model="model-x",
+            api_key="test-clear-order",
+        )
+        store.provider_id = profile.provider_id
+        clear_provider_credential(db, store, profile.model_profile_id)
+        assert store.saw_ref_during_delete is True
+        row = db.query_one(
+            "SELECT api_key_ref FROM providers WHERE id = ?",
+            (profile.provider_id,),
+        )
+        assert row["api_key_ref"] is None
+    finally:
+        db.close()
+
+
+def test_delete_last_provider_profile_deletes_secret_before_sqlite_rows(tmp_path) -> None:
+    handle = create_project(
+        tmp_path / "proj-delete-order",
+        name="providers-delete-order",
+        profile="标准",
+    )
+    db = handle.workspace.db
+
+    class ObservingStore(MemoryCredentialStore):
+        def __init__(self):
+            super().__init__()
+            self.provider_id = ""
+            self.saw_provider_during_delete = False
+
+        def delete(self, ref: str) -> None:
+            row = db.query_one(
+                "SELECT id, api_key_ref FROM providers WHERE id = ?",
+                (self.provider_id,),
+            )
+            self.saw_provider_during_delete = bool(
+                row and row["api_key_ref"] == ref
+            )
+            super().delete(ref)
+
+    store = ObservingStore()
+    try:
+        profile = create_provider_profile(
+            db,
+            store,
+            name="Delete Order",
+            protocol="openai_compatible",
+            base_url="https://example.invalid/v1",
+            model="model-x",
+            api_key="test-delete-order",
+        )
+        store.provider_id = profile.provider_id
+        delete_provider_profile(db, store, profile.model_profile_id)
+        assert store.saw_provider_during_delete is True
+        assert db.query_one(
+            "SELECT id FROM providers WHERE id = ?",
+            (profile.provider_id,),
+        ) is None
+    finally:
+        db.close()
+
+
 def test_provider_profile_requires_credential_clear_before_endpoint_or_protocol_change(
     tmp_path,
 ) -> None:
