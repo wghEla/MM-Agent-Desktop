@@ -368,3 +368,22 @@ product gates:
 - Windows Package PASS;
 - Installed Cancellation PASS;
 - Installed Credential PASS.
+
+## Local validation record (2026-09-28, Windows)
+
+Phase 1 in full plus the picker/bookmark portion of Phase 2 were implemented and validated
+on a real Windows/Tauri runtime. Report: `docs/reviews/v1.0.0-rebuild-ui-v2-local-validation.md`.
+
+- Native folder/file picker shipped via the official `tauri-plugin-dialog` (npm
+  `@tauri-apps/plugin-dialog`, capability `dialog:allow-open` only). Workspace create/open is
+  picker-first with the manual path preserved under 高级：手动路径; the import panel gained a
+  multi-select file picker.
+- Recent-workspace bookmarks are presentation-only localStorage (`mmagent.recentWorkspaces`)
+  and survive an app restart; truth remains Runtime/SQLite.
+- Visual checklist passed at 1440×900 / ≈1220×740 / ≈1040×700 logical (200% display scale);
+  fail-closed gate states (G1 FAIL → run FAILED) render truthfully with correct color
+  semantics; PDF/PNG/JSON previews verified against a live run's artifacts.
+- Package/version alignment note: the release build rejects mismatched npm/crate minors
+  (e.g. `@tauri-apps/api` 2.12 vs crate 2.11) — keep them on the same minor.
+- Remaining Phase-2 items (workspace file tree, first-run onboarding) and Phases 3–4 are
+  still open; nothing here declares Product Release GO.

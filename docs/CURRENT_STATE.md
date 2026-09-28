@@ -1,8 +1,31 @@
 # CURRENT_STATE — fidelity rebuild on gpt/fidelity-rebuild
 
 Branch: `gpt/fidelity-rebuild`
-HEAD: `cc46332` + local final-gate validation commit — GPT final source/release-gate fixes, LOCALLY VALIDATED by ZCode (see "Final source gate validation" below)
-Tests: **locally verified at this HEAD: 451 passed / 0 failed + Ruff clean + frontend build OK + secret scan clean**
+HEAD: `f317663`（UI v2 phase-1 by GPT-5.6 Sol）+ 本轮 UI v2 本地验证改动
+（Windows 原生目录/文件选择器 = tauri-plugin-dialog 全链路 + capabilities、npm/crate 版本对齐、
+Ruff B007 清理）——见 `docs/reviews/v1.0.0-rebuild-ui-v2-local-validation.md`
+Tests: **locally verified at this state: 464 passed / 0 failed + Ruff clean + frontend build OK
++ sidecar/Tauri NSIS repack + silent reinstall + --startup-smoke exit 0**
+
+## UI v2 local validation (2026-09-28) — PASS（不宣布 Product Release GO）
+
+- Stage 1 编译：32 modules 零错误；dev 真实窗口视觉验收 1440×900 / ≈1220×740 / ≈1040×700
+  （显示缩放 200%）全清单 PASS，仅 3 项 P3 化妆级 nit（登记未改）。
+- 功能验证（keyless scripted relay）：Provider 预设/详情/Test Connection（chat 回退）✓；
+  运行启动→S0/S1 全绿→**G1 fail-closed 正确拦截**（缺 交接/计划.json）→FAILED 如实呈现 ✓；
+  控制门控（RUNNING/FAILED 禁用矩阵）✓；运行历史只读无自动 resume ✓；
+  Artifact Dock text/JSON/PNG/**PDF 内嵌渲染** ✓；Recent Workspace 书签跨重启持久 ✓。
+- Windows 原生选择器：官方 tauri-plugin-dialog（npm+crate+main.rs 注册+
+  capabilities `dialog:allow-open` 最小授权）；实测原生 IFileDialog 选择→回填→自动命名→创建
+  工作区全链路 ✓；手动路径保留在"高级"折叠区。
+- 证据：`docs/runs/ui-v2/`（dev-A…dev-M，15 张真实窗口截图，无真实密钥）。
+- 遗留：phase-2 其余项（workspace file tree、first-run onboarding）与 phase-3/4 未做。
+
+## 历史门状态（截至 Real Provider Gate）
+
+Source/Pipeline = GO；Windows Package = PASS；Installed Cancellation = PASS；
+Installed Credential = PASS；Real Provider（Groq gpt-oss-20b）= CONDITIONAL PASS
+（唯一遗留：一次礼节性 G0 全绿 run）。
 
 ## Round-3 external source review
 

@@ -153,3 +153,14 @@
   schema 方差（英文键/题目≠赛题/坏 JSON）+免费档 429 阻——门每次都正确 fail-closed。
   Real Provider = CONDITIONAL PASS（唯一遗留：一次礼节性 G0 全绿 run）。secret scan
   （gsk_ 模式）267 文件 CLEAN；真实 key 仅存 Credential Manager。
+- 09-28 UI v2 Phase-1 Local Validation（Windows 本机，HEAD f317663+改动）：Stage1 前端
+  32 modules 零错误；dev 真实窗口视觉验收 1440×900/≈1220×740/≈1040×700（显示 200%）
+  全清单 PASS（3 项 P3 化妆 nit 登记未改）。功能验证 keyless relay：provider 预设/详情/
+  Test Connection(chat 回退)；运行→S0/S1 绿→G1 fail-closed（缺 交接/计划.json）→FAILED
+  如实呈现；控制门控矩阵；运行历史只读；Artifact text/JSON/PNG/PDF 内嵌渲染；Recent
+  书签跨重启持久。新增 Windows 原生选择器：官方 tauri-plugin-dialog 全链路（npm+crate+
+  main.rs+capabilities 仅 dialog:allow-open），原生 IFileDialog 实测选择→回填→自动命名→
+  创建工作区 ✓。坑：release 构建 npm/crate minor 不一致被拒（api 2.12 vs crate 2.11），
+  对齐 2.11.1/2.7.3 后通过。回归 464 passed/0 failed + Ruff clean（顺手清 credentials.py
+  B007）；sidecar+NSIS 重打包、静默重装、--startup-smoke=0。证据 docs/runs/ui-v2/ 15 张；
+  报告 docs/reviews/v1.0.0-rebuild-ui-v2-local-validation.md。不宣布 Product Release GO。
