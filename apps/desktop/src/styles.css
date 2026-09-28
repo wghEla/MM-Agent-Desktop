@@ -1729,3 +1729,201 @@ button.setup-check:hover:not(:disabled) {
   color: var(--ui-text-3) !important;
   font-size: 10px !important;
 }
+
+
+/* -------------------------------------------------------------------------- */
+/* UI v2 phase 3 — provider catalog / discovery / credential management       */
+/* -------------------------------------------------------------------------- */
+
+.preset-button.selected {
+  border-color: rgba(111, 140, 255, .36);
+  background: var(--ui-accent-soft);
+  color: var(--ui-text);
+}
+
+.credential-dot.keyless {
+  background: #596473;
+  box-shadow: none;
+}
+
+.settings-inline-error {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(240, 141, 149, .28);
+  border-radius: 7px;
+  background: rgba(240, 141, 149, .07);
+  color: var(--ui-danger);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.auth-mode-tabs {
+  display: inline-flex;
+  gap: 2px;
+  margin-bottom: 9px;
+  padding: 2px;
+  border: 1px solid var(--ui-border);
+  border-radius: 7px;
+  background: #0e1217;
+}
+
+.auth-mode-tabs button {
+  padding: 5px 9px;
+  border: 0;
+  background: transparent;
+  color: var(--ui-text-3);
+  font-size: 9px;
+}
+
+.auth-mode-tabs button.selected {
+  background: var(--ui-panel-hover);
+  color: var(--ui-text);
+}
+
+.model-field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+}
+
+.model-field-row button {
+  white-space: nowrap;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.read-only-field {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 7px 9px;
+  border: 1px solid var(--ui-border);
+  border-radius: 7px;
+  background: #0f1318;
+  color: var(--ui-text-3);
+  font-size: 9px;
+}
+
+.capability-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 9px 0 4px;
+}
+
+.capability-summary span {
+  padding: 3px 6px;
+  border: 1px solid #344052;
+  border-radius: 999px;
+  background: #151b24;
+  color: #aab6c7;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+.provider-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.model-discovery-result {
+  margin-top: 12px;
+  color: var(--ui-text-2);
+  font-size: 10px;
+}
+
+.model-discovery-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 7px;
+}
+
+.model-discovery-list span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: #0f141a;
+  border: 1px solid var(--ui-border);
+  color: var(--ui-text-3);
+  font-size: 8px;
+}
+
+.credential-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 15px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ui-border);
+}
+
+.credential-actions input {
+  flex: 1;
+  min-width: 120px;
+}
+
+.provider-danger-zone {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 12px;
+  border: 1px solid rgba(240, 141, 149, .17);
+  border-radius: 8px;
+  background: rgba(240, 141, 149, .035);
+}
+
+.provider-danger-zone > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.provider-danger-zone strong {
+  color: #ddb0b4;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.provider-danger-zone span {
+  color: var(--ui-text-3);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.provider-danger-zone .danger {
+  background: rgba(240, 141, 149, .12);
+  border-color: rgba(240, 141, 149, .36);
+  color: var(--ui-danger);
+}
+
+.link-button {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ui-text-3);
+}
+
+@media (max-width: 1120px) {
+  .provider-heading-actions {
+    flex-direction: column;
+  }
+
+  .provider-danger-zone {
+    grid-template-columns: 1fr;
+  }
+
+  .credential-actions {
+    flex-wrap: wrap;
+  }
+
+  .credential-actions input {
+    flex-basis: 100%;
+  }
+}
