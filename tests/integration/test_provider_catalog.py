@@ -297,3 +297,48 @@ async def test_discover_compatible_models_path_can_be_custom_or_disabled() -> No
     assert disabled["endpoint"] == ""
     assert "关闭模型列表端点" in disabled["detail"]
     assert len(captures) == 1
+
+
+def test_saved_provider_model_discovery_reports_missing_credential_as_409(
+    tmp_path,
+) -> None:
+    store = MemoryCredentialStore()
+    app = create_app(token=TOKEN, credentials=store)
+
+    with TestClient(app) as client:
+        project = client.post(
+            "/projects",
+            headers=_auth(),
+            json={"root": str(tmp_path / "proj-missing-key"), "name": "Missing Key"},
+        )
+        project_id = project.json()["id"]
+
+        created = client.post(
+            f"/projects/{project_id}/providers",
+            headers=_auth(),
+            json={
+                "name": "Relay",
+                "protocol": "openai_compatible",
+                "base_url": "https://relay.invalid/v1",
+                "model": "model-a",
+                "api_key": "test-key-to-remove",
+            },
+        )
+        model_profile_id = created.json()["model_profile_id"]
+        provider_id = created.json()["provider_id"]
+
+        state = app.state.mmagent
+        handle = state.project(project_id)
+        ref = handle.workspace.db.query_one(
+            "SELECT api_key_ref FROM providers WHERE id = ?",
+            (provider_id,),
+        )["api_key_ref"]
+        store.delete(ref)
+
+        response = client.get(
+            f"/projects/{project_id}/providers/{model_profile_id}/models",
+            headers=_auth(),
+        )
+        assert response.status_code == 409
+        assert "credential missing" in response.json()["detail"]
+        assert "test-key-to-remove" not in response.text
