@@ -288,10 +288,16 @@ def build_provider(
     elif profile.protocol == "gemini":
         inner = GeminiProvider(profile.base_url, key)
     elif profile.protocol == "openai_compatible":
+        models_path_raw = extra.get("models_path", "/models")
         inner = OpenAICompatibleProvider(
             profile.base_url,
             key,
             completions_path=str(extra.get("completions_path") or "/chat/completions"),
+            models_path=(
+                None
+                if models_path_raw is None or not str(models_path_raw).strip()
+                else str(models_path_raw)
+            ),
             auth_style=str(extra.get("auth_style") or "bearer"),
             extra_headers=dict(extra.get("extra_headers") or {}),
             image_input=bool(extra.get("image_input", False)),
