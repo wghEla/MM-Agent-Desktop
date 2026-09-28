@@ -24,11 +24,17 @@ from mmagent.api.artifacts import (
 )
 from mmagent.api.dashboard import dashboard
 from mmagent.api.projects import ProjectHandle, create_project, open_project
+from mmagent.api.provider_catalog import catalog_payload, discover_models
 from mmagent.api.providers import (
     build_provider,
+    clear_provider_credential,
     create_provider_profile,
+    delete_provider_profile,
+    get_provider_profile,
     list_provider_profiles,
     public_profile,
+    set_provider_credential,
+    update_provider_profile,
 )
 from mmagent.api.runs import RunController
 from mmagent.orchestration.engine import PipelineHooks
@@ -79,6 +85,28 @@ class ProviderCreateRequest(BaseModel):
     reasoning: str | None = None
     max_output_tokens: int | None = None
     timeout_s: int | None = 300
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProviderUpdateRequest(BaseModel):
+    name: str
+    protocol: str
+    base_url: str
+    model: str
+    reasoning: str | None = None
+    max_output_tokens: int | None = None
+    timeout_s: int | None = 300
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProviderCredentialRequest(BaseModel):
+    api_key: SecretStr = Field(repr=False)
+
+
+class ProviderDiscoverRequest(BaseModel):
+    protocol: str
+    base_url: str
+    api_key: SecretStr | None = Field(default=None, repr=False)
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -317,6 +345,19 @@ def create_app(
         handle = state.project(project_id)
         return read_artifact(handle.workspace.root, req.path)
 
+    @app.get("/providers/catalog", dependencies=auth)
+    async def provider_catalog() -> list[dict[str, Any]]:
+        return catalog_payload()
+
+    @app.post("/providers/discover-models", dependencies=auth)
+    async def provider_discover(req: ProviderDiscoverRequest) -> dict[str, Any]:
+        return await discover_models(
+            protocol=req.protocol,
+            base_url=req.base_url,
+            api_key=req.api_key.get_secret_value() if req.api_key else "",
+            extra=req.extra,
+        )
+
     @app.get("/projects/{project_id}/providers", dependencies=auth)
     async def providers_list(project_id: str) -> list[dict[str, Any]]:
         handle = state.project(project_id)
@@ -344,6 +385,102 @@ def create_app(
             extra=req.extra,
         )
         return public_profile(profile)
+
+    @app.post(
+        "/projects/{project_id}/providers/{model_profile_id}",
+        dependencies=auth,
+    )
+    async def provider_update(
+        project_id: str,
+        model_profile_id: str,
+        req: ProviderUpdateRequest,
+    ) -> dict[str, Any]:
+        handle = state.project(project_id)
+        profile = update_provider_profile(
+            handle.workspace.db,
+            model_profile_id=model_profile_id,
+            name=req.name,
+            protocol=req.protocol,
+            base_url=req.base_url,
+            model=req.model,
+            reasoning=req.reasoning,
+            max_output_tokens=req.max_output_tokens,
+            timeout_s=req.timeout_s,
+            extra=req.extra,
+        )
+        return public_profile(profile)
+
+    @app.post(
+        "/projects/{project_id}/providers/{model_profile_id}/credential",
+        dependencies=auth,
+    )
+    async def provider_credential_set(
+        project_id: str,
+        model_profile_id: str,
+        req: ProviderCredentialRequest,
+    ) -> dict[str, Any]:
+        handle = state.project(project_id)
+        profile = set_provider_credential(
+            handle.workspace.db,
+            state.credentials,
+            model_profile_id,
+            req.api_key.get_secret_value(),
+        )
+        return public_profile(profile)
+
+    @app.post(
+        "/projects/{project_id}/providers/{model_profile_id}/credential/clear",
+        dependencies=auth,
+    )
+    async def provider_credential_clear(
+        project_id: str,
+        model_profile_id: str,
+    ) -> dict[str, Any]:
+        handle = state.project(project_id)
+        profile = clear_provider_credential(
+            handle.workspace.db,
+            state.credentials,
+            model_profile_id,
+        )
+        return public_profile(profile)
+
+    @app.post(
+        "/projects/{project_id}/providers/{model_profile_id}/delete",
+        dependencies=auth,
+    )
+    async def provider_delete(
+        project_id: str,
+        model_profile_id: str,
+    ) -> dict[str, Any]:
+        handle = state.project(project_id)
+        delete_provider_profile(
+            handle.workspace.db,
+            state.credentials,
+            model_profile_id,
+        )
+        return {"ok": True}
+
+    @app.get(
+        "/projects/{project_id}/providers/{model_profile_id}/models",
+        dependencies=auth,
+    )
+    async def provider_models(
+        project_id: str,
+        model_profile_id: str,
+    ) -> dict[str, Any]:
+        handle = state.project(project_id)
+        profile = get_provider_profile(handle.workspace.db, model_profile_id)
+        api_key = (
+            state.credentials.get(profile.api_key_ref)
+            if profile.api_key_ref
+            else ""
+        )
+        return await discover_models(
+            protocol=profile.protocol,
+            base_url=profile.base_url,
+            api_key=api_key,
+            extra=profile.extra,
+        )
 
     @app.post(
         "/diagnostics/credential",
