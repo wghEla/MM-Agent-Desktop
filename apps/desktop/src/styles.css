@@ -1927,3 +1927,17 @@ button.setup-check:hover:not(:disabled) {
     flex-basis: 100%;
   }
 }
+
+
+.provider-create-actions {
+  flex-wrap: wrap;
+}
+
+.provider-create-actions .test-result {
+  flex-basis: 100%;
+  line-height: 1.45;
+}
+
+.credential-actions select {
+  min-width: 112px;
+}
