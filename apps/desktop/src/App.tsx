@@ -18,6 +18,28 @@ const protocolDefaults: Record<string, string> = {
   openai_compatible: "",
 };
 
+type RecentWorkspace = {
+  root: string;
+  name: string;
+  profile: string;
+  lastOpened: number;
+};
+
+const RECENT_WORKSPACES_KEY = "mmagent.recentWorkspaces";
+
+function loadRecentWorkspaces(): RecentWorkspace[] {
+  try {
+    const raw = window.localStorage.getItem(RECENT_WORKSPACES_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item) => item && typeof item.root === "string" && typeof item.name === "string")
+      .slice(0, 8);
+  } catch {
+    return [];
+  }
+}
+
 const providerPresets = [
   { id: "openai", label: "OpenAI", protocol: "openai_responses", baseUrl: "https://api.openai.com/v1" },
   { id: "anthropic", label: "Anthropic", protocol: "anthropic_messages", baseUrl: "https://api.anthropic.com" },
@@ -39,6 +61,7 @@ function App() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [recentWorkspaces, setRecentWorkspaces] = useState<RecentWorkspace[]>(loadRecentWorkspaces);
 
   const selected = useMemo(
     () => providers.find((item) => item.model_profile_id === selectedProvider) ?? null,
@@ -118,6 +141,14 @@ function App() {
         ? await backend<ProjectView>("POST", "/projects", { root, name, profile })
         : await backend<ProjectView>("POST", "/projects/open", { root });
       setProject(p);
+      setRecentWorkspaces((current) => {
+        const next = [
+          { root: p.root_path, name: p.name, profile: p.profile, lastOpened: Date.now() },
+          ...current.filter((item) => item.root !== p.root_path),
+        ].slice(0, 8);
+        window.localStorage.setItem(RECENT_WORKSPACES_KEY, JSON.stringify(next));
+        return next;
+      });
       setRun(null);
       setRunHistory([]);
       setDashboard(null);
@@ -200,7 +231,17 @@ function App() {
             />
           ) : (
             <>
-              <WorkspaceSummary project={project} />
+              <WorkspaceSummary
+                project={project}
+                onSwitch={() => {
+                  setProject(null);
+                  setProviders([]);
+                  setSelectedProvider("");
+                  setRun(null);
+                  setRunHistory([]);
+                  setDashboard(null);
+                }}
+              />
               <ImportPanel project={project} />
 
               {runHistory.length > 0 && (
@@ -229,7 +270,11 @@ function App() {
 
         <main className="workbench-main">
           {!project ? (
-            <WelcomeSurface />
+            <WelcomeSurface
+              recent={recentWorkspaces}
+              busy={busy}
+              onOpen={(workspace) => createOrOpen("open", workspace.root, workspace.name, workspace.profile)}
+            />
           ) : (
             <>
               <div className="workbench-toolbar">
@@ -330,7 +375,13 @@ function App() {
   );
 }
 
-function WorkspaceSummary({ project }: { project: ProjectView }) {
+function WorkspaceSummary({
+  project,
+  onSwitch,
+}: {
+  project: ProjectView;
+  onSwitch: () => void;
+}) {
   return (
     <section className="workspace-summary">
       <div className="workspace-icon" aria-hidden="true">Σ</div>
@@ -339,11 +390,20 @@ function WorkspaceSummary({ project }: { project: ProjectView }) {
         <span className="mono" title={project.root_path}>{project.root_path}</span>
         <span>{project.profile}档 · Runtime-owned workspace</span>
       </div>
+      <button className="workspace-switch" onClick={onSwitch} title="切换工作区">↗</button>
     </section>
   );
 }
 
-function WelcomeSurface() {
+function WelcomeSurface({
+  recent,
+  busy,
+  onOpen,
+}: {
+  recent: RecentWorkspace[];
+  busy: boolean;
+  onOpen: (workspace: RecentWorkspace) => Promise<void>;
+}) {
   return (
     <div className="welcome-surface">
       <div className="welcome-mark" aria-hidden="true">M</div>
@@ -355,6 +415,27 @@ function WelcomeSurface() {
         <span>Fail-closed gates</span>
         <span>Frozen Truth</span>
       </div>
+
+      {recent.length > 0 && (
+        <div className="recent-workspaces">
+          <div className="recent-heading">最近工作区</div>
+          {recent.map((workspace) => (
+            <button
+              key={workspace.root}
+              disabled={busy}
+              className="recent-workspace"
+              onClick={() => void onOpen(workspace)}
+            >
+              <span className="recent-workspace-icon">Σ</span>
+              <span className="recent-workspace-copy">
+                <strong>{workspace.name}</strong>
+                <span className="mono">{workspace.root}</span>
+              </span>
+              <span className="recent-workspace-profile">{workspace.profile}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
