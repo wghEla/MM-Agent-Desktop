@@ -72,7 +72,7 @@ def _decode_blob(blob: bytes | str, ref: str) -> str:
                 ("utf-8", lambda: blob.decode("utf-8")),
                 ("utf-16-le", lambda: blob.decode("utf-16-le")),
             ]
-        for encoding, decode in attempts:
+        for _encoding, decode in attempts:
             try:
                 return decode() if callable(decode) else decode
             except UnicodeDecodeError:
