@@ -129,9 +129,6 @@ def list_workspace_tree(
                 return
 
     for top in _WORKSPACE_BROWSE_ROOTS:
-        base = root / top
-        if not base.exists():
-            continue
         try:
             resolved = policy.resolve(top, must_exist=True)
         except Exception:
