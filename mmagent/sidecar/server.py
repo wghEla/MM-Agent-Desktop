@@ -39,6 +39,8 @@ from mmagent.api.providers import (
 from mmagent.api.runs import RunController
 from mmagent.orchestration.engine import PipelineHooks
 from mmagent.runtime.credentials import (
+    CredentialNotFound,
+    CredentialReadError,
     CredentialStore,
     MemoryCredentialStore,
     WindowsCredentialStore,
@@ -270,6 +272,20 @@ def create_app(
     async def file_not_found_error(_: Request, exc: FileNotFoundError) -> JSONResponse:
         # e.g. opening a directory that is not an mmagent workspace.
         return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+    @app.exception_handler(CredentialNotFound)
+    async def credential_not_found(_: Request, exc: CredentialNotFound) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content={"detail": f"provider credential missing: {exc}"},
+        )
+
+    @app.exception_handler(CredentialReadError)
+    async def credential_read_error(_: Request, exc: CredentialReadError) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content={"detail": f"provider credential unreadable: {exc}"},
+        )
 
     async def authorize(
         authorization: Annotated[str | None, Header()] = None,
