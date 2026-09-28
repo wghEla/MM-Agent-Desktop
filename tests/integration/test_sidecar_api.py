@@ -178,6 +178,61 @@ def test_sidecar_import_and_artifact_preview(tmp_path) -> None:
 
 
 
+def test_sidecar_workspace_tree_is_bounded_to_user_visible_roots(tmp_path) -> None:
+    app = create_app(token=TOKEN, credentials=MemoryCredentialStore())
+    source = tmp_path / "problem.txt"
+    source.write_text("tree problem", encoding="utf-8")
+
+    with TestClient(app) as client:
+        project = client.post(
+            "/projects",
+            headers=_auth(),
+            json={"root": str(tmp_path / "proj-tree"), "name": "Tree"},
+        )
+        assert project.status_code == 200
+        project_id = project.json()["id"]
+
+        imported = client.post(
+            f"/projects/{project_id}/imports",
+            headers=_auth(),
+            json={"sources": [str(source)], "kind": "problem"},
+        )
+        assert imported.status_code == 200
+
+        state = app.state.mmagent
+        handle = state.project(project_id)
+        ledger = handle.workspace.root / "台账" / "visible.json"
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        ledger.write_text('{"ok": true}', encoding="utf-8")
+
+        tree = client.get(
+            f"/projects/{project_id}/workspace/tree",
+            headers=_auth(),
+        )
+        assert tree.status_code == 200, tree.text
+        payload = tree.json()
+        paths = {item["path"] for item in payload["items"]}
+        assert "输入" in paths
+        assert "输入/题目/problem.txt" in paths
+        assert "台账/visible.json" in paths
+        assert all(not path.startswith(".mmagent") for path in paths)
+
+        preview = client.post(
+            f"/projects/{project_id}/workspace/read",
+            headers=_auth(),
+            json={"path": "输入/题目/problem.txt"},
+        )
+        assert preview.status_code == 200
+        assert preview.json()["text"] == "tree problem"
+
+        denied = client.post(
+            f"/projects/{project_id}/workspace/read",
+            headers=_auth(),
+            json={"path": ".mmagent/project.db"},
+        )
+        assert denied.status_code == 400
+
+
 def test_sidecar_shutdown_endpoint_is_authenticated_and_invokes_callback() -> None:
     calls: list[str] = []
     app = create_app(
