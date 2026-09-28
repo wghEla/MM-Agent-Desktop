@@ -24,6 +24,10 @@ class CredentialReadError(RuntimeError):
     """The credential target exists but reading/decoding it failed."""
 
 
+class CredentialDeleteError(RuntimeError):
+    """Windows could not delete a credential target for a non-NOT_FOUND reason."""
+
+
 class CredentialStore(Protocol):
     def set(self, ref: str, secret: str) -> None: ...
     def get(self, ref: str) -> str: ...
@@ -145,11 +149,19 @@ class WindowsCredentialStore:
     def delete(self, ref: str) -> None:
         import win32cred
 
+        target = self._target(ref)
         try:
-            win32cred.CredDelete(self._target(ref), win32cred.CRED_TYPE_GENERIC, 0)
-        except Exception:
-            # Deleting an already-missing secret is idempotent for cleanup paths.
-            pass
+            win32cred.CredDelete(target, win32cred.CRED_TYPE_GENERIC, 0)
+        except Exception as exc:
+            winerror = getattr(exc, "winerror", None)
+            # Only an already-missing target is idempotent.  Any other OS error
+            # must stop the caller before SQLite forgets the credential ref.
+            if winerror == 1168:
+                return
+            raise CredentialDeleteError(
+                f"credential delete failed for {ref} (target={target!r}): "
+                f"{type(exc).__name__} winerror={winerror} {exc}"
+            ) from exc
 
     def describe(self, ref: str) -> dict:
         """Non-secret diagnostic: does the target exist and what is its shape."""
