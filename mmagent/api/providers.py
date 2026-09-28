@@ -146,6 +146,102 @@ def list_provider_profiles(db: Database) -> list[ProviderProfile]:
     return [get_provider_profile(db, row["id"]) for row in rows]
 
 
+def update_provider_profile(
+    db: Database,
+    *,
+    model_profile_id: str,
+    name: str,
+    protocol: str,
+    base_url: str,
+    model: str,
+    reasoning: str | None = None,
+    max_output_tokens: int | None = None,
+    timeout_s: int | None = 300,
+    extra: dict[str, Any] | None = None,
+) -> ProviderProfile:
+    current = get_provider_profile(db, model_profile_id)
+    protocol = protocol.strip()
+    if protocol not in SUPPORTED_PROTOCOLS:
+        raise ValueError(f"unsupported provider protocol: {protocol}")
+    if not name.strip():
+        raise ValueError("provider name must be non-empty")
+    if not base_url.strip():
+        raise ValueError("base_url must be non-empty")
+    if not model.strip():
+        raise ValueError("model must be non-empty")
+    if timeout_s is not None and timeout_s <= 0:
+        raise ValueError("timeout_s must be positive")
+    if max_output_tokens is not None and max_output_tokens <= 0:
+        raise ValueError("max_output_tokens must be positive")
+
+    with db.transaction() as conn:
+        conn.execute(
+            "UPDATE providers SET name = ?, protocol = ?, base_url = ?, extra_json = ?"
+            " WHERE id = ?",
+            (
+                name.strip(),
+                protocol,
+                base_url.rstrip("/"),
+                json.dumps(extra or {}, ensure_ascii=False),
+                current.provider_id,
+            ),
+        )
+        conn.execute(
+            "UPDATE model_profiles SET model = ?, reasoning = ?, max_output_tokens = ?,"
+            " timeout_s = ? WHERE id = ?",
+            (
+                model.strip(),
+                reasoning,
+                max_output_tokens,
+                timeout_s,
+                model_profile_id,
+            ),
+        )
+    return get_provider_profile(db, model_profile_id)
+
+
+def set_provider_credential(
+    db: Database,
+    credentials: CredentialStore,
+    model_profile_id: str,
+    api_key: str,
+) -> ProviderProfile:
+    if not api_key:
+        raise ValueError("api_key must be non-empty")
+    profile = get_provider_profile(db, model_profile_id)
+    ref = profile.api_key_ref or _credential_ref(profile.provider_id)
+
+    credentials.set(ref, api_key)
+    if profile.api_key_ref is None:
+        try:
+            with db.transaction() as conn:
+                conn.execute(
+                    "UPDATE providers SET api_key_ref = ? WHERE id = ?",
+                    (ref, profile.provider_id),
+                )
+        except BaseException:
+            credentials.delete(ref)
+            raise
+    return get_provider_profile(db, model_profile_id)
+
+
+def clear_provider_credential(
+    db: Database,
+    credentials: CredentialStore,
+    model_profile_id: str,
+) -> ProviderProfile:
+    profile = get_provider_profile(db, model_profile_id)
+    if profile.api_key_ref is None:
+        return profile
+    with db.transaction() as conn:
+        conn.execute(
+            "UPDATE providers SET api_key_ref = NULL WHERE id = ?",
+            (profile.provider_id,),
+        )
+    credentials.delete(profile.api_key_ref)
+    return get_provider_profile(db, model_profile_id)
+
+
 def delete_provider_profile(
     db: Database, credentials: CredentialStore, model_profile_id: str
 ) -> None:
