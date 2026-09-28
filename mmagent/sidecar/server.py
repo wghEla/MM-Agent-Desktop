@@ -233,6 +233,16 @@ def create_app(
     async def runtime_error(_: Request, exc: RuntimeError) -> JSONResponse:
         return JSONResponse(status_code=409, content={"detail": str(exc)})
 
+    @app.exception_handler(FileExistsError)
+    async def file_exists_error(_: Request, exc: FileExistsError) -> JSONResponse:
+        # e.g. creating a workspace over an existing workspace structure.
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+    @app.exception_handler(FileNotFoundError)
+    async def file_not_found_error(_: Request, exc: FileNotFoundError) -> JSONResponse:
+        # e.g. opening a directory that is not an mmagent workspace.
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+
     async def authorize(
         authorization: Annotated[str | None, Header()] = None,
     ) -> None:

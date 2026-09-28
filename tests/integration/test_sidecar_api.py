@@ -119,6 +119,30 @@ def test_sidecar_maps_domain_errors(tmp_path) -> None:
         assert bad.status_code == 400
 
 
+def test_sidecar_workspace_create_open_errors_surface_detail(tmp_path) -> None:
+    app = create_app(token=TOKEN, credentials=MemoryCredentialStore())
+    with TestClient(app) as client:
+        root = tmp_path / "dup-proj"
+        first = client.post(
+            "/projects", headers=_auth(), json={"root": str(root), "name": "P"}
+        )
+        assert first.status_code == 200
+
+        duplicate = client.post(
+            "/projects", headers=_auth(), json={"root": str(root), "name": "P2"}
+        )
+        assert duplicate.status_code == 409
+        assert "已有工作区结构" in duplicate.json()["detail"]
+
+        plain = tmp_path / "plain-empty"
+        plain.mkdir()
+        bad_open = client.post(
+            "/projects/open", headers=_auth(), json={"root": str(plain)}
+        )
+        assert bad_open.status_code == 400
+        assert "project.db" in bad_open.json()["detail"]
+
+
 def test_sidecar_rejects_short_token() -> None:
     try:
         create_app(token="short", credentials=MemoryCredentialStore())
