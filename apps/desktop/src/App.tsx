@@ -165,6 +165,12 @@ function App() {
     });
   }
 
+  function openWorkspaceDialog(mode: WorkspaceDialogMode) {
+    setError("");
+    setNotice("");
+    setWorkspaceDialog(mode);
+  }
+
   async function startRun(profile: string) {
     if (!project || !selectedProvider) return;
     await guarded(async () => {
@@ -233,8 +239,8 @@ function App() {
           {!project ? (
             <WorkspaceLauncher
               busy={busy}
-              onCreate={() => setWorkspaceDialog("create")}
-              onOpen={() => setWorkspaceDialog("open")}
+              onCreate={() => openWorkspaceDialog("create")}
+              onOpen={() => openWorkspaceDialog("open")}
             />
           ) : (
             <>
@@ -292,7 +298,7 @@ function App() {
               recent={recentWorkspaces}
               busy={busy}
               onCreate={() => setWorkspaceDialog("create")}
-              onOpenDialog={() => setWorkspaceDialog("open")}
+              onOpenDialog={() => openWorkspaceDialog("open")}
               onOpenRecent={(workspace) => createOrOpen("open", workspace.root, workspace.name, workspace.profile)}
               onRemoveRecent={(root) => {
                 setRecentWorkspaces((current) => {
@@ -372,6 +378,7 @@ function App() {
           busy={busy}
           onClose={() => setWorkspaceDialog(null)}
           onSubmit={createOrOpen}
+          error={error}
         />
       )}
 
