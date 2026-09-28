@@ -299,6 +299,91 @@ async def test_discover_compatible_models_path_can_be_custom_or_disabled() -> No
     assert len(captures) == 1
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://user:password@example.invalid/v1",
+        "https://example.invalid/v1?api_key=transient-secret",
+        "https://example.invalid/v1#token=transient-secret",
+        "file:///tmp/provider",
+        "example.invalid/v1",
+    ],
+)
+async def test_transient_model_discovery_reuses_safe_base_url_boundary(
+    base_url,
+) -> None:
+    with pytest.raises(ValueError):
+        await discover_models(
+            protocol="openai_compatible",
+            base_url=base_url,
+            api_key="test-key",
+        )
+
+
+@pytest.mark.asyncio
+async def test_transient_model_discovery_rejects_secret_bearing_extra_headers() -> None:
+    with pytest.raises(ValueError, match="Credential Manager"):
+        await discover_models(
+            protocol="openai_compatible",
+            base_url="https://example.invalid/v1",
+            api_key="",
+            extra={
+                "extra_headers": {
+                    "Authorization": "Bearer transient-header-secret",
+                }
+            },
+        )
+
+
+@pytest.mark.asyncio
+async def test_model_discovery_redacts_custom_header_values_from_provider_error() -> None:
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            text="echo custom-session-marker",
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://example.invalid",
+    ) as client:
+        result = await discover_models(
+            protocol="openai_compatible",
+            base_url="https://example.invalid/v1",
+            api_key="",
+            extra={"extra_headers": {"X-Session": "custom-session-marker"}},
+            client=client,
+        )
+
+    assert result["ok"] is False
+    assert "custom-session-marker" not in result["detail"]
+    assert "REDACTED" in result["detail"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("models_path", "https://other.invalid/models"),
+        ("models_path", "//other.invalid/models"),
+        ("models_path", "/models?token=secret"),
+        ("completions_path", "https://other.invalid/chat"),
+        ("completions_path", "/chat/completions#secret"),
+    ],
+)
+async def test_transient_model_discovery_rejects_absolute_or_secret_endpoint_paths(
+    field,
+    value,
+) -> None:
+    with pytest.raises(ValueError):
+        await discover_models(
+            protocol="openai_compatible",
+            base_url="https://example.invalid/v1",
+            extra={field: value},
+        )
+
+
 def test_saved_provider_model_discovery_reports_missing_credential_as_409(
     tmp_path,
 ) -> None:
