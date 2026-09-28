@@ -13,6 +13,7 @@ from typing import Any, Literal
 
 import httpx
 
+from mmagent.api.provider_oauth import DEFAULT_OAUTH_REGISTRY
 from mmagent.providers import redact_secret
 from mmagent.providers.capabilities import CapabilitySet
 
@@ -113,8 +114,18 @@ PROVIDER_PRESETS: tuple[ProviderPreset, ...] = (
 def catalog_payload() -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for item in PROVIDER_PRESETS:
+        oauth_ready = (
+            item.oauth is not None
+            and DEFAULT_OAUTH_REGISTRY.has(item.id)
+        )
+        auth_methods = [
+            method
+            for method in item.auth_methods
+            if method != "oauth" or oauth_ready
+        ]
         row = asdict(item)
-        row["auth_methods"] = list(item.auth_methods)
+        row["auth_methods"] = auth_methods
+        row["oauth"] = asdict(item.oauth) if oauth_ready and item.oauth else None
         row["capabilities"] = capability_descriptor(item.protocol, {})
         out.append(row)
     return out
