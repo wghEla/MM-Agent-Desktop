@@ -442,6 +442,78 @@ def test_delete_last_provider_profile_deletes_secret_before_sqlite_rows(tmp_path
         db.close()
 
 
+def test_compatible_profile_rejects_saved_key_with_no_auth_style(tmp_path) -> None:
+    from mmagent.api.providers import (
+        set_provider_credential,
+        update_provider_profile,
+    )
+
+    handle = create_project(
+        tmp_path / "proj-auth-binding",
+        name="providers-auth-binding",
+        profile="标准",
+    )
+    store = MemoryCredentialStore()
+    db = handle.workspace.db
+    try:
+        with pytest.raises(ValueError, match="credential requires"):
+            create_provider_profile(
+                db,
+                store,
+                name="Contradictory",
+                protocol="openai_compatible",
+                base_url="https://example.invalid/v1",
+                model="model-x",
+                api_key="test-key",
+                extra={"auth_style": "none"},
+            )
+
+        profile = create_provider_profile(
+            db,
+            store,
+            name="Keyless",
+            protocol="openai_compatible",
+            base_url="https://example.invalid/v1",
+            model="model-x",
+            extra={"auth_style": "none"},
+        )
+        with pytest.raises(ValueError, match="credential requires"):
+            set_provider_credential(
+                db,
+                store,
+                profile.model_profile_id,
+                "test-late-key",
+            )
+
+        updated = update_provider_profile(
+            db,
+            model_profile_id=profile.model_profile_id,
+            name=profile.name,
+            protocol=profile.protocol,
+            base_url=profile.base_url,
+            model=profile.model,
+            extra={"auth_style": "bearer"},
+        )
+        set_provider_credential(
+            db,
+            store,
+            updated.model_profile_id,
+            "test-late-key",
+        )
+        with pytest.raises(ValueError, match="credential requires"):
+            update_provider_profile(
+                db,
+                model_profile_id=updated.model_profile_id,
+                name=updated.name,
+                protocol=updated.protocol,
+                base_url=updated.base_url,
+                model=updated.model,
+                extra={"auth_style": "none"},
+            )
+    finally:
+        db.close()
+
+
 def test_provider_profile_requires_credential_clear_before_endpoint_or_protocol_change(
     tmp_path,
 ) -> None:
