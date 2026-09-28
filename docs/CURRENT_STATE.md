@@ -501,3 +501,35 @@ Gates: Source GO · Package PASS · Cancellation PASS · Credential PASS ·
 Real Provider CONDITIONAL PASS (one ceremonial green-G0 run open; achievable
 with quota/stronger model, no code change implicated) · CI decision open ·
 deviation acceptance open.
+
+
+## UI v2 Phase 2 source implementation — 2026-09-28 — LOCAL VALIDATION PENDING
+
+Baseline with full Windows UI validation: `ffe179354e80a98f9d3a074aeacfaf95712e552a`
+(464 passed / Ruff clean / frontend build green / NSIS reinstall / startup smoke exit 0).
+
+Source work after that baseline now completes the remaining Phase-2 UX:
+
+- authenticated sidecar `GET /projects/{id}/workspace/tree` returns a bounded read-only
+  projection of fixed user-visible workspace roots;
+- authenticated `POST /projects/{id}/workspace/read` previews a selected workspace file;
+- `.mmagent` and arbitrary filesystem roots are excluded; existing entries are revalidated
+  through `PathPolicy`; traversal is bounded by depth and item count;
+- left rail now contains a collapsible Runtime-backed file tree; selecting a file previews
+  it in the existing right Artifact dock;
+- tree/artifact views refresh after imports and periodically while a run is active;
+- first-run Welcome now presents the three-step flow 工作区 → 模型 → 材料;
+- dedicated create/open workspace dialogs use the already-verified native Tauri folder
+  picker, preserve advanced manual path entry, and keep backend errors visible in-dialog;
+- Recent Workspace entries can be removed from the bookmark list without deleting or
+  mutating the underlying workspace;
+- verified Tauri JS dependency minors are pinned exactly to avoid the release-build
+  npm/Rust minor drift previously observed.
+
+New sidecar integration coverage asserts that the workspace tree exposes expected input/
+ledger files, can preview a user-visible input file, and rejects `.mmagent/project.db`.
+
+**Evidence boundary:** these Phase-2 changes are source-only until ZCode runs the focused
+sidecar test, full Python/Ruff regression, frontend build, real Tauri interaction, and
+release/startup smoke. Existing product Gates remain at their previously verified states;
+do not promote Product Release based on this source-only section.
