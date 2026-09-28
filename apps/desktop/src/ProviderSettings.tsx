@@ -160,6 +160,7 @@ export function ProviderSettings({
   const [models, setModels] = useState<string[]>([]);
   const [modelDetail, setModelDetail] = useState("");
   const [discoverBusy, setDiscoverBusy] = useState(false);
+  const [testBusy, setTestBusy] = useState(false);
   const [credentialMode, setCredentialMode] = useState(false);
   const [replacementKey, setReplacementKey] = useState("");
   const [replacementAuthStyle, setReplacementAuthStyle] = useState<"bearer" | "x-api-key">("bearer");
@@ -333,6 +334,8 @@ export function ProviderSettings({
   }
 
   async function testDraftProvider() {
+    if (testBusy) return;
+    setTestBusy(true);
     setLocalError("");
     setDraftTestResult("测试中…");
     let maxOutputTokens: number | null;
@@ -358,6 +361,8 @@ export function ProviderSettings({
     } catch (err) {
       setDraftTestResult("");
       setLocalError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTestBusy(false);
     }
   }
 
@@ -523,7 +528,8 @@ export function ProviderSettings({
   }
 
   async function testSelected() {
-    if (!selected) return;
+    if (!selected || testBusy) return;
+    setTestBusy(true);
     setTestResult("测试中…");
     setLocalError("");
     try {
@@ -535,6 +541,8 @@ export function ProviderSettings({
     } catch (err) {
       setTestResult("");
       setLocalError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTestBusy(false);
     }
   }
 
@@ -919,18 +927,20 @@ export function ProviderSettings({
                 type="button"
                 disabled={
                   busy
+                  || testBusy
                   || !form.baseUrl.trim()
                   || !form.model.trim()
                   || (form.authMode === "api_key" && !form.apiKey.trim())
                 }
                 onClick={() => void testDraftProvider()}
               >
-                Test Connection
+                {testBusy ? "测试中…" : "Test Connection"}
               </button>
               <button
                 className="primary"
                 disabled={
                   busy
+                  || testBusy
                   || !form.name.trim()
                   || !form.baseUrl.trim()
                   || !form.model.trim()
@@ -1058,8 +1068,12 @@ export function ProviderSettings({
             )}
 
             <div className="settings-actions test-connection-row">
-              <button className="primary" onClick={() => void testSelected()} disabled={busy}>
-                Test Connection
+              <button
+                className="primary"
+                onClick={() => void testSelected()}
+                disabled={busy || testBusy}
+              >
+                {testBusy ? "测试中…" : "Test Connection"}
               </button>
               {testResult && <span className="test-result">{testResult}</span>}
             </div>
