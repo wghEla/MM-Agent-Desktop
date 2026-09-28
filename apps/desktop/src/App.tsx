@@ -65,6 +65,7 @@ function App() {
   const [recentWorkspaces, setRecentWorkspaces] = useState<RecentWorkspace[]>(loadRecentWorkspaces);
   const [workspaceDialog, setWorkspaceDialog] = useState<WorkspaceDialogMode | null>(null);
   const [selectedWorkspacePath, setSelectedWorkspacePath] = useState<string | null>(null);
+  const [workspaceRevision, setWorkspaceRevision] = useState(0);
 
   const selected = useMemo(
     () => providers.find((item) => item.model_profile_id === selectedProvider) ?? null,
@@ -253,8 +254,13 @@ function App() {
                 project={project}
                 selectedPath={selectedWorkspacePath}
                 onOpenFile={setSelectedWorkspacePath}
+                refreshKey={workspaceRevision}
+                live={run?.status === "RUNNING"}
               />
-              <ImportPanel project={project} />
+              <ImportPanel
+                project={project}
+                onImported={() => setWorkspaceRevision((value) => value + 1)}
+              />
 
               {runHistory.length > 0 && (
                 <RunHistoryPanel
@@ -353,7 +359,7 @@ function App() {
         <aside className="artifact-dock">
           <div className="sidebar-section-title">ARTIFACTS</div>
           {project ? (
-            <ArtifactViewer project={project} requestedPath={selectedWorkspacePath} />
+            <ArtifactViewer project={project} requestedPath={selectedWorkspacePath} refreshKey={workspaceRevision} live={run?.status === "RUNNING"} />
           ) : (
             <div className="dock-empty">打开工作区后，这里会显示论文、图表、结果、审稿与交付物。</div>
           )}
