@@ -108,9 +108,11 @@ def list_workspace_tree(
         if truncated or depth >= max_depth:
             return
         try:
-            children = sorted(directory.iterdir(), key=lambda p: p.name.casefold())
+            children = list(directory.iterdir())
         except OSError:
             return
+
+        validated: list[tuple[str, str, Path]] = []
         for child in children:
             rel = f"{rel_dir}/{child.name}"
             try:
@@ -118,8 +120,13 @@ def list_workspace_tree(
             except Exception:
                 continue
             kind = "directory" if resolved.is_dir() else "file" if resolved.is_file() else "other"
-            if kind == "other":
-                continue
+            if kind != "other":
+                validated.append((kind, rel, resolved))
+
+        validated.sort(
+            key=lambda item: (item[0] != "directory", item[2].name.casefold())
+        )
+        for kind, rel, resolved in validated:
             child_depth = depth + 1
             if not append_item(resolved, rel, depth=child_depth, kind=kind):
                 return
