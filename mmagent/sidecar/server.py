@@ -24,7 +24,7 @@ from mmagent.api.artifacts import (
 )
 from mmagent.api.dashboard import dashboard
 from mmagent.api.projects import ProjectHandle, create_project, open_project
-from mmagent.api.provider_catalog import catalog_payload, discover_models
+from mmagent.api.provider_catalog import capability_descriptor, catalog_payload, discover_models
 from mmagent.api.providers import (
     build_provider,
     build_provider_from_config,
@@ -376,6 +376,10 @@ def create_app(
     @app.get("/providers/catalog", dependencies=auth)
     async def provider_catalog() -> list[dict[str, Any]]:
         return catalog_payload()
+
+    @app.get("/providers/capabilities/{protocol}", dependencies=auth)
+    async def provider_capabilities(protocol: str) -> dict[str, Any]:
+        return capability_descriptor(protocol, {})
 
     @app.post("/providers/discover-models", dependencies=auth)
     async def provider_discover(req: ProviderDiscoverRequest) -> dict[str, Any]:
