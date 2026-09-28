@@ -15,6 +15,7 @@ export function WorkspaceDialog({
   busy,
   onClose,
   onSubmit,
+  error = "",
 }: {
   mode: WorkspaceDialogMode;
   busy: boolean;
@@ -25,6 +26,7 @@ export function WorkspaceDialog({
     name: string,
     profile: string,
   ) => Promise<boolean>;
+  error?: string;
 }) {
   const [root, setRoot] = useState("");
   const [name, setName] = useState("数学建模项目");
@@ -90,6 +92,7 @@ export function WorkspaceDialog({
           </button>
 
           {pickerError && <div className="workspace-dialog-error">{pickerError}</div>}
+          {error && <div className="workspace-dialog-error">{error}</div>}
 
           {isCreate && (
             <div className="workspace-dialog-fields">
