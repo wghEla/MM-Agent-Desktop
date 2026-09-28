@@ -36,6 +36,15 @@ export type ProjectView = {
   created_at: string;
 };
 
+export type ProviderCapabilities = {
+  protocol: string;
+  tool_calling: boolean;
+  image_input: boolean;
+  streaming: boolean;
+  reasoning_levels: string[];
+  max_output_tokens_limit: number | null;
+};
+
 export type ProviderProfile = {
   provider_id: string;
   model_profile_id: string;
@@ -43,11 +52,37 @@ export type ProviderProfile = {
   protocol: string;
   base_url: string;
   has_api_key: boolean;
+  auth_kind: "api_key" | "oauth" | "none";
   model: string;
   reasoning: string | null;
   max_output_tokens: number | null;
   timeout_s: number | null;
   extra: Record<string, unknown>;
+  capabilities: ProviderCapabilities;
+};
+
+export type ProviderPreset = {
+  id: string;
+  label: string;
+  protocol: string;
+  base_url: string;
+  auth_methods: Array<"api_key" | "oauth" | "none">;
+  discover_models: boolean;
+  base_url_editable: boolean;
+  oauth: {
+    flow: "authorization_code_pkce" | "device_code";
+    authorize_path: string;
+    token_path: string;
+  } | null;
+  note: string;
+  capabilities: ProviderCapabilities;
+};
+
+export type ModelDiscoveryResult = {
+  ok: boolean;
+  models: string[];
+  detail: string;
+  endpoint: string;
 };
 
 export type RunStatus = {
