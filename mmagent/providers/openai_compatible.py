@@ -41,6 +41,7 @@ class OpenAICompatibleProvider(BaseProvider):
         api_key_getter,
         *,
         completions_path: str = "/chat/completions",
+        models_path: str | None = "/models",
         auth_style: str = "bearer",  # bearer | x-api-key | none
         client: httpx.AsyncClient | None = None,
         extra_headers: dict[str, str] | None = None,
@@ -50,6 +51,15 @@ class OpenAICompatibleProvider(BaseProvider):
     ):
         self.base_url = base_url.rstrip("/")
         self.completions_path = completions_path
+        self.models_path = (
+            None
+            if models_path is None or not str(models_path).strip()
+            else (
+                str(models_path).strip()
+                if str(models_path).strip().startswith("/")
+                else "/" + str(models_path).strip()
+            )
+        )
         self.auth_style = auth_style
         self._key_getter = api_key_getter
         self._client = client or httpx.AsyncClient(timeout=600.0)
@@ -122,18 +132,25 @@ class OpenAICompatibleProvider(BaseProvider):
         return parse_chat_response(resp.json(), self.protocol)
 
     async def test_connection(self) -> dict:
-        models_detail = ""
-        try:
-            resp = await self._client.get(
-                f"{self.base_url}/models",
-                headers=self._headers(),
-                timeout=15.0,
-            )
-            if resp.status_code == 200:
-                return {"ok": True, "detail": "models 端点 200"}
-            models_detail = f"models 端点 {resp.status_code}"
-        except httpx.HTTPError as exc:
-            models_detail = f"models 探测失败: {str(exc)[:120]}"
+        if self.models_path is None:
+            models_detail = "models 端点已禁用"
+        else:
+            try:
+                resp = await self._client.get(
+                    f"{self.base_url}{self.models_path}",
+                    headers=self._headers(),
+                    timeout=15.0,
+                )
+                if resp.status_code == 200:
+                    return {
+                        "ok": True,
+                        "detail": f"models 端点 200 ({self.models_path})",
+                    }
+                models_detail = (
+                    f"models 端点 {resp.status_code} ({self.models_path})"
+                )
+            except httpx.HTTPError as exc:
+                models_detail = f"models 探测失败: {str(exc)[:120]}"
 
         # Many otherwise valid OpenAI-compatible relays do not implement
         # /models.  Fall back to the actual configured chat path/model rather
