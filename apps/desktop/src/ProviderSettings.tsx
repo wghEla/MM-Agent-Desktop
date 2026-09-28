@@ -164,6 +164,24 @@ export function ProviderSettings({
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   useEffect(() => {
+    setDraftTestResult("");
+  }, [
+    form.protocol,
+    form.baseUrl,
+    form.model,
+    form.apiKey,
+    form.authMode,
+    form.reasoning,
+    form.maxOutputTokens,
+    form.timeoutS,
+    form.imageInput,
+    form.reasoningEffort,
+    form.authStyle,
+    form.completionsPath,
+    form.modelsPath,
+  ]);
+
+  useEffect(() => {
     let active = true;
     void backend<ProviderPreset[]>("GET", "/providers/catalog")
       .then((value) => {
@@ -353,21 +371,29 @@ export function ProviderSettings({
       setLocalError(err instanceof Error ? err.message : String(err));
       return;
     }
+    let createdProfile: ProviderProfile | null = null;
     const ok = await onGuarded(async () => {
-      await backend("POST", "/projects/" + project.id + "/providers", {
-        name: form.name,
-        protocol: form.protocol,
-        base_url: form.baseUrl,
-        model: form.model,
-        api_key: form.authMode === "api_key" ? form.apiKey || null : null,
-        reasoning: form.reasoning || null,
-        max_output_tokens: maxOutputTokens,
-        timeout_s: timeoutS,
-        extra: providerExtra(form),
-      });
+      createdProfile = await backend<ProviderProfile>(
+        "POST",
+        "/projects/" + project.id + "/providers",
+        {
+          name: form.name,
+          protocol: form.protocol,
+          base_url: form.baseUrl,
+          model: form.model,
+          api_key: form.authMode === "api_key" ? form.apiKey || null : null,
+          reasoning: form.reasoning || null,
+          max_output_tokens: maxOutputTokens,
+          timeout_s: timeoutS,
+          extra: providerExtra(form),
+        },
+      );
       await onChanged();
     });
     if (ok) {
+      if (createdProfile) {
+        onSelect((createdProfile as ProviderProfile).model_profile_id);
+      }
       setForm(blankForm());
       setShowCreate(false);
       setEditing(false);
