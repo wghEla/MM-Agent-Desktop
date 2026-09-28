@@ -179,6 +179,16 @@ def update_provider_profile(
     if max_output_tokens is not None and max_output_tokens <= 0:
         raise ValueError("max_output_tokens must be positive")
 
+    if (
+        current.api_key_ref is not None
+        and (protocol != current.protocol or base_url != current.base_url)
+    ):
+        raise ValueError(
+            "provider credential is scoped to the current protocol/base_url; "
+            "clear the saved credential before changing endpoint or protocol, "
+            "then enter the credential again"
+        )
+
     with db.transaction() as conn:
         conn.execute(
             "UPDATE providers SET name = ?, protocol = ?, base_url = ?, extra_json = ?"
