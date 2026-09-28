@@ -383,6 +383,17 @@ async def test_transient_model_discovery_reuses_safe_base_url_boundary(
 
 
 @pytest.mark.asyncio
+async def test_transient_model_discovery_rejects_key_with_no_auth_style() -> None:
+    with pytest.raises(ValueError, match="credential requires"):
+        await discover_models(
+            protocol="openai_compatible",
+            base_url="https://example.invalid/v1",
+            api_key="test-key",
+            extra={"auth_style": "none"},
+        )
+
+
+@pytest.mark.asyncio
 async def test_transient_model_discovery_rejects_secret_bearing_extra_headers() -> None:
     with pytest.raises(ValueError, match="Credential Manager"):
         await discover_models(
