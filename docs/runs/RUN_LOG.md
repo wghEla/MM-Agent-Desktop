@@ -164,3 +164,17 @@
   对齐 2.11.1/2.7.3 后通过。回归 464 passed/0 failed + Ruff clean（顺手清 credentials.py
   B007）；sidecar+NSIS 重打包、静默重装、--startup-smoke=0。证据 docs/runs/ui-v2/ 15 张；
   报告 docs/reviews/v1.0.0-rebuild-ui-v2-local-validation.md。不宣布 Product Release GO。
+- 09-28 UI v2 Phase-2 Local Validation（Windows 本机，HEAD 3d83004+修复）：依赖锁定核对
+  （npm api=2.11.1/dialog=2.7.3；crate =2.11.6/=2.7.3/=2.3.6/=2.6.3）npm ci+build 绿；
+  focused 14 passed；全量 466 passed/0 failed + Ruff clean。Onboarding 三步/新建+打开 Dialog
+  （原生选择器/自动命名/高级手动路径/pending 不可误关）；重复创建与空目录打开的后端错误
+  原文显示在 Dialog 不关闭——暴露并修复产品 bug：sidecar 缺 FileExistsError/FileNotFoundError
+  处理器导致 500 空 body → 补 409/400 映射 + 集成测试。Workspace Tree（Runtime 供给，
+  .mmagent/快照不暴露；PathPolicy 五种逃逸产品 API 全拒）；tree→TEXT/PDF/IMG 预览+相对路径；
+  import→tree 自动刷新（workspaceRevision）；RUNNING 期 live 轮询；preview stability >8s
+  不被轮询清除（distinguishing test）；UI 取消→CANCELLED+0 孤儿；setup checklist 配置→→✓；
+  Recent ×移除（remove≠delete，project.db 完好）+ 完全重启持久；corrupted localStorage 仅
+  源码级验证（devtools 自动化不可用，如实登记）。窗口 1440×900(200%DPI)/≈1220×740/≈1040×700
+  全过。重打包 sidecar+NSIS、静默重装、--startup-smoke=0、0 孤儿。证据
+  docs/runs/ui-v2-phase2/ 16 张+EVIDENCE；报告 v1.0.0-rebuild-ui-v2-phase2-local-validation.md。
+  UI v2 Phase 2 = PASS；不宣布 Product Release GO。

@@ -399,3 +399,23 @@ on a real Windows/Tauri runtime. Report: `docs/reviews/v1.0.0-rebuild-ui-v2-loca
   implemented after the verified `ffe1793` baseline. These Phase-2 additions are
   source-only until the next Windows/Tauri local validation.
 - Phases 3–4 remain open; nothing here declares Product Release GO.
+
+## Phase-2 local validation record (2026-09-28, Windows)
+
+Phase 2 was validated end-to-end on a real Windows/Tauri runtime at source HEAD `3d83004`
+plus local fixes. Report: `docs/reviews/v1.0.0-rebuild-ui-v2-phase2-local-validation.md`.
+
+- Workspace tree is Runtime-backed (`workspace/tree` + bounded `workspace/read`): fixed
+  user-visible roots only, `.mmagent` and 快照 never exposed, PathPolicy rejects `../`,
+  absolute/drive-letter/backslash escapes and `.mmagent/project.db` (400 with explicit detail).
+- Create/open dialogs keep backend errors visible in-dialog (duplicate create → 409
+  "目标目录已有工作区结构"; non-workspace dir → 400 "缺 project.db"). This surfaced one real
+  product bug — the sidecar lacked exception handlers for FileExistsError/FileNotFoundError so
+  these degraded to a bodyless 500 — fixed with 409/400 mappings plus integration tests.
+- Import auto-refresh (workspaceRevision) and ~4s live tree/artifact polling during RUNNING
+  runs verified; user-selected preview survives ≥2 polling cycles (the preview-stability fix).
+- Recent remove (×) never deletes the workspace on disk; bookmarks survive a full app
+  restart. Corrupted-localStorage sanitize verified at source level only (devtools injection
+  not automatable this round) — recorded honestly.
+- Window sweep 1440×900 (200% DPI) / ≈1220×740 / ≈1040×700 all pass with the file tree
+  added to the left rail.
