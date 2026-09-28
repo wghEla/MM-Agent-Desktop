@@ -15,7 +15,11 @@ import httpx
 
 from mmagent.agent.errors import ErrorKind, ProviderError, RateLimitError
 from mmagent.providers import redact_secret
-from mmagent.providers._http_util import parse_retry_after
+from mmagent.providers._http_util import (
+    configured_model_detail,
+    gemini_model_ids,
+    parse_retry_after,
+)
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
 from mmagent.providers.normalized import (
@@ -142,10 +146,18 @@ def parse_generate_response(data: dict[str, Any], protocol: str = "gemini") -> N
 class GeminiProvider(BaseProvider):
     protocol = "gemini"
 
-    def __init__(self, base_url: str, api_key_getter, *, client: httpx.AsyncClient | None = None):
+    def __init__(
+        self,
+        base_url: str,
+        api_key_getter,
+        *,
+        client: httpx.AsyncClient | None = None,
+        test_model: str | None = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self._key_getter = api_key_getter
         self._client = client or httpx.AsyncClient(timeout=600.0)
+        self._test_model = (test_model or "").strip()
 
     def capabilities(self) -> CapabilitySet:
         return CapabilitySet(
@@ -200,8 +212,23 @@ class GeminiProvider(BaseProvider):
     async def test_connection(self) -> dict:
         try:
             resp = await self._client.get(
-                f"{self.base_url}/v1beta/models", headers=self._headers(), timeout=15.0,
+                f"{self.base_url}/v1beta/models",
+                headers=self._headers(),
+                timeout=15.0,
             )
-            return {"ok": resp.status_code == 200, "detail": f"models 端点 {resp.status_code}"}
+            if resp.status_code != 200:
+                return {
+                    "ok": False,
+                    "detail": f"models 端点 {resp.status_code}",
+                }
+            try:
+                available = gemini_model_ids(resp.json())
+            except Exception:
+                available = set()
+            return configured_model_detail(
+                self._test_model,
+                available,
+                endpoint_label="models 端点 200",
+            )
         except httpx.HTTPError as e:
             return {"ok": False, "detail": str(e)[:200]}
