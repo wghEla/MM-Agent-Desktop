@@ -80,8 +80,10 @@ function formFromProfile(profile: ProviderProfile): ProviderFormState {
         ? profile.extra.completions_path
         : "/chat/completions",
     modelsPath:
-      typeof profile.extra.models_path === "string"
-        ? profile.extra.models_path
+      Object.prototype.hasOwnProperty.call(profile.extra, "models_path")
+        ? profile.extra.models_path == null
+          ? ""
+          : String(profile.extra.models_path)
         : "/models",
     baseExtra: { ...profile.extra },
   };
