@@ -131,14 +131,6 @@ export function ArtifactViewer({
     try {
       const list = await backend<ArtifactItem[]>("GET", `/projects/${project.id}/artifacts`);
       setItems(list);
-      if (
-        selected
-        && selected !== requestedPath
-        && !list.some((item) => item.path === selected)
-      ) {
-        setSelected("");
-        setPreview(null);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
