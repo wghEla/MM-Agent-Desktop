@@ -405,6 +405,7 @@ function App() {
                   setNotice("Provider 设置已更新");
                 }}
                 onGuarded={guarded}
+                externalError={error}
               />
             )}
           </div>
