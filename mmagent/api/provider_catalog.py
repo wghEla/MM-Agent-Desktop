@@ -14,7 +14,11 @@ from typing import Any, Literal
 import httpx
 
 from mmagent.api.provider_oauth import DEFAULT_OAUTH_REGISTRY
-from mmagent.providers import redact_secret
+from mmagent.api.provider_validation import (
+    validate_provider_base_url,
+    validate_provider_extra,
+)
+from mmagent.providers._http_util import redacted
 from mmagent.providers.capabilities import CapabilitySet
 
 AuthKind = Literal["api_key", "oauth", "none"]
@@ -182,6 +186,21 @@ def capability_descriptor(protocol: str, extra: dict[str, Any] | None = None) ->
     return caps.describe()
 
 
+def _discovery_secrets(api_key: str, extra: dict[str, Any]) -> tuple[str, ...]:
+    values: list[str] = []
+    if api_key:
+        values.append(api_key)
+    headers = extra.get("extra_headers")
+    if isinstance(headers, dict):
+        values.extend(
+            value
+            for value in headers.values()
+            if isinstance(value, str) and value
+        )
+    # Longest first so a shorter token does not partially mask a longer one.
+    return tuple(sorted(set(values), key=len, reverse=True))
+
+
 def _discovery_headers(
     protocol: str,
     api_key: str,
@@ -278,10 +297,9 @@ async def discover_models(
     unexpectedly spend tokens.  Unsupported/missing list endpoints return an honest
     failure and the UI keeps manual model entry available.
     """
-    if not base_url.strip():
-        raise ValueError("base_url must be non-empty")
-
-    extra = extra or {}
+    base_url = validate_provider_base_url(base_url)
+    extra = validate_provider_extra(extra)
+    secrets = _discovery_secrets(api_key, extra)
     headers = _discovery_headers(protocol, api_key, extra)
     url = _models_url(protocol, base_url, extra)
     if url is None:
@@ -301,12 +319,12 @@ async def discover_models(
             return {
                 "ok": False,
                 "models": [],
-                "detail": f"模型列表网络错误: {str(exc)[:160]}",
+                "detail": "模型列表网络错误: " + redacted(str(exc)[:160], secrets),
                 "endpoint": url,
             }
 
         if response.status_code != 200:
-            detail = redact_secret(response.text[:240], api_key)
+            detail = redacted(response.text[:240], secrets)
             return {
                 "ok": False,
                 "models": [],
@@ -320,7 +338,7 @@ async def discover_models(
             return {
                 "ok": False,
                 "models": [],
-                "detail": f"模型列表响应不是合法 JSON: {exc}",
+                "detail": "模型列表响应不是合法 JSON: " + redacted(str(exc), secrets),
                 "endpoint": url,
             }
 
