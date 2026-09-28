@@ -234,3 +234,80 @@ def test_provider_profile_update_rejects_secret_bearing_extra_headers(tmp_path) 
         assert "must-not-persist" not in unchanged["extra_json"]
     finally:
         db.close()
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://user:password@example.invalid/v1",
+        "https://example.invalid/v1?api_key=must-not-persist",
+        "https://example.invalid/v1#token=must-not-persist",
+        "file:///tmp/provider",
+        "example.invalid/v1",
+    ],
+)
+def test_provider_profile_rejects_unsafe_or_non_http_base_urls(
+    tmp_path,
+    base_url,
+) -> None:
+    handle = create_project(
+        tmp_path / ("proj-url-" + str(abs(hash(base_url)))),
+        name="providers-url-boundary",
+        profile="标准",
+    )
+    store = MemoryCredentialStore()
+    try:
+        with pytest.raises(ValueError):
+            create_provider_profile(
+                handle.workspace.db,
+                store,
+                name="Unsafe URL",
+                protocol="openai_compatible",
+                base_url=base_url,
+                model="model-x",
+            )
+        serialized = handle.workspace.db.path.read_bytes()
+        assert b"must-not-persist" not in serialized
+        assert b"password" not in serialized
+    finally:
+        handle.workspace.db.close()
+
+
+def test_provider_profile_accepts_https_and_local_http_base_urls(tmp_path) -> None:
+    store = MemoryCredentialStore()
+
+    first = create_project(
+        tmp_path / "proj-url-https",
+        name="providers-url-https",
+        profile="标准",
+    )
+    try:
+        profile = create_provider_profile(
+            first.workspace.db,
+            store,
+            name="HTTPS",
+            protocol="openai_compatible",
+            base_url="https://example.invalid/v1/",
+            model="model-x",
+        )
+        assert profile.base_url == "https://example.invalid/v1"
+    finally:
+        first.workspace.db.close()
+
+    second = create_project(
+        tmp_path / "proj-url-local",
+        name="providers-url-local",
+        profile="标准",
+    )
+    try:
+        profile = create_provider_profile(
+            second.workspace.db,
+            store,
+            name="Local",
+            protocol="openai_compatible",
+            base_url="http://127.0.0.1:8080/v1",
+            model="model-x",
+        )
+        assert profile.base_url == "http://127.0.0.1:8080/v1"
+    finally:
+        second.workspace.db.close()
