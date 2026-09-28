@@ -67,11 +67,13 @@ def build_runtime() -> Path:
     with tempfile.TemporaryDirectory(prefix="mmagent-managed-python-") as raw:
         install_root = Path(raw) / "python"
         env = os.environ.copy()
+        env.pop("VIRTUAL_ENV", None)
         env.update(
             {
                 "UV_PYTHON_INSTALL_DIR": str(install_root),
                 "UV_PYTHON_PREFERENCE": "only-managed",
                 "UV_PYTHON_NO_REGISTRY": "1",
+                "UV_NO_PROJECT": "1",
                 # Never make the packaged runtime depend on uv's package cache.
                 "UV_LINK_MODE": "copy",
             }
@@ -91,13 +93,20 @@ def build_runtime() -> Path:
             env=env,
             check=True,
         )
-        resolved = subprocess.check_output(
-            [uv, "python", "find", "3.11"],
-            cwd=ROOT,
-            env=env,
-            text=True,
-        ).strip()
-        source_python = Path(resolved).resolve()
+        candidates = sorted(
+            install_root.glob("cpython-3.11*/python.exe"),
+            reverse=True,
+        )
+        if candidates:
+            source_python = candidates[0].resolve()
+        else:
+            resolved = subprocess.check_output(
+                [uv, "python", "find", "3.11", "--no-project"],
+                cwd=ROOT,
+                env=env,
+                text=True,
+            ).strip()
+            source_python = Path(resolved).resolve()
         source_root = _python_root(source_python, install_root)
 
         subprocess.run(

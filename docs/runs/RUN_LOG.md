@@ -106,3 +106,19 @@
   A12 → MATCH（producer+精确消费+G5 fail-closed+S6 披露 全链条测试证据）；
   A17/A20/B9 保持 PARTIAL；Product Release Gate = HOLD（MSVC/NSIS/安装版取消证明/
   真实 provider smoke/CI 决议/偏差接受 待办）。不 tag、不 merge、不开第五轮泛化。
+
+## 2026-09-28
+
+- 10:50 接手上下文恢复，HEAD 同步至 8ba3231（5 处桌面发行元数据对齐 1.0.0-rebuild.1）。
+- 10:55 源码回归验证：`uv run ruff check .` clean；`uv run pytest -q` 451 passed / 0 failed (208.1s)；`apps/desktop` npm ci + npm run build 产物 158.10 kB (vite)。元数据对齐验证通过。
+- 11:03 PyInstaller sidecar 构建：`uv run python scripts/build_sidecar.py` 生成 `apps/desktop/src-tauri/binaries/mmagent-sidecar-x86_64-pc-windows-msvc.exe` (40.5MB)，`--help` 验证通过 (exit code 0)。
+- 11:13 独立科学计算受管 Python Runtime：修复 `scripts/build_managed_runtime.py` 在存在 local .venv 时的 `uv python find` 隔离路径，打入 CPython 3.11.16 + 39 个数模科学包；`apps/desktop/src-tauri/resources/runtime/python.exe` import 验证输出 `managed-runtime-ok`，生成 `MMAGENT_RUNTIME.json`。
+- 12:01 MSVC Build Tools 安装：下载官方 vs_BuildTools.exe，用户 UAC 授权后以 `--installPath D:\dev\msvc --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --wait --norestart` 安装至 `D:\dev\msvc` (v17.14.37710.0, cl 19.44.35229, link 14.44.35229, MSBuild 17.14.60, Windows SDK 10.0.26100.0)；vcvars64.bat 初始化环境后 cl/link/msbuild/rustc 1.98.1 验证通过。
+- 12:21 Tauri Release 构建与 NSIS 打包：`apps/desktop` 执行 `npm run tauri -- build --bundles nsis`，生成：
+  - Release 二进制：`apps/desktop/src-tauri/target/release/mmagent-desktop.exe` (12,878,336 字节)
+  - NSIS 安装包：`apps/desktop/src-tauri/target/release/bundle/nsis/MM-Agent Desktop_1.0.0-rebuild.1_x64-setup.exe` (158,394,058 字节，内含受管 Python 科学栈与 Sidecar)。
+- 12:22 隔离静默安装验证：静默安装至 `D:\dev\MM-Agent-Desktop-release-smoke`，安装器 ExitCode = 0。安装目录中 mmagent-desktop.exe、mmagent-sidecar.exe、runtime/python.exe、uninstall.exe 完备。运行安装版受管 Python 执行科学库 import 验证，输出 `installed-runtime-ok`。
+- 12:23 宿主 Python 隔离启动 Smoke 验证：在剥离一切开发态 Python 环境变量 (PATH 仅留 Windows 系统目录，清空 MMAGENT_PYTHON, PYTHONPATH, VIRTUAL_ENV) 的隔离子环境中运行 `mmagent-desktop.exe --startup-smoke`，成功完成随机 loopback token 分配、受管 Python sidecar 启动、带鉴权 `/health` 探活与优雅退出，ExitCode = 0。
+- 12:23 孤儿进程检查：Win32_Process 全局扫描确认无任何残留的 mmagent-desktop.exe / mmagent-sidecar*.exe / runtime/python.exe 孤儿进程。
+- 12:25 Gate 决议：Windows Product Release Package Gate = PASS；Source/Pipeline Gate = GO；整体 Product Release Gate = PARTIAL / HOLD（待办：Installed Live Cancellation Gate、Real Provider Smoke、CI 决议、偏差最终确认）。
+

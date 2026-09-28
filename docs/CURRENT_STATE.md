@@ -63,7 +63,6 @@ FIDELITY_MATRIX has been updated to reflect current state.
 
 ### Blocked
 
-- MSVC Build Tools (needs UAC elevation, user must approve)
 - Real-provider smoke (needs API key from user)
 
 
@@ -351,13 +350,50 @@ files clean; fake keys are clearly test-only.
 
 - **Source/Pipeline Gate = GO** — no known open source-level P0/P1 from Rounds 1-4 plus
   the final gate findings.
+- **Windows Package Gate = PASS** — release packaging, NSIS installer, silent install,
+  and developer-Python-independent startup smoke fully validated locally.
 - **A12 → MATCH** (producer + exact consumption + G5 fail-closed + S6 delivery disclosure,
   all with focused tests). A17/A20/B9 remain PARTIAL (parity audits / P2-1 invariants) and
   must not be force-promoted.
-- **Overall Product Release Gate = HOLD** — remaining external evidence:
-  1. current-head Windows release build (MSVC/Tauri/NSIS);
-  2. NSIS install/startup smoke;
-  3. installed-product live cancellation/process-tree proof;
-  4. real-provider smoke with a user credential;
-  5. current-head CI evidence or an explicit ADR replacing that acceptance rule;
-  6. explicit acceptance of remaining fidelity deviations.
+- **Overall Product Release Gate = PARTIAL / HOLD** — remaining external evidence:
+  1. installed-product live cancellation/process-tree proof;
+  2. real-provider smoke with a user credential;
+  3. current-head CI evidence or an explicit ADR replacing that acceptance rule;
+  4. explicit acceptance of remaining fidelity deviations.
+
+## Windows Product Release Package Gate — 2026-09-28 — PASS
+
+All pre-packaging checks, build steps, installers, and runtime isolations passed locally:
+
+- **Source regression**:
+  - `uv run ruff check .`: clean
+  - `uv run pytest -q`: 451 passed / 0 failed (208.1s)
+  - `npm ci` + `npm run build`: green (vite 158.10 kB)
+  - Version metadata: `1.0.0-rebuild.1` verified consistent across package.json, package-lock.json, Cargo.toml, Cargo.lock, tauri.conf.json.
+- **Toolchain & System**:
+  - MSVC Build Tools: installed to `D:\dev\msvc` (version 17.14.37710.0, toolset 14.44.35207, cl 19.44.35229, link 14.44.35229.0, MSBuild 17.14.60.43110)
+  - Windows SDK: 10.0.26100.0 (`C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64\kernel32.Lib`)
+  - WebView2: Evergreen Runtime 153.0.4234.48 available
+  - Rust target: `x86_64-pc-windows-msvc` (rustc 1.98.1)
+- **PyInstaller Sidecar**:
+  - Built: `apps/desktop/src-tauri/binaries/mmagent-sidecar-x86_64-pc-windows-msvc.exe` (40,493,610 bytes)
+  - Smoke: `--help` returned exit code 0.
+- **Managed Scientific Python Runtime**:
+  - Relocatable distribution: CPython 3.11.16 + 39 scientific packages (numpy, pandas, scipy, matplotlib, scikit-learn, sympy, statsmodels, openpyxl, xlrd, python-docx, pypdf, pymupdf, pillow, networkx, pydantic, etc.)
+  - Manifest: `apps/desktop/src-tauri/resources/runtime/MMAGENT_RUNTIME.json` (387 bytes)
+  - Runtime import smoke: `apps/desktop/src-tauri/resources/runtime/python.exe` verified -> `managed-runtime-ok`
+- **Tauri Release & NSIS Bundle**:
+  - Release binary: `apps/desktop/src-tauri/target/release/mmagent-desktop.exe` (12,878,336 bytes, 2026-09-28 12:21:41)
+  - NSIS installer: `apps/desktop/src-tauri/target/release/bundle/nsis/MM-Agent Desktop_1.0.0-rebuild.1_x64-setup.exe` (158,394,058 bytes, 2026-09-28 12:21:40)
+- **Silent Installation**:
+  - Target directory: `D:\dev\MM-Agent-Desktop-release-smoke`
+  - Exit code: 0
+  - Installed artifacts confirmed: `mmagent-desktop.exe`, `mmagent-sidecar.exe`, `runtime/python.exe`, `runtime/MMAGENT_RUNTIME.json`, `uninstall.exe`.
+  - Installed runtime verification: python imports verified -> `installed-runtime-ok`
+- **Developer-Python-Independent Startup**:
+  - Launched in isolated child process with system-only PATH (`C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\`), and with `MMAGENT_PYTHON`, `PYTHONPATH`, and `VIRTUAL_ENV` completely purged.
+  - Command: `mmagent-desktop.exe --startup-smoke`
+  - Result: Exit code 0 (loopback token generated, sidecar spawned with bundled Python, `/health` endpoint verified, clean exit).
+- **Orphan Process Check**:
+  - Win32_Process inspection across `mmagent-desktop.exe`, `mmagent-sidecar*.exe`, `runtime/python.exe`: 0 orphan processes found.
+

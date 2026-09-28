@@ -6,16 +6,18 @@
 |---|---|
 | Repository | `wghEla/MM-Agent-Desktop` |
 | Branch | `gpt/fidelity-rebuild` |
-| Last locally verified HEAD | `c4a38cbfa468a7d406306b36d16dcf49720368ca` |
-| Verified evidence | 448 passed / 0 failed; Ruff clean; frontend Vite build green; secret scan clean |
-| Current remote state | final source-gate patches after `c4a38cb`; local micro-regression pending |
+| Last locally verified HEAD | `8ba323149a35c77166eba2359e3829f0dd0f7a1d` |
+| Verified evidence | 451 passed / 0 failed; Ruff clean; frontend Vite build green; secret scan clean; Windows Package Gate PASS |
+| Current state | Source/Pipeline Gate = GO; Windows Package Gate = PASS; Product Release Gate = PARTIAL / HOLD |
 | Windows | 11 (10.0.26200 x64) |
-| Python | 3.11.9 (uv-managed .venv) |
+| Python | 3.11.9 (uv-managed .venv) + 3.11.16 (bundled relocatable runtime) |
 | Node/npm | v24.18.0 / 11.16.0 |
-| Rust | 1.98.1 |
+| Rust | 1.98.1 (target: x86_64-pc-windows-msvc) |
 | XeLaTeX | TeX Live 2026 available |
 | MATLAB | R2026a available |
-| MSVC Build Tools | BLOCKED by UAC/admin approval |
+| MSVC Build Tools | `D:\dev\msvc` (v17.14.37710.0, cl 19.44.35229, link 14.44.35229, MSBuild 17.14.60) |
+| Windows SDK | 10.0.26100.0 (`C:\Program Files (x86)\Windows Kits\10`) |
+| WebView2 | Evergreen Runtime 153.0.4234.48 available |
 
 ## External review status
 
@@ -88,27 +90,26 @@ Still intentionally PARTIAL / external:
 ## Product-release blockers
 
 The repository's own acceptance rule still prevents calling the whole product complete
-until current-head release evidence is available.
+until all external gates are satisfied.
+
+Package Gate status: **PASS**
+- MSVC Build Tools installed at `D:\dev\msvc`
+- Tauri release binary built: `apps/desktop/src-tauri/target/release/mmagent-desktop.exe` (12.87 MB)
+- NSIS installer generated: `apps/desktop/src-tauri/target/release/bundle/nsis/MM-Agent Desktop_1.0.0-rebuild.1_x64-setup.exe` (158.39 MB)
+- Silent install to `D:\dev\MM-Agent-Desktop-release-smoke`: exit code 0
+- Installed runtime smoke: `installed-runtime-ok`
+- Isolated startup smoke (`mmagent-desktop.exe --startup-smoke` without developer Python/paths): exit code 0
+- Orphan process check: 0 orphan processes
 
 Outstanding external gates:
 
-1. MSVC Build Tools installation / UAC approval.
-2. Current-head Tauri release build.
-3. Current-head NSIS installer build + install/startup smoke without developer Python.
-4. Installed-product cancellation during a live external tool / process-tree cleanup proof.
-5. Real-provider smoke using a user-supplied credential through Provider Settings.
-6. Current-head CI evidence if the project keeps CI as a mandatory acceptance criterion,
+1. Installed-product cancellation during a live external tool / process-tree cleanup proof.
+2. Real-provider smoke using a user-supplied credential through Provider Settings.
+3. Current-head CI evidence if the project keeps CI as a mandatory acceptance criterion,
    or an explicit documented decision replacing that criterion.
-
-Historical CI #174 proves an older head could build/install/start successfully, but it is
-not current-head release proof.
+4. Explicit acceptance of remaining fidelity deviations.
 
 ## Next action
 
-Run only the final local micro-regression for the post-`c4a38cb` S6/delivery patches.
-Do not start MSVC, real credentials, tagging, or main merge until that is green.
-
-After the micro-regression is green:
-- source/pipeline layer may be considered to have no known open P0/P1 from review rounds;
-- proceed to Windows package validation and then real-provider smoke;
-- do not continue indefinite low-value fidelity polishing before those product gates.
+Proceed to Installed Live Cancellation Gate, followed by Real Provider Smoke.
+Do not tag, merge main, or run CI without explicit user direction.
