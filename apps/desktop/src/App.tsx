@@ -1,4 +1,5 @@
 import React, { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import {
   backend,
@@ -9,6 +10,9 @@ import {
 } from "./api";
 import { ArtifactViewer, ImportPanel } from "./WorkspacePanels";
 import { StageRail } from "./StageRail";
+
+const pickFolderDialog = () =>
+  openDialog({ directory: true, multiple: false, title: "选择工作区文件夹" });
 
 const protocolDefaults: Record<string, string> = {
   openai_chat: "https://api.openai.com/v1",
@@ -452,6 +456,25 @@ function ProjectPanel({
   const [root, setRoot] = useState("");
   const [name, setName] = useState("数学建模项目");
   const [profile, setProfile] = useState("标准");
+  const [pickerError, setPickerError] = useState("");
+
+  async function pickFolder() {
+    setPickerError("");
+    try {
+      const picked = await pickFolderDialog();
+      if (typeof picked === "string" && picked) {
+        setRoot(picked);
+        const folderName = picked.split(/[\\/]/).filter(Boolean).pop() ?? "";
+        if (folderName && (!name.trim() || name === "数学建模项目")) {
+          setName(folderName);
+        }
+      }
+    } catch (err) {
+      setPickerError(
+        `原生文件夹选择器不可用（${err instanceof Error ? err.message : String(err)}）；请使用高级：手动路径。`,
+      );
+    }
+  }
 
   return (
     <section className="card">
@@ -459,10 +482,19 @@ function ProjectPanel({
       {project && (
         <p className="muted mono">{project.root_path}</p>
       )}
-      <div className="field">
-        <label>工作区路径</label>
-        <input value={root} onChange={(e) => setRoot(e.target.value)} placeholder="D:\\MMProjects\\2026-C" />
-      </div>
+      <button
+        className="primary picker-button"
+        disabled={busy}
+        onClick={() => void pickFolder()}
+      >
+        浏览选择工作区文件夹…
+      </button>
+      {pickerError && <p className="error">{pickerError}</p>}
+      {root && (
+        <p className="muted mono picker-selected" title={root}>
+          已选择：{root}
+        </p>
+      )}
       <div className="field">
         <label>项目名</label>
         <input value={name} onChange={(e) => setName(e.target.value)} />
@@ -490,6 +522,15 @@ function ProjectPanel({
           打开
         </button>
       </div>
+      <details className="advanced-settings">
+        <summary>高级：手动路径</summary>
+        <div className="advanced-body">
+          <div className="field">
+            <label>工作区路径</label>
+            <input value={root} onChange={(e) => setRoot(e.target.value)} placeholder="D:\\MMProjects\\2026-C" />
+          </div>
+        </div>
+      </details>
     </section>
   );
 }

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { backend, type ProjectView } from "./api";
 
@@ -24,6 +25,29 @@ export function ImportPanel({ project }: { project: ProjectView }) {
   const [sources, setSources] = useState("");
   const [result, setResult] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pickerError, setPickerError] = useState("");
+
+  async function pickFiles() {
+    setPickerError("");
+    try {
+      const picked = await openDialog({
+        multiple: true,
+        title: "选择要导入的题目 / 附件文件",
+      });
+      const paths = Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
+      if (paths.length) {
+        setSources((current) => {
+          const lines = current.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+          const merged = [...lines, ...paths.filter((p) => !lines.includes(p))];
+          return merged.join("\n");
+        });
+      }
+    } catch (err) {
+      setPickerError(
+        `原生文件选择器不可用（${err instanceof Error ? err.message : String(err)}）；可手动填写路径。`,
+      );
+    }
+  }
 
   async function submit() {
     const paths = sources
@@ -67,6 +91,10 @@ export function ImportPanel({ project }: { project: ProjectView }) {
           rows={4}
         />
       </div>
+      <button disabled={busy} onClick={() => void pickFiles()}>
+        浏览选择文件…
+      </button>
+      {pickerError && <p className="error">{pickerError}</p>}
       <button className="primary" disabled={busy || !sources.trim()} onClick={() => void submit()}>
         {busy ? "导入中…" : "导入"}
       </button>

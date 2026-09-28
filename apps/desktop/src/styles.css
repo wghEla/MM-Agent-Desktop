@@ -1057,6 +1057,15 @@ button.danger.subtle {
 
 .advanced-body { padding: 0 2px 12px; }
 
+.picker-button { width: 100%; margin: 4px 0 10px; }
+.picker-selected {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  margin: -4px 0 6px;
+}
+
 .capability-options {
   display: flex;
   flex-wrap: wrap;
