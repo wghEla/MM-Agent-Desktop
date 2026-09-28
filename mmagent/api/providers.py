@@ -329,7 +329,11 @@ def build_provider(
             profile.base_url, key, test_model=profile.model
         )
     elif profile.protocol == "openai_responses":
-        inner = OpenAIResponsesProvider(profile.base_url, key)
+        inner = OpenAIResponsesProvider(
+            profile.base_url,
+            key,
+            test_model=profile.model,
+        )
     elif profile.protocol == "anthropic_messages":
         inner = AnthropicMessagesProvider(
             profile.base_url,
@@ -338,7 +342,11 @@ def build_provider(
             test_model=profile.model,
         )
     elif profile.protocol == "gemini":
-        inner = GeminiProvider(profile.base_url, key)
+        inner = GeminiProvider(
+            profile.base_url,
+            key,
+            test_model=profile.model,
+        )
     elif profile.protocol == "openai_compatible":
         models_path_raw = extra.get("models_path", "/models")
         inner = OpenAICompatibleProvider(
