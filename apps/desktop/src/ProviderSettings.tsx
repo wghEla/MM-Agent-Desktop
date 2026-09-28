@@ -91,11 +91,17 @@ function providerExtra(form: ProviderFormState) {
   if (form.protocol !== "openai_compatible") {
     return { ...form.baseExtra };
   }
+  const authStyle =
+    form.authMode === "none"
+      ? "none"
+      : form.authStyle === "none"
+        ? "bearer"
+        : form.authStyle;
   return {
     ...form.baseExtra,
     image_input: form.imageInput,
     reasoning_effort: form.reasoningEffort,
-    auth_style: form.authStyle,
+    auth_style: authStyle,
     completions_path: form.completionsPath || "/chat/completions",
     models_path: form.modelsPath,
   };
@@ -597,15 +603,21 @@ export function ProviderSettings({
                 <div className="field">
                   <label>Auth style</label>
                   <select
-                    value={form.authStyle}
+                    value={form.authMode === "none" ? "none" : form.authStyle === "none" ? "bearer" : form.authStyle}
+                    disabled={form.authMode === "none"}
                     onChange={(event) => setForm((current) => ({
                       ...current,
                       authStyle: event.target.value as ProviderFormState["authStyle"],
                     }))}
                   >
-                    <option value="bearer">Bearer</option>
-                    <option value="x-api-key">x-api-key</option>
-                    <option value="none">None</option>
+                    {form.authMode === "none" ? (
+                      <option value="none">None</option>
+                    ) : (
+                      <>
+                        <option value="bearer">Bearer</option>
+                        <option value="x-api-key">x-api-key</option>
+                      </>
+                    )}
                   </select>
                 </div>
                 <div className="field">
