@@ -273,6 +273,82 @@ def test_provider_profile_rejects_unsafe_or_non_http_base_urls(
         handle.workspace.db.close()
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("models_path", "https://other.invalid/models"),
+        ("models_path", "//other.invalid/models"),
+        ("models_path", "/models?token=must-not-persist"),
+        ("completions_path", "https://other.invalid/chat"),
+        ("completions_path", "/chat/completions#must-not-persist"),
+        ("completions_path", ""),
+    ],
+)
+def test_provider_profile_rejects_unsafe_compatible_endpoint_paths(
+    tmp_path,
+    field,
+    value,
+) -> None:
+    handle = create_project(
+        tmp_path / ("proj-path-" + field + "-" + str(abs(hash(value)))),
+        name="providers-path-boundary",
+        profile="标准",
+    )
+    store = MemoryCredentialStore()
+    try:
+        with pytest.raises(ValueError):
+            create_provider_profile(
+                handle.workspace.db,
+                store,
+                name="Unsafe Path",
+                protocol="openai_compatible",
+                base_url="https://example.invalid/v1",
+                model="model-x",
+                extra={field: value},
+            )
+        serialized = handle.workspace.db.path.read_bytes()
+        assert b"must-not-persist" not in serialized
+    finally:
+        handle.workspace.db.close()
+
+
+def test_provider_profile_normalizes_safe_compatible_endpoint_paths(tmp_path) -> None:
+    handle = create_project(
+        tmp_path / "proj-path-safe",
+        name="providers-path-safe",
+        profile="标准",
+    )
+    store = MemoryCredentialStore()
+    try:
+        profile = create_provider_profile(
+            handle.workspace.db,
+            store,
+            name="Safe Paths",
+            protocol="openai_compatible",
+            base_url="https://example.invalid/v1",
+            model="model-x",
+            extra={
+                "models_path": "catalog/models",
+                "completions_path": "chat/completions",
+            },
+        )
+        assert profile.extra["models_path"] == "/catalog/models"
+        assert profile.extra["completions_path"] == "/chat/completions"
+
+        disabled = create_provider_profile(
+            handle.workspace.db,
+            store,
+            name="No Models",
+            protocol="openai_compatible",
+            base_url="https://example.invalid/v1",
+            model="model-y",
+            extra={"models_path": ""},
+        )
+        assert disabled.extra["models_path"] is None
+    finally:
+        handle.workspace.db.close()
+
+
 def test_provider_profile_accepts_https_and_local_http_base_urls(tmp_path) -> None:
     store = MemoryCredentialStore()
 
