@@ -1,6 +1,6 @@
 # LOCAL_HANDOFF_REPORT
 
-Last updated: 2026-09-28 after UI v2 Phase-2 local validation.
+Last updated: 2026-09-28 after UI v2 Phase-3 source review.
 
 ## Source of truth
 
@@ -8,12 +8,11 @@ Last updated: 2026-09-28 after UI v2 Phase-2 local validation.
 |---|---|
 | Repository | `wghEla/MM-Agent-Desktop` |
 | Branch | `gpt/fidelity-rebuild` |
-| Source HEAD under validation | `3d83004d43ae64dd30949d5ea5d1abfda0bc0d6d` (phase-2 source) |
-| Final tested state | `3d83004` + phase-2 local fix commits (sidecar OSError→409/400 detail) |
-| Verified regression | 466 passed / 0 failed; Ruff clean; frontend build green |
-| Installed smoke | NSIS rebuilt/reinstalled; `--startup-smoke` exit 0; 0 orphan |
-| UI v2 Phase 1 | PASS (`ffe1793` baseline) |
-| UI v2 Phase 2 | PASS (this round) |
+| Last fully locally verified product/UI baseline | `3fbc6bc887151051c56b7b8ece31e3fe2d7a8253` |
+| Verified regression at that baseline | 466 passed / 0 failed; Ruff clean; frontend build green |
+| Installed smoke at that baseline | NSIS rebuilt/reinstalled; `--startup-smoke` exit 0; 0 orphan |
+| Current remote | UI v2 Phase-3 Provider UX source implementation after the verified baseline |
+| Phase-3 evidence state | SOURCE COMPLETE / LOCAL VALIDATION PENDING |
 | Product release | not yet final GO |
 
 ## Gate status
@@ -27,6 +26,7 @@ Last updated: 2026-09-28 after UI v2 Phase-2 local validation.
 | Real Provider | CONDITIONAL PASS |
 | UI v2 Phase 1 + native picker/recent workspace | PASS |
 | UI v2 Phase 2 (tree/onboarding/dialogs) | PASS |
+| UI v2 Phase 3 (Provider UX) | SOURCE COMPLETE / LOCAL VALIDATION PENDING |
 
 ## UI v2 verified state
 
@@ -93,44 +93,45 @@ The remaining Real Provider item is one ceremonial full-green G0 run using a str
 more stable model/provider. The prior Groq run was limited by model schema variance and
 free-tier rate limiting; no open product defect is implicated.
 
-## External-review cleanup after ffe1793
+## UI v2 Phase-3 source handoff
 
-GPT external review found one reproducibility issue and one documentation-truth issue:
+Phase 2 is fully locally validated. Current unverified source work is Phase 3 only.
 
-1. Tauri JS packages had caret ranges even though local validation proved release builds
-   reject incompatible JS/Rust minor combinations. The verified JS minors are now pinned
-   exactly in package.json/package-lock.json.
-2. ZCode created a second `docs/LOCAL_HANDOFF_REPORT.md` while this root file already
-   existed. This root file remains the canonical handoff; the duplicate is removed.
+Implemented after the verified `3fbc6bc` baseline:
 
-These cleanup edits are source-only until the next local `npm ci && npm run build`.
+- provider catalog + capability metadata;
+- model discovery/manual fallback;
+- configured-model connection validation;
+- pre-save Test Connection with ephemeral credentials only;
+- Provider create/edit/delete;
+- Credential Manager replace/clear;
+- Compatible capability/auth/path configuration;
+- endpoint/protocol credential scoping;
+- transient/persisted URL/header/path validation;
+- fail-closed credential deletion;
+- OAuth extension registry contract with no advertised/registered OAuth provider.
 
-## Phase-2 source work after the verified ffe1793 baseline
+Security invariants added in this round:
 
-Implemented on the current remote, but not yet locally validated:
+1. a saved API key cannot follow a Provider to a different protocol/Base URL;
+2. `auth_style=none` cannot coexist with a saved/transient Compatible credential;
+3. secret-bearing custom headers are rejected;
+4. Base URLs cannot contain userinfo/query/fragment credentials;
+5. Compatible endpoint paths must remain relative to the configured provider host;
+6. Discover Models never performs a generation fallback;
+7. pre-save Test Connection does not persist the profile/key;
+8. Windows credential deletion errors other than NOT_FOUND fail closed before SQLite drops
+   the reference.
 
-- bounded authenticated Runtime-backed workspace file tree;
-- workspace file preview through the existing Artifact dock;
-- automatic file-tree/artifact refresh after imports and during active runs;
-- first-run onboarding (工作区 → 模型 → 材料);
-- dedicated native-picker create/open dialogs with in-dialog backend errors;
-- remove-from-recent bookmark action that never deletes a workspace;
-- focused sidecar integration test for tree/read scope and .mmagent denial;
-- exact pinning of the Tauri JS minors already proven compatible with the release build.
-
-Runtime/Gate/Credential semantics were not intentionally changed.
+OAuth remains a **non-operational extension point**. Do not show an account-login button
+until a documented third-party flow is implemented under MM-Agent's own registered client.
 
 ## Remaining product work
 
-1. ZCode local validation of the current Phase-2 source HEAD.
-2. UI v2 Phase 3:
-   - provider preset/catalog polish;
-   - model discovery / manual fallback;
-   - capability-driven fields;
-   - formal OAuth extension point (only where compliant).
-3. One stronger-model / ZCode API real-provider green-G0 run.
-4. CI acceptance decision.
-5. Explicit acceptance or closure of remaining low-risk fidelity deviations.
+1. ZCode local Windows validation of UI v2 Phase 3 current HEAD.
+2. One stronger-model / ZCode API real-provider full-green G0 run.
+3. CI acceptance decision.
+4. Explicit acceptance or closure of remaining low-risk fidelity deviations.
 
 Do not reopen broad Source/Pipeline fidelity review unless a concrete defect appears.
 
