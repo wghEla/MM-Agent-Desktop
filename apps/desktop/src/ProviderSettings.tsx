@@ -101,11 +101,14 @@ function providerExtra(form: ProviderFormState) {
   };
 }
 
-function numberOrNull(value: string): number | null {
+function positiveIntOrNull(value: string, label: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
   const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(label + " 必须是正整数");
+  }
+  return parsed;
 }
 
 function capabilityPills(capabilities: ProviderCapabilities) {
@@ -304,6 +307,16 @@ export function ProviderSettings({
 
   async function createProvider(event: FormEvent) {
     event.preventDefault();
+    setLocalError("");
+    let maxOutputTokens: number | null;
+    let timeoutS: number;
+    try {
+      maxOutputTokens = positiveIntOrNull(form.maxOutputTokens, "Max output tokens");
+      timeoutS = positiveIntOrNull(form.timeoutS, "Timeout") ?? 300;
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : String(err));
+      return;
+    }
     const ok = await onGuarded(async () => {
       await backend("POST", "/projects/" + project.id + "/providers", {
         name: form.name,
@@ -312,8 +325,8 @@ export function ProviderSettings({
         model: form.model,
         api_key: form.authMode === "api_key" ? form.apiKey || null : null,
         reasoning: form.reasoning || null,
-        max_output_tokens: numberOrNull(form.maxOutputTokens),
-        timeout_s: numberOrNull(form.timeoutS) ?? 300,
+        max_output_tokens: maxOutputTokens,
+        timeout_s: timeoutS,
         extra: providerExtra(form),
       });
       await onChanged();
@@ -330,6 +343,16 @@ export function ProviderSettings({
   async function saveEdit(event: FormEvent) {
     event.preventDefault();
     if (!selected) return;
+    setLocalError("");
+    let maxOutputTokens: number | null;
+    let timeoutS: number;
+    try {
+      maxOutputTokens = positiveIntOrNull(form.maxOutputTokens, "Max output tokens");
+      timeoutS = positiveIntOrNull(form.timeoutS, "Timeout") ?? 300;
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : String(err));
+      return;
+    }
     const ok = await onGuarded(async () => {
       await backend(
         "POST",
@@ -340,8 +363,8 @@ export function ProviderSettings({
           base_url: form.baseUrl,
           model: form.model,
           reasoning: form.reasoning || null,
-          max_output_tokens: numberOrNull(form.maxOutputTokens),
-          timeout_s: numberOrNull(form.timeoutS) ?? 300,
+          max_output_tokens: maxOutputTokens,
+          timeout_s: timeoutS,
           extra: providerExtra(form),
         },
       );
@@ -489,6 +512,9 @@ export function ProviderSettings({
             <div className="field">
               <label>Timeout (s)</label>
               <input
+                type="number"
+                min={1}
+                step={1}
                 inputMode="numeric"
                 value={form.timeoutS}
                 onChange={(event) => setForm((current) => ({ ...current, timeoutS: event.target.value }))}
@@ -532,6 +558,9 @@ export function ProviderSettings({
             <div className="field">
               <label>Max output tokens</label>
               <input
+                type="number"
+                min={1}
+                step={1}
                 inputMode="numeric"
                 value={form.maxOutputTokens}
                 onChange={(event) => setForm((current) => ({ ...current, maxOutputTokens: event.target.value }))}
