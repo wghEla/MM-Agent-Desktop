@@ -601,3 +601,85 @@ async def test_openai_chat_connection_models_200_no_fallback():
         assert all(r.method == "GET" for r in captures)
     finally:
         await client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider_factory", "path_suffix"),
+    [
+        (
+            lambda client: OpenAIResponsesProvider(
+                "https://api.test/v1", lambda: "secret-redact-me", client=client
+            ),
+            "/responses",
+        ),
+        (
+            lambda client: AnthropicMessagesProvider(
+                "https://api.test", lambda: "secret-redact-me", client=client, test_model="claude-test"
+            ),
+            "/v1/messages",
+        ),
+        (
+            lambda client: GeminiProvider(
+                "https://api.test", lambda: "secret-redact-me", client=client
+            ),
+            "/v1beta/models/m:generateContent",
+        ),
+    ],
+)
+async def test_native_provider_4xx_error_never_echoes_api_key(
+    provider_factory,
+    path_suffix,
+):
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith(path_suffix)
+        return httpx.Response(400, text="bad credential secret-redact-me")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = provider_factory(client)
+    try:
+        with pytest.raises(ProviderError) as excinfo:
+            await provider.generate(
+                [NormalizedMessage(role="user", content=[TextPart(text="hi")])],
+                [],
+                model="m",
+            )
+        assert "secret-redact-me" not in str(excinfo.value)
+        assert "REDACTED" in str(excinfo.value)
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_anthropic_connection_probe_uses_configured_model() -> None:
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "msg_test",
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "ok"}],
+                "model": "claude-configured",
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AnthropicMessagesProvider(
+        "https://api.test",
+        lambda: "test-key",
+        client=client,
+        test_model="claude-configured",
+    )
+    try:
+        result = await provider.test_connection()
+        assert result["ok"] is True
+        body = json.loads(captures[0].content)
+        assert body["model"] == "claude-configured"
+    finally:
+        await client.aclose()
