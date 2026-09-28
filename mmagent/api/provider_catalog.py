@@ -15,6 +15,7 @@ import httpx
 
 from mmagent.api.provider_oauth import DEFAULT_OAUTH_REGISTRY
 from mmagent.api.provider_validation import (
+    validate_provider_auth_binding,
     validate_provider_base_url,
     validate_provider_extra,
 )
@@ -299,6 +300,11 @@ async def discover_models(
     """
     base_url = validate_provider_base_url(base_url)
     extra = validate_provider_extra(extra)
+    validate_provider_auth_binding(
+        protocol,
+        has_credential=bool(api_key),
+        extra=extra,
+    )
     secrets = _discovery_secrets(api_key, extra)
     headers = _discovery_headers(protocol, api_key, extra)
     url = _models_url(protocol, base_url, extra)
