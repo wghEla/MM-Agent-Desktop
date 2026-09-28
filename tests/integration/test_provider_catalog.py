@@ -130,6 +130,67 @@ async def test_discover_gemini_models_strips_prefix_and_filters_non_generate() -
     assert result["models"] == ["gemini-a"]
 
 
+def test_sidecar_provider_preflight_does_not_persist_profile_or_credential(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    store = MemoryCredentialStore()
+    app = create_app(token=TOKEN, credentials=store)
+    seen: list[dict] = []
+
+    class FakeProvider:
+        async def test_connection(self):
+            return {"ok": True, "detail": "preflight-ok"}
+
+        async def aclose(self):
+            return None
+
+    def fake_build_provider_from_config(**kwargs):
+        seen.append(kwargs)
+        return FakeProvider()
+
+    monkeypatch.setattr(
+        sidecar_server,
+        "build_provider_from_config",
+        fake_build_provider_from_config,
+    )
+
+    with TestClient(app) as client:
+        project = client.post(
+            "/projects",
+            headers=_auth(),
+            json={"root": str(tmp_path / "proj-preflight"), "name": "Preflight"},
+        )
+        assert project.status_code == 200
+        project_id = project.json()["id"]
+
+        secret = "test-preflight-secret"
+        response = client.post(
+            "/providers/test-config",
+            headers=_auth(),
+            json={
+                "protocol": "openai_compatible",
+                "base_url": "https://relay.invalid/v1",
+                "model": "model-a",
+                "api_key": secret,
+                "timeout_s": 20,
+                "extra": {"auth_style": "bearer"},
+            },
+        )
+        assert response.status_code == 200
+        assert response.json() == {"ok": True, "detail": "preflight-ok"}
+        assert secret not in response.text
+        assert seen[-1]["api_key"] == secret
+
+        listed = client.get(
+            f"/projects/{project_id}/providers",
+            headers=_auth(),
+        )
+        assert listed.status_code == 200
+        assert listed.json() == []
+        assert store.values == {}
+
+
 def test_sidecar_provider_catalog_crud_and_credential_boundary(
     tmp_path,
     monkeypatch,
