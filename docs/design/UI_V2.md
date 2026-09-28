@@ -410,9 +410,42 @@ on a real Windows/Tauri runtime. Report: `docs/reviews/v1.0.0-rebuild-ui-v2-loca
   (e.g. `@tauri-apps/api` 2.12 vs crate 2.11) — keep them on the same minor.
 - The first local-validation round covered Phase 1 plus native picker/recent bookmarks.
 - Phase 2 is fully locally validated; see the Phase-2 record below.
-- Phase 3 Provider UX is source-complete after the Phase-2 validated baseline and awaits
-  its own Windows/Tauri/Credential Manager validation.
+- Phase 3 Provider UX was locally validated on 2026-09-28; see the Phase-3 record below.
 - Nothing here declares Product Release GO.
+
+## Phase-3 Provider UX local validation record (2026-09-28, Windows)
+
+Validated on a real Windows/Tauri dev runtime at source HEAD `feae95f` (GPT-5.6 Sol Phase-3
+source round), report `docs/reviews/v1.0.0-rebuild-ui-v2-phase3-local-validation.md`,
+evidence `docs/runs/ui-v2-phase3/` (17 screenshots + EVIDENCE.md). **UI v2 Phase 3 = PASS
+(local validation); Product Release GO still not declared.**
+
+- Provider Catalog replaces the legacy 配置墙: 7 presets, left list + right detail;
+  capability pills (tool_calling / image_input / reasoning low-medium-high) projected from
+  the Runtime capabilities endpoint; unknown protocol → 400.
+- Fixed presets lock Base URL under Advanced (OpenAI → `https://api.openai.com/v1`);
+  the ZCode preset keeps Base URL / Model ID editable and empty; Compatible supports
+  auth_style=none (key input hidden, keyless save; key+none rejected 400 at Runtime).
+- Model discovery is GET-only with dedup + stable sort and a manual fallback; custom
+  `models_path` round-trips (`/v1/catalog/models`, no `//`); empty path disables discovery.
+  No generation/token burn (relay saw only `GET /models`).
+- Pre-save Test Connection goes through the global `/providers/test-config` ephemeral
+  probe: verdict rendered, nothing persisted (no provider row, 0 Credential Manager
+  entries). Double-clicked Test Connection under a 2 s relay delay produced exactly one
+  request — the probe is single-flight.
+- Credential lifecycle fully exercised: save fake key → CM stores it, UI/SQLite never echo;
+  credential binds to protocol+base_url (edits of either with a saved key → 400; clear →
+  allowed); 清除 Key returns to Keyless; keyless→API-key offers the Bearer / x-api-key
+  chooser and the chosen header is actually transmitted; delete is a two-step confirm with
+  secret-first ordering (winerror-1168 idempotent, others fail-closed).
+- §29 model-existence validation renders in the UI: `/models` 200 with the configured model
+  absent ⇒ visible FAIL 判定 (配置模型不存在或当前账户不可用).
+- Error details redact the API key and custom header values (`***REDACTED***`); unsafe Base
+  URL / endpoint-path forms are all denied; OAuth stays fail-closed (no preset advertises
+  it; footer explains adapters must be formally registered).
+- Visual checklist passed at 1440×900 / 1280×800 / ≈1100×760 logical (200% scale).
+- One test was realigned to the new Runtime semantics (empty `/models` is now FAIL); full
+  regression 526 passed / 0 failed, ruff clean. No Provider-UI source changes were needed.
 
 ## Phase-2 local validation record (2026-09-28, Windows)
 

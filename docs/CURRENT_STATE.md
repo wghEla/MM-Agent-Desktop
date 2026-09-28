@@ -1,11 +1,34 @@
 # CURRENT_STATE — fidelity rebuild on gpt/fidelity-rebuild
 
 Branch: `gpt/fidelity-rebuild`
-HEAD: `3d83004`（UI v2 phase-2 source + source review by GPT-5.6 Sol）+ 本轮 phase-2 本地验证
-修复提交（sidecar FileExists/FileNotFoundError→409/400 detail 映射 + 集成测试）——见
-`docs/reviews/v1.0.0-rebuild-ui-v2-phase2-local-validation.md`
-Tests: **locally verified at this state: 466 passed / 0 failed + Ruff clean + frontend build OK
-+ sidecar/Tauri NSIS repack + silent reinstall + --startup-smoke exit 0 + 0 orphan**
+HEAD: `feae95f`（UI v2 phase-3 Provider UX source + source review by GPT-5.6 Sol）+ 本轮
+phase-3 本地验证提交（`644aae5` 测试对齐 §29 四判语义 + 文档/证据提交）——见
+`docs/reviews/v1.0.0-rebuild-ui-v2-phase3-local-validation.md`
+Tests: **locally verified at this state: 526 passed / 0 failed + Ruff clean + frontend build OK
++ sidecar/Tauri NSIS repack + silent reinstall + --startup-smoke exit 0 + 0 orphan
++ 安装版 fake-credential 往返 + CM 测试凭据清零**
+
+## UI v2 Phase-3 Provider UX local validation (2026-09-28) — PASS（不宣布 Product Release GO）
+
+- 依赖锁定核对（npm api=2.11.1/dialog=2.7.3；crate =2.11.6/=2.3.6/=2.7.3/=2.6.3），未跑任何 update；
+  focused 97 passed；全量 526/0 + Ruff clean。
+- Provider Catalog 7 预设左列表+右详情（无旧"配置墙"）；capability pills 来自 Runtime
+  capabilities 端点（openai_chat: tool_calling/image_input/reasoning low/medium/high；未知协议 400）✓
+- 固定预设 Base URL 锁定（OpenAI→api.openai.com/v1，Advanced 只读）；ZCode 预设空 Base URL/Model
+  可编辑；Compatible auth_style=none 隐藏 Key 输入、keyless 保存 ✓；key+none → Runtime 400 ✓
+- 模型发现 GET-only、去重+稳定排序、manual fallback、0 token 消耗（relay 只见 GET /models）；
+  自定义 models_path 往返（/v1/catalog/models 无 //）；空 path 禁用往返 ✓
+- 预保存 Test Connection 走全局 /providers/test-config：不落 provider 行、0 CM 条目 ✓；
+  2s relay 延迟下双击 Test 仅 1 个请求（single-flight）✓；创建后自动选中 ✓
+- 凭据全生命周期：保存 fake key→CM 存储、UI/SQLite 不回显；凭据绑定 protocol+base_url
+  （有 key 改任一字段→400，清除后放行）；清除→Keyless；keyless→加 Key 出 Bearer/x-api-key
+  选择器且所选 header 实传 relay；删除两步确认 + secret-first（1168 幂等/其他 fail-closed）✓
+- §29 模型存在性校验 UI 可见 FAIL 判定；错误详情脱敏（key/自定义 header→***REDACTED***）；
+  非法 Base URL×5 与 endpoint path×6 全拒；OAuth fail-closed（无预设宣称/无假登录按钮）✓
+- 窗口 1440×900 / 1280×800 / ≈1100×760（200% DPI）全 PASS；证据 `docs/runs/ui-v2-phase3/`
+  （17 张 + EVIDENCE.md）；登记 1 项化妆级偏差（§21 编辑态锁定 UI 截图因 AX 索引漂移未捕获，
+  行为由 API 400 + source review 覆盖）
+- 本轮唯一代码改动 = 测试对齐（models-200 空列表旧语义→新四判参数化）；无 Provider UI 源码修改。
 
 ## UI v2 Phase-2 local validation (2026-09-28) — PASS（不宣布 Product Release GO）
 

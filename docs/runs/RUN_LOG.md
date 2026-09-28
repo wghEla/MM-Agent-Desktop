@@ -178,3 +178,26 @@
   全过。重打包 sidecar+NSIS、静默重装、--startup-smoke=0、0 孤儿。证据
   docs/runs/ui-v2-phase2/ 16 张+EVIDENCE；报告 v1.0.0-rebuild-ui-v2-phase2-local-validation.md。
   UI v2 Phase 2 = PASS；不宣布 Product Release GO。
+- 09-29 UI v2 Phase-3 Provider UX Local Validation（Windows 本机，source HEAD feae95f + 测试
+  对齐 644aae5）：依赖锁定核对（npm api=2.11.1/dialog=2.7.3；crate =2.11.6/=2.3.6/=2.7.3/=2.6.3）
+  未跑任何 update；唯一代码改动 = test_openai_chat_connection_models_200_no_fallback 参数化
+  对齐 §29 四判语义（GET-only/no-fallback 断言保留）；focused 97 passed；全量 526/0 + Ruff
+  clean + vite build 绿。dev 真实 Tauri UI（relay3 127.0.0.1:28911，仅 fake key）：Catalog 7
+  预设+capability pills（Runtime 供给；未知协议 400）；OpenAI 预设 Base URL Advanced 锁定；
+  ZCode 预设空 Base URL/Model 可编辑；Compatible auth_style=none 隐藏 Key、key+none→400；
+  发现模型 GET-only 去重稳定排序+manual fallback+0 token（relay 仅见 GET /models）；自定义
+  models_path 往返（/v1/catalog/models）；空 path 禁用往返；预保存 Test 走全局
+  /providers/test-config 不落 provider 行、0 CM 条目；2s relay 延迟双击 Test 仅 1 请求
+  （single-flight）；创建→自动选中；凭据绑定 protocol+base_url（有 key 改任一→400、清除后
+  放行）；清除→Keyless；keyless→加 Key Bearer/x-api-key 选择器且实传 relay；两步删除+
+  secret-first（1168 幂等）；§29 模型缺失 UI 可见 FAIL 判定；错误脱敏 ***REDACTED***；
+  非法 Base URL×5/endpoint path×6 全拒；OAuth fail-closed（无预设宣称/页脚声明）；窗口
+  1440×900/1280×800/≈1100×760（200% DPI）全过。登记 1 项化妆级偏差（§21 编辑态锁定 UI 截图
+  因 AX 索引漂移未捕获，行为由 API 400+source review 覆盖）。重打包 sidecar+NSIS（非复用）、
+  静默重装 release-smoke、--startup-smoke=0、安装版 fake-credential 往返（新建工作区→
+  Compatible+fake key→强杀重启→has_api_key 持久+checklist ✓→Test ✓ Bearer 实传→两步删除
+  联动 CM 删除→cmdkey 0 条目→正常退出 0 进程）。注：强杀 app 会遗留 sidecar 孤儿至手动
+  清理（正常关窗退出干净，与既往取消/退出行为一致，非 Phase-3 新缺陷，已登记）。
+  证据 docs/runs/ui-v2-phase3/ 18 张+EVIDENCE；报告
+  docs/reviews/v1.0.0-rebuild-ui-v2-phase3-local-validation.md。UI v2 Phase 3 = PASS；
+  不宣布 Product Release GO。

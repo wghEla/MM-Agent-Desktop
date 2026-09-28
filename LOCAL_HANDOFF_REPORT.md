@@ -1,6 +1,6 @@
 # LOCAL_HANDOFF_REPORT
 
-Last updated: 2026-09-28 after UI v2 Phase-3 source review.
+Last updated: 2026-09-28 after UI v2 Phase-3 (Provider UX) Windows local validation.
 
 ## Source of truth
 
@@ -8,12 +8,12 @@ Last updated: 2026-09-28 after UI v2 Phase-3 source review.
 |---|---|
 | Repository | `wghEla/MM-Agent-Desktop` |
 | Branch | `gpt/fidelity-rebuild` |
-| Last fully locally verified product/UI baseline | `3fbc6bc887151051c56b7b8ece31e3fe2d7a8253` |
-| Verified regression at that baseline | 466 passed / 0 failed; Ruff clean; frontend build green |
-| Installed smoke at that baseline | NSIS rebuilt/reinstalled; `--startup-smoke` exit 0; 0 orphan |
-| Current remote | UI v2 Phase-3 Provider UX source implementation after the verified baseline |
-| Phase-3 evidence state | SOURCE COMPLETE / LOCAL VALIDATION PENDING |
-| Product release | not yet final GO |
+| Last fully locally verified HEAD | tip of `gpt/fidelity-rebuild` after the Phase-3 validation commits (`644aae5` test alignment + docs/evidence; source baseline `feae95f`) — see `docs/CURRENT_STATE.md` |
+| Verified regression at that HEAD | 526 passed / 0 failed; Ruff clean; frontend build green |
+| Installed smoke at that HEAD | NSIS rebuilt/reinstalled; `--startup-smoke` exit 0; 0 orphan; installed fake-credential round-trip; CM test credentials cleaned |
+| Current remote | updated by this round's push |
+| Phase-3 evidence state | **LOCAL VALIDATION PASS** |
+| Product release | not yet final GO (Phase 4 open) |
 
 ## Gate status
 
@@ -26,7 +26,30 @@ Last updated: 2026-09-28 after UI v2 Phase-3 source review.
 | Real Provider | CONDITIONAL PASS |
 | UI v2 Phase 1 + native picker/recent workspace | PASS |
 | UI v2 Phase 2 (tree/onboarding/dialogs) | PASS |
-| UI v2 Phase 3 (Provider UX) | SOURCE COMPLETE / LOCAL VALIDATION PENDING |
+| UI v2 Phase 3 (Provider UX) | **PASS** |
+
+## UI v2 Phase-3 local validation summary
+
+Validated at source HEAD `feae95f` on a real Tauri dev runtime against a local scripted
+relay (`127.0.0.1:28911`); only a fake `sk-fake-…-TESTONLY` marker key was ever used, and
+all test credentials were removed from Credential Manager at the end of the round.
+
+Verified: 7-preset Provider Catalog with Runtime capability pills; fixed-preset Base URL
+lock (OpenAI) vs editable ZCode preset; Compatible auth_style=none keyless save (key+none
+→ 400); GET-only model discovery with dedup + stable sort + manual fallback + custom
+`models_path` round-trip; pre-save Test Connection via ephemeral `/providers/test-config`
+(nothing persisted, 0 CM entries); single-flight probes (double-click under 2 s relay
+delay ⇒ exactly one request); create → auto-select; credential bound to protocol+base_url
+(400 on endpoint edits while keyed, allowed after clear); save/clear/replace key with no
+secret echo in UI or SQLite; keyless→API-key Bearer/x-api-key chooser with the chosen
+header actually transmitted; two-step delete with secret-first ordering (1168 idempotent,
+others fail-closed); §29 model-existence FAIL verdict rendered in UI; error redaction
+(`***REDACTED***`); unsafe Base URL / endpoint-path forms denied; OAuth fail-closed; visual
+checklist at 1440×900 / 1280×800 / ≈1100×760 logical (200% scale).
+
+Evidence:
+- `docs/reviews/v1.0.0-rebuild-ui-v2-phase3-local-validation.md`
+- `docs/runs/ui-v2-phase3/` (17 screenshots + EVIDENCE.md)
 
 ## UI v2 verified state
 
@@ -128,7 +151,7 @@ until a documented third-party flow is implemented under MM-Agent's own register
 
 ## Remaining product work
 
-1. ZCode local Windows validation of UI v2 Phase 3 current HEAD.
+1. ~~ZCode local Windows validation of UI v2 Phase 3 current HEAD~~ — done 2026-09-28 (PASS).
 2. One stronger-model / ZCode API real-provider full-green G0 run.
 3. CI acceptance decision.
 4. Explicit acceptance or closure of remaining low-risk fidelity deviations.
