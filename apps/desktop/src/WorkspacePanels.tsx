@@ -103,7 +103,13 @@ export function ImportPanel({ project }: { project: ProjectView }) {
   );
 }
 
-export function ArtifactViewer({ project }: { project: ProjectView }) {
+export function ArtifactViewer({
+  project,
+  requestedPath = null,
+}: {
+  project: ProjectView;
+  requestedPath?: string | null;
+}) {
   const [items, setItems] = useState<ArtifactItem[]>([]);
   const [selected, setSelected] = useState<string>("");
   const [preview, setPreview] = useState<ArtifactPreview | null>(null);
@@ -130,7 +136,7 @@ export function ArtifactViewer({ project }: { project: ProjectView }) {
     try {
       const value = await backend<ArtifactPreview>(
         "POST",
-        `/projects/${project.id}/artifacts/read`,
+        `/projects/${project.id}/workspace/read`,
         { path },
       );
       setPreview(value);
@@ -140,8 +146,15 @@ export function ArtifactViewer({ project }: { project: ProjectView }) {
   }
 
   useEffect(() => {
+    setSelected("");
+    setPreview(null);
     void refresh();
   }, [project.id]);
+
+  useEffect(() => {
+    if (!requestedPath) return;
+    void open(requestedPath);
+  }, [project.id, requestedPath]);
 
   return (
     <section className="card artifact-card">
@@ -170,7 +183,12 @@ export function ArtifactViewer({ project }: { project: ProjectView }) {
         </div>
 
         <div className="artifact-preview">
-          {!preview && <div className="empty">选择左侧产物进行预览。</div>}
+          {preview && (
+            <div className="artifact-preview-path mono" title={preview.path}>
+              {preview.path}
+            </div>
+          )}
+          {!preview && <div className="empty">选择左侧文件或产物进行预览。</div>}
           {preview?.kind === "text" && (
             <pre className="text-preview">{preview.text}</pre>
           )}
