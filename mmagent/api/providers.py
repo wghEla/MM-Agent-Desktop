@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from typing import Any
+
 from mmagent.api.provider_catalog import capability_descriptor
 from mmagent.api.provider_validation import (
     validate_provider_base_url,
