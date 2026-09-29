@@ -76,6 +76,25 @@ class ProblemContract(BaseModel):
     附件清单: list[AttachmentInfo] = Field(default_factory=list)
 
     @model_validator(mode="after")
+    def check_g0_required_semantics(self) -> ProblemContract:
+        """Reject producer artifacts that are guaranteed to fail G0."""
+        if not self.问题:
+            raise ValueError("问题不能为空")
+        for prob in self.问题:
+            if not prob.原文摘录.strip():
+                raise ValueError(f"问{prob.编号} 原文摘录不能为空")
+            if not prob.解读.strip():
+                raise ValueError(f"问{prob.编号} 解读不能为空")
+            if not prob.需求条目:
+                raise ValueError(f"问{prob.编号} 需求条目不能为空")
+        for idx, ambiguity in enumerate(self.歧义裁定, 1):
+            if not ambiguity.裁定.strip():
+                raise ValueError(f"歧义裁定第{idx}条 裁定不能为空")
+            if not ambiguity.理由.strip():
+                raise ValueError(f"歧义裁定第{idx}条 理由不能为空")
+        return self
+
+    @model_validator(mode="after")
     def check_requirement_ids(self) -> ProblemContract:
         """需求号格式与连续性（G0 判据）。"""
         for prob in self.问题:
