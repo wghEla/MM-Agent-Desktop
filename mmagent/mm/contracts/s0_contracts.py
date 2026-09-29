@@ -8,6 +8,18 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, model_validator
 
+PROBLEM_CONTRACT_REQUIRED_TOP_LEVEL_KEYS: tuple[str, ...] = (
+    "赛题",
+    "标题",
+    "问题",
+    "硬约束清单",
+    "歧义裁定",
+    "附件清单",
+)
+
+DATA_ARCHIVE_REQUIRED_TOP_LEVEL_KEYS: tuple[str, ...] = ("条目",)
+
+
 
 class RequirementItem(BaseModel):
     """单条需求（销号依据，最小可验收粒度）。"""
