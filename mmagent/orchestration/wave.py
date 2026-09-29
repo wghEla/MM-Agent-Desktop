@@ -12,7 +12,8 @@ Important semantics:
   cancellation is awaited before a retry can start, preventing old/new copies
   from double-writing the same carriers;
 - programming/runtime exceptions cancel and await peer legs before propagating;
-- externally CANCELLED legs are never retried.
+- externally CANCELLED legs are never retried;
+- provider Retry-After is durably observed and awaited before a retry pass.
 """
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ import asyncio
 import contextvars
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from math import isfinite
 from typing import Generic, TypeVar
 
 from mmagent.mm.config.thresholds import DEFAULT_THRESHOLDS
@@ -52,6 +54,29 @@ class WaveOutcome(Generic[T]):
     end_concurrency: int
     rate_limited_jobs: tuple[str, ...]
     timed_out_jobs: tuple[str, ...] = ()
+
+
+async def _wait_retry_backoff(delay_s: float, cancel=None) -> None:
+    """Wait for provider-directed retry backoff while remaining cancellation-aware."""
+    delay = max(0.0, float(delay_s))
+    if delay <= 0:
+        return
+    if cancel is None:
+        await asyncio.sleep(delay)
+        return
+
+    cancel.check()
+    sleeper = asyncio.create_task(asyncio.sleep(delay))
+    cancelled = asyncio.create_task(cancel.wait())
+    done, pending = await asyncio.wait(
+        {sleeper, cancelled},
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+    for task in pending:
+        task.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+    if cancelled in done:
+        cancel.check()
 
 
 def current_wave_concurrency(
@@ -150,7 +175,7 @@ async def run_status_wave(
         )
         semaphore = asyncio.Semaphore(limit)
 
-        events.append_event(
+        pass_start_event_id = events.append_event(
             db,
             "wave.started",
             {
@@ -279,6 +304,40 @@ async def run_status_wave(
 
         if not retry_names:
             break
+
+        # A provider's Retry-After is a scheduling directive, not just telemetry.
+        # AgentLoop persists it in task.rate_limited before returning QUEUED; consume
+        # only rate-limit events emitted during this pass and wait for the largest
+        # finite delay before any retry starts.
+        rate_events = events.query_events(
+            db,
+            run_id=run_id,
+            type="task.rate_limited",
+            after_id=pass_start_event_id,
+            limit=1000,
+        )
+        retry_after_values: list[float] = []
+        for event in rate_events:
+            value = event.payload.get("retry_after_s")
+            if isinstance(value, (int, float)):
+                delay = float(value)
+                if isfinite(delay) and delay > 0:
+                    retry_after_values.append(delay)
+        backoff_s = max(retry_after_values, default=0.0)
+        if backoff_s > 0:
+            events.append_event(
+                db,
+                "wave.retry_backoff",
+                {
+                    "wave": wave_key,
+                    "pass": pass_no,
+                    "retry_after_s": backoff_s,
+                    "jobs": sorted(retry_names),
+                },
+                run_id=run_id,
+            )
+            await _wait_retry_backoff(backoff_s, cancel)
+
         pending = [job for job in jobs if job.name in retry_names]
 
     end_limit = current_wave_concurrency(
