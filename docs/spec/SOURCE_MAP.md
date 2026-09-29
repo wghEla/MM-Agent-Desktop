@@ -12,8 +12,8 @@
 | `调度器.构建依赖图/拓扑分层/全部下游`（问题 DAG） | `mmagent/orchestration/dag.py` + `mmagent/mm/pipeline/s2_model.py`（固定快照的层 barrier / 逐问串行 + `checkpoint.s2_question`） | 已实现 + focused tests |
 | `调度器.门`（检查→返工≤2→升格→降级放行） | `mmagent/orchestration/gate.py` | 计划 v0.4（框架）/ v0.5（G2） |
 | `调度器.合并修订单`（级别 硬伤>正确性>叙述>版式；目标 算>图>文） | `mmagent/mm/ledger/order_merge.py` | 计划 v0.7 |
-| `wave()`（异步腿 + done 轮询 + kill -0 判死 + 并发闸 4→2 + 429 降并发 + 重试一次 + 腿上限<波次超时防双写） | `mmagent/orchestration/wave.py` + `mmagent/orchestration/role_leg.py` + `mmagent/runtime/process.py` | 新实现以 per-leg deadline + awaited cancellation 复现 R60 核心不变量：超时旧副本完全收口后才允许 retry；排队时间不计腿时限；异常会 cancel+await peers。Windows 外部进程由 Job Object 整树治理。源码与 focused tests 已落地，当前-head CI 仍待 Actions runner 恢复后执行。 |
-| `本地蜂巢.LocalHive`（工作根 + env 口径 + setsid 进程组） | `mmagent/workspace/root.py` + `mmagent/runtime/process.py` + `mmagent/runtime/tool_env.py`（Windows Job Object 替代 setsid；外部工具环境白名单） | Runtime/sidecar 已接入共享 ProcessManager；Python/XeLaTeX 产品主链与 MATLAB helper 使用树级生命周期治理；最新变更待 current-head CI 复证 |
+| `wave()`（异步腿 + done 轮询 + kill -0 判死 + 并发闸 4→2 + 429 降并发 + 重试一次 + 腿上限<波次超时防双写） | `mmagent/orchestration/wave.py` + `mmagent/orchestration/role_leg.py` + `mmagent/runtime/process.py` | 新实现以 per-leg deadline + awaited cancellation 复现 R60 核心不变量：超时旧副本完全收口后才允许 retry；排队时间不计腿时限；异常会 cancel+await peers。Windows 外部进程由 Job Object 整树治理。focused tests + Installed Cancellation Gate 已提供可执行证据；ADR-0001 接受该 Windows 本地证据替代强制 current-head Actions。 |
+| `本地蜂巢.LocalHive`（工作根 + env 口径 + setsid 进程组） | `mmagent/workspace/root.py` + `mmagent/runtime/process.py` + `mmagent/runtime/tool_env.py`（Windows Job Object 替代 setsid；外部工具环境白名单） | Runtime/sidecar 已接入共享 ProcessManager；Python/XeLaTeX 产品主链与 MATLAB helper 使用树级生命周期治理；安装版 cancellation/process-tree gate 已验证真实父子进程清理与 0 owned orphan。 |
 | `get_json()`（JSON 校验失败带反馈派修复腿重写一次） | `mmagent/agent/loop.py` 的 artifact 修复回路 | 计划 v0.5 |
 | `run_script()`（脚本失败派修复腿再跑一次） | `mmagent/tools/python.py` + `mmagent/orchestration/retry.py` | 计划 v0.5 |
 | 预算护栏（MAX_LEGS / MAX_HOURS，S2 逐问检查） | `mmagent/agent/budget.py` | 计划 v0.5 |
