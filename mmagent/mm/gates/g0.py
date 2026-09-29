@@ -14,7 +14,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from mmagent.mm.contracts.s0_contracts import ProblemContract
+from mmagent.mm.contracts.s0_contracts import (
+    PROBLEM_CONTRACT_REQUIRED_TOP_LEVEL_KEYS,
+    ProblemContract,
+)
 
 
 def check_g0(workspace_root: Path) -> tuple[bool, list[str]]:
@@ -22,22 +25,32 @@ def check_g0(workspace_root: Path) -> tuple[bool, list[str]]:
     issues: list[str] = []
     root = Path(workspace_root)
 
-    # 1) 题面契约存在且合法
+    # 1) 题面契约存在且为合法 JSON
     contract_path = root / "交接" / "题面契约.json"
     if not contract_path.is_file():
         return False, ["交接/题面契约.json 缺失"]
     try:
         raw = json.loads(contract_path.read_text(encoding="utf-8"))
-        contract = ProblemContract.model_validate(raw)
     except Exception as e:
         return False, [f"题面契约 schema 校验失败: {e}"]
+    if not isinstance(raw, dict):
+        return False, ["题面契约 schema 校验失败: JSON 顶层必须是对象"]
 
-    # 2) 顶层键（Pydantic 已强制必填字段，此处检查可选但推荐的键）
-    for key in ("标题", "硬约束清单", "歧义裁定", "附件清单"):
+    # 2) 顶层 envelope 与 Pydantic contract 共用同一 required-key 事实来源。
+    for key in PROBLEM_CONTRACT_REQUIRED_TOP_LEVEL_KEYS:
         if key not in raw:
             issues.append(f"契约缺顶层键：{key}")
+    if "问题" not in raw:
+        issues.append("契约 问题 为空")
+
+    try:
+        contract = ProblemContract.model_validate(raw)
+    except Exception as e:
+        issues.append(f"题面契约 schema 校验失败: {e}")
+        return False, issues
+
     # 问题清单非空（G0 上游教训：答案门不读核心指标 → 三问交白卷仍放行）
-    if not contract.问题:
+    if not contract.问题 and "问题" in raw:
         issues.append("契约 问题 为空")
 
     # 3) 每问内容非空
