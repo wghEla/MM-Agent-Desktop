@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from mmagent.mm.contracts.s0_contracts import DataArchive, ProblemContract
 from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.base import BaseProvider
 from mmagent.state.db import Database
@@ -59,16 +60,50 @@ async def run_s0(
     return {"g0_pass": ok, "g0_issues": issues, "tasks": tasks}
 
 
+def _canonical_json_schema_instruction(
+    rel_path: str,
+    model: type[ProblemContract] | type[DataArchive],
+) -> str:
+    """Render the contract authority into the model instruction without copying a schema.
+
+    The Pydantic contract remains the single source of truth; this is only a prompt-time
+    projection of that same object so real providers see the exact Chinese field names
+    before artifact verification.
+    """
+    schema = json.dumps(
+        model.model_json_schema(),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return (
+        f"\n{rel_path} 必须写成纯 JSON（不要 Markdown 代码围栏），字段名必须严格遵循"
+        f" Runtime 合同；canonical JSON Schema={schema}"
+    )
+
+
 def _s0_specs() -> list[tuple[str, str, str, list[ExpectedArtifact]]]:
+    reader_instructions = (
+        "读取 输入/题目/ 下的题目文件与 输入/数据/ 下的附件清单。"
+        "产出 交接/题面契约.json 和 交接/数据档案.json。"
+        "不得把中文合同字段翻译成英文，也不得自造同义顶层键；"
+        "例如题面契约的赛题字段必须写作“赛题”，不是“题目”或 contest。"
+        + _canonical_json_schema_instruction("交接/题面契约.json", ProblemContract)
+        + _canonical_json_schema_instruction("交接/数据档案.json", DataArchive)
+    )
     return [
         (
             "reader",
             "S0.2:读题",
-            "读取 输入/题目/ 下的题目文件与 输入/数据/ 下的附件清单。"
-            "产出 交接/题面契约.json 和 交接/数据档案.json。",
+            reader_instructions,
             [
-                ExpectedArtifact(rel_path="交接/题面契约.json"),
-                ExpectedArtifact(rel_path="交接/数据档案.json"),
+                ExpectedArtifact(
+                    rel_path="交接/题面契约.json",
+                    schema_model=ProblemContract,
+                ),
+                ExpectedArtifact(
+                    rel_path="交接/数据档案.json",
+                    schema_model=DataArchive,
+                ),
             ],
         ),
         (
