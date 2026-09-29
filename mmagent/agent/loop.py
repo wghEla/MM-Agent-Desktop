@@ -135,6 +135,7 @@ class AgentLoop:
         invocation_id: str | None = None
         usage = Usage()
         turns = 0
+        max_turns_artifact_check = False
         effective_model = self.provider.resolve_model(spec.model)
         effective_reasoning = self.provider.resolve_reasoning(spec.reasoning)
         try:
@@ -217,12 +218,46 @@ class AgentLoop:
                     self._persist_message(invocation_id, messages[-1], seq=seq)
                 task = self._safe_back_to_running(spec.task_id, owner)
             else:
-                raise MMAgentError(f"agent 超过最大轮数 {spec.max_turns} 仍未给出终稿")
+                # A terminal prose message is not the success authority. If the model
+                # consumed the final allowed turn with tool calls, give Runtime one final
+                # chance to validate required artifacts instead of failing solely because
+                # the model omitted a closing sentence. Tasks without any required
+                # artifact still fail closed at the turn limit.
+                if not any(exp.required for exp in spec.expected_artifacts):
+                    raise MMAgentError(
+                        f"agent 超过最大轮数 {spec.max_turns} 仍未给出终稿"
+                    )
+                max_turns_artifact_check = True
+                events.append_event(
+                    self.db,
+                    "agent.max_turns_artifact_check",
+                    {
+                        "max_turns": spec.max_turns,
+                        "expected": [
+                            exp.rel_path for exp in spec.expected_artifacts if exp.required
+                        ],
+                    },
+                    run_id=run_id,
+                    task_id=spec.task_id,
+                    invocation_id=invocation_id,
+                )
 
             # 4) 验收：取消复查（DB + token）→ 校验 → 封存 → 事务提交
             self.cancel.check()
             self._check_db_cancelled(spec.task_id)
             checks = verify_expected_artifacts(self.policy, spec.expected_artifacts)
+            if max_turns_artifact_check:
+                events.append_event(
+                    self.db,
+                    "agent.max_turns_artifacts_accepted",
+                    {
+                        "max_turns": spec.max_turns,
+                        "artifacts": [check.rel_path for check in checks],
+                    },
+                    run_id=run_id,
+                    task_id=spec.task_id,
+                    invocation_id=invocation_id,
+                )
             sealed = seal_artifacts(self.policy, checks, spec.task_id)
             rows = build_artifact_rows(self.db, spec.task_id, checks, sealed)
             final_text = messages[-1].text[:2000] if messages else ""
