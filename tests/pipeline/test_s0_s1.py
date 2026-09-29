@@ -7,7 +7,12 @@ from pathlib import Path
 import pytest
 
 from mmagent.agent.errors import ArtifactInvalid
-from mmagent.mm.contracts.s0_contracts import DataArchive, ProblemContract
+from mmagent.mm.contracts.s0_contracts import (
+    DATA_ARCHIVE_REQUIRED_TOP_LEVEL_KEYS,
+    PROBLEM_CONTRACT_REQUIRED_TOP_LEVEL_KEYS,
+    DataArchive,
+    ProblemContract,
+)
 from mmagent.mm.pipeline.s0_s1 import _s0_specs, check_g1, run_s0
 from mmagent.providers.mock import MockProvider, MockScript, MockTurn
 from mmagent.state import repositories
@@ -102,6 +107,8 @@ def test_s0_reader_enforces_canonical_contracts_before_g0(ws_full):
     assert "“赛题”" in instructions
     assert expected[0].schema_model is ProblemContract
     assert expected[1].schema_model is DataArchive
+    assert expected[0].required_json_keys == PROBLEM_CONTRACT_REQUIRED_TOP_LEVEL_KEYS
+    assert expected[1].required_json_keys == DATA_ARCHIVE_REQUIRED_TOP_LEVEL_KEYS
 
     # This mimics the real-provider drift seen in the first Groq gate: a semantic
     # synonym is used instead of the canonical Chinese contract field.
@@ -130,6 +137,19 @@ def test_s0_reader_enforces_canonical_contracts_before_g0(ws_full):
     from mmagent.workspace.path_policy import PathPolicy
 
     with pytest.raises(ArtifactInvalid, match="题面契约.json"):
+        verify_expected_artifacts(PathPolicy(root), expected)
+
+    # The archive envelope is also explicit: an empty JSON object must not silently
+    # acquire the Pydantic default and seal as a valid producer artifact.
+    (root / "交接" / "题面契约.json").write_text(
+        CONTRACT_JSON,
+        encoding="utf-8",
+    )
+    (root / "交接" / "数据档案.json").write_text(
+        "{}",
+        encoding="utf-8",
+    )
+    with pytest.raises(ArtifactInvalid, match="数据档案.json"):
         verify_expected_artifacts(PathPolicy(root), expected)
 
 
