@@ -38,10 +38,13 @@ Release-candidate decisions after that tested baseline:
 **Source-only change after the tested baseline:**
 
 S0.2 Reader now receives the canonical Pydantic-generated JSON Schema for
-`交接/题面契约.json` and `交接/数据档案.json`, and those two artifacts are validated
-against `ProblemContract` / `DataArchive` before the Reader leg can seal SUCCEEDED.
-This directly addresses the prior real-provider drift (English/synonym keys such as
-`题目` instead of canonical `赛题`) without weakening G0.
+`交接/题面契约.json` and `交接/数据档案.json`, plus shared required top-level
+envelope-key lists. `ExpectedArtifact.required_json_keys` enforces those explicit keys
+before Pydantic defaults can hide omissions, and G0 consumes the same ProblemContract key
+constant. Both artifacts are also validated against `ProblemContract` / `DataArchive`
+before the Reader leg can seal SUCCEEDED. This directly addresses the prior real-provider
+drift (English/synonym keys such as `题目` instead of canonical `赛题`) without weakening
+G0.
 
 Because this changes sidecar/pipeline source, current remote HEAD is **not yet regression
 verified**. The final local real-provider round must first run focused/full regression and
