@@ -201,3 +201,45 @@
   证据 docs/runs/ui-v2-phase3/ 18 张+EVIDENCE；报告
   docs/reviews/v1.0.0-rebuild-ui-v2-phase3-local-validation.md。UI v2 Phase 3 = PASS；
   不宣布 Product Release GO。
+
+
+## 2026-09-29 — Final release-candidate source convergence
+
+- GPT-5.6 Sol reviewed the post-Phase-3 repository instead of reopening broad pipeline work.
+  UI v2 Phase 4 was closed by **evidence aggregation**: every Phase-4 checklist item had
+  already been executed in Phase 1–3 / Windows Package / Installed Cancellation /
+  Installed Credential gates. Report:
+  `docs/reviews/v1.0.0-rebuild-ui-v2-phase4-evidence-aggregation.md`.
+- CI acceptance decision resolved by
+  `docs/decisions/ADR-0001-local-release-evidence-instead-of-mandatory-ci.md`:
+  mandatory current-head GitHub Actions was replaced with exact-head executable Windows
+  regression/package/install evidence for the frozen Windows-first release. No fresh Linux
+  runner is claimed.
+- Residual exact-parity `PARTIAL` rows were risk-reviewed in
+  `docs/reviews/v1.0.0-rebuild-fidelity-partial-disposition.md`. They remain honestly
+  PARTIAL but are explicitly accepted as non-blocking for v1.0.0-rebuild. E4
+  timeout/recycle was promoted to MATCH from focused scheduler tests + Installed
+  Cancellation evidence. The only deliberately open product-evidence item is P11:
+  stronger/stable real-provider simultaneous green G0.
+- Final G0 source audit found one concrete producer-contract weakness from the prior Groq
+  gate: S0.2 Reader artifacts were only existence/JSON checked before G0, while the model
+  had previously drifted canonical fields (`题目`/English keys instead of `赛题`).
+  Source fix in `mmagent/mm/pipeline/s0_s1.py`: attach `ProblemContract` /
+  `DataArchive` directly to `ExpectedArtifact`, and project the same Pydantic
+  `model_json_schema()` into the Reader instruction. G0 itself is unchanged/fail-closed.
+  Distinguishing test added:
+  `test_s0_reader_enforces_canonical_contracts_before_g0`.
+- Truth carriers converged: CURRENT_STATE, LOCAL_HANDOFF_REPORT, PROJECT_PLAN,
+  FIDELITY_MATRIX, SOURCE_MAP, UI_V2; KNOWN_DEVIATIONS duplicate block removed and stale
+  browser-review blocker retired.
+- Final RC source review:
+  `docs/reviews/v1.0.0-rebuild-final-rc-source-review.md`.
+- **Evidence boundary:** last fully locally verified executable baseline remains
+  `6d5a1133e5eb81d054b0bf0d845e3695c60bfd76` with 526 passed / 0 failed, Ruff clean,
+  frontend green, rebuilt NSIS/install/startup and installed fake-credential lifecycle.
+  The new S0 producer-contract hardening is source-only and must be regression-tested and
+  repackaged on the exact final RC HEAD before the stronger/ZCode G0 proof.
+- Do not run another broad fidelity cycle. Next local work is exactly:
+  focused/full regression → exact-head repackage/reinstall/smoke → user-entered real
+  stronger/ZCode credential → installed S0→G0 green → secret scan → final external release
+  review → user tag/merge decision.
