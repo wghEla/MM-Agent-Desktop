@@ -130,6 +130,67 @@ async def test_kernel_acceptance_loop(ws, db, run_id):
 
 
 @pytest.mark.asyncio
+async def test_max_turns_accepts_valid_required_artifact_without_closing_text(
+    ws, db, run_id
+):
+    """At the turn limit, Runtime artifact validity outranks a missing closing sentence."""
+    script = MockScript([
+        MockTurn(tool_calls=[(
+            "write-final",
+            "fs.write",
+            {
+                "path": "交接/结果声明_问题1.json",
+                "content": json.dumps(DECLARATION, ensure_ascii=False),
+            },
+        )]),
+    ])
+    loop, _ = _build_loop(ws, db, script)
+    spec = _make_task(ws, db, run_id)
+    spec.max_turns = 1
+
+    outcome = await loop.run(spec)
+
+    assert outcome.status is TaskStatus.SUCCEEDED, outcome.error
+    assert outcome.turns == 1
+    assert outcome.result.get("final_text", "") == ""
+    accepted = events.query_events(
+        db,
+        run_id=run_id,
+        type="agent.max_turns_artifacts_accepted",
+    )
+    assert len(accepted) == 1
+    assert accepted[0].payload["artifacts"] == ["交接/结果声明_问题1.json"]
+
+
+@pytest.mark.asyncio
+async def test_max_turns_still_fails_when_required_artifact_is_missing(
+    ws, db, run_id
+):
+    """Turn-limit fallback never converts an incomplete tool loop into success."""
+    script = MockScript([
+        MockTurn(tool_calls=[(
+            "write-unrelated",
+            "fs.write",
+            {"path": "交接/临时.txt", "content": "not the required artifact"},
+        )]),
+    ])
+    loop, _ = _build_loop(ws, db, script)
+    spec = _make_task(ws, db, run_id)
+    spec.max_turns = 1
+
+    outcome = await loop.run(spec)
+
+    assert outcome.status is TaskStatus.FAILED
+    assert outcome.error_kind.value == "artifact_missing"
+    accepted = events.query_events(
+        db,
+        run_id=run_id,
+        type="agent.max_turns_artifacts_accepted",
+    )
+    assert accepted == []
+
+
+@pytest.mark.asyncio
 async def test_model_cannot_declare_success_without_artifact(ws, db, run_id):
     """模型说完成了、但产物缺失 → FAILED（declared != enforced）。"""
     script = MockScript([MockTurn(text="我已经完成了！真的！")])
