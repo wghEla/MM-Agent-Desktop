@@ -224,6 +224,69 @@ async def test_real_role_leg_429_requeues_reduces_and_retries_same_node(
 
 
 @pytest.mark.asyncio
+async def test_direct_role_leg_429_honors_retry_after_before_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    handle, run_id = _run_ctx(tmp_path)
+    provider = MockProvider(MockScript([
+        MockTurn(tool_calls=[(
+            "write-backoff",
+            "fs.write",
+            {"path": "交接/读题体检.md", "content": "retry-after recovered"},
+        )]),
+        MockTurn(text="完成"),
+    ]))
+    provider.queue_error(RateLimitError("429", retry_after_s=5.5))
+
+    observed: list[float] = []
+
+    async def fake_wait(delay_s: float, cancel=None) -> None:
+        observed.append(delay_s)
+        if cancel is not None:
+            cancel.check()
+
+    import mmagent.orchestration.wave as wave_module
+
+    monkeypatch.setattr(wave_module, "_wait_retry_backoff", fake_wait)
+
+    registry = ToolRegistry()
+    registry.register(FsReadTool())
+    registry.register(FsWriteTool())
+    policy = PathPolicy(handle.workspace.root)
+
+    try:
+        status = await run_role_leg(
+            handle.workspace.db,
+            provider,
+            registry,
+            policy,
+            run_id,
+            stage_key="S0",
+            role_id="reader",
+            node_key="S0:retry-after",
+            instructions="写 交接/读题体检.md。",
+            expected_artifacts=[
+                ExpectedArtifact(rel_path="交接/读题体检.md", kind="text")
+            ],
+        )
+
+        assert status == "SUCCEEDED"
+        assert observed == [5.5]
+
+        backoff_events = events.query_events(
+            handle.workspace.db,
+            run_id=run_id,
+            type="wave.retry_backoff",
+        )
+        assert len(backoff_events) == 1
+        assert backoff_events[0].payload["retry_after_s"] == 5.5
+        assert backoff_events[0].payload["jobs"] == ["S0:retry-after"]
+    finally:
+        handle.workspace.db.close()
+
+
+@pytest.mark.asyncio
 async def test_direct_role_leg_429_uses_single_job_adaptive_wave(
     tmp_path: Path,
 ) -> None:
