@@ -249,3 +249,23 @@
   required-key lists, and G0 reuse of the ProblemContract key constant. This closes the
   remaining schema-vs-G0 mismatch where Pydantic defaults could hide an omitted explicit
   top-level key. Source/test changes remain local-regression pending.
+
+
+- 09-29 real-provider incident follow-up on locally verified `63bbad6` package:
+  focused 119 passed, full 527/0, Ruff/frontend/package/reinstall/startup smoke all green
+  before real API attempts. Four real runs exposed both provider/model variance and source
+  defects. Source fixes landed after the tested baseline:
+  ① Wave now consumes durable `task.rate_limited.retry_after_s`, emits
+  `wave.retry_backoff`, and waits cancellation-aware before retry;
+  ② `ProblemContract` rejects producer artifacts already guaranteed to fail G0
+  (`问题=[]`, blank per-question required semantics, incomplete ambiguity verdicts), so
+  Reader retry happens before S0.3 spends tokens;
+  ③ at max tool turns, valid required artifacts can seal SUCCEEDED without a model closing
+  sentence, while incomplete artifacts still fail closed;
+  ④ Reader gains `fs.list` and is instructed to enumerate actual input filenames before
+  reading, reducing guess/read-directory tool churn;
+  ⑤ effective reasoning is normalized to provider capability declarations, preventing
+  misleading invocation metadata / unsupported effort levels.
+  Review: `docs/reviews/v1.0.0-rebuild-real-provider-incident-source-review.md`.
+  These fixes are source-only and require focused/full regression + exact-head repackage
+  before another paid real-provider attempt.
