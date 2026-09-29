@@ -372,15 +372,21 @@ Source implementation is complete; Windows/Tauri local validation is pending.
 
 ### Phase 4 — local validation
 
-Requires Windows/Tauri runtime:
+**PASS by aggregation of already-executed Windows/Tauri evidence.**
 
-- DPI and resizing;
-- Chinese long strings;
-- create/open/reopen workspace;
-- provider create/test/restart;
-- run start/pause/resume/cancel;
-- PDF/image/text preview;
-- release package build and startup smoke.
+The checklist below was not rerun as a redundant monolithic pass; each item had already
+been exercised in a real local gate:
+
+- DPI and resizing — Phase 1 + Phase 3;
+- Chinese long strings — Phase 1;
+- create/open/reopen workspace — Phase 2;
+- provider create/test/restart — Phase 3 installed fake-credential round-trip;
+- run start/pause/resume/cancel — Phase 1 control surfaces + Installed Cancellation Gate;
+- PDF/image/text preview — Phase 1/2;
+- release package build and startup smoke — Windows Package Gate and later repackages.
+
+Aggregation report:
+`docs/reviews/v1.0.0-rebuild-ui-v2-phase4-evidence-aggregation.md`.
 
 ## Acceptance principle
 
