@@ -152,6 +152,28 @@ def test_s0_reader_enforces_canonical_contracts_before_g0(ws_full):
     with pytest.raises(ArtifactInvalid, match="数据档案.json"):
         verify_expected_artifacts(PathPolicy(root), expected)
 
+    # A structurally present but empty problem list is guaranteed to fail G0.
+    # Reject it while sealing the Reader artifact so the Reader retry can repair it
+    # before S0.3 spends another model call.
+    empty_problem_contract = {
+        "赛题": "B",
+        "标题": "",
+        "问题": [],
+        "硬约束清单": [],
+        "歧义裁定": [],
+        "附件清单": [],
+    }
+    (root / "交接" / "题面契约.json").write_text(
+        json.dumps(empty_problem_contract, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (root / "交接" / "数据档案.json").write_text(
+        ARCHIVE_JSON,
+        encoding="utf-8",
+    )
+    with pytest.raises(ArtifactInvalid, match="问题不能为空"):
+        verify_expected_artifacts(PathPolicy(root), expected)
+
 
 @pytest.mark.asyncio
 async def test_s0_pipeline_with_g0(ws_full):
