@@ -9,7 +9,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from mmagent.mm.contracts.s0_contracts import DataArchive, ProblemContract
+from mmagent.mm.contracts.s0_contracts import (
+    DATA_ARCHIVE_REQUIRED_TOP_LEVEL_KEYS,
+    PROBLEM_CONTRACT_REQUIRED_TOP_LEVEL_KEYS,
+    DataArchive,
+    ProblemContract,
+)
 from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.base import BaseProvider
 from mmagent.state.db import Database
@@ -82,11 +87,16 @@ def _canonical_json_schema_instruction(
 
 
 def _s0_specs() -> list[tuple[str, str, str, list[ExpectedArtifact]]]:
+    required_contract_keys = "、".join(PROBLEM_CONTRACT_REQUIRED_TOP_LEVEL_KEYS)
+    required_archive_keys = "、".join(DATA_ARCHIVE_REQUIRED_TOP_LEVEL_KEYS)
     reader_instructions = (
         "读取 输入/题目/ 下的题目文件与 输入/数据/ 下的附件清单。"
         "产出 交接/题面契约.json 和 交接/数据档案.json。"
         "不得把中文合同字段翻译成英文，也不得自造同义顶层键；"
         "例如题面契约的赛题字段必须写作“赛题”，不是“题目”或 contest。"
+        f" 题面契约顶层必须显式包含：{required_contract_keys}；"
+        "没有内容时也要保留对应空字符串或空数组。"
+        f" 数据档案顶层必须显式包含：{required_archive_keys}。"
         + _canonical_json_schema_instruction("交接/题面契约.json", ProblemContract)
         + _canonical_json_schema_instruction("交接/数据档案.json", DataArchive)
     )
@@ -99,10 +109,12 @@ def _s0_specs() -> list[tuple[str, str, str, list[ExpectedArtifact]]]:
                 ExpectedArtifact(
                     rel_path="交接/题面契约.json",
                     schema_model=ProblemContract,
+                    required_json_keys=PROBLEM_CONTRACT_REQUIRED_TOP_LEVEL_KEYS,
                 ),
                 ExpectedArtifact(
                     rel_path="交接/数据档案.json",
                     schema_model=DataArchive,
+                    required_json_keys=DATA_ARCHIVE_REQUIRED_TOP_LEVEL_KEYS,
                 ),
             ],
         ),
