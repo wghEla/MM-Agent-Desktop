@@ -2,24 +2,24 @@
 
 Branch: `gpt/fidelity-rebuild`
 
-Current remote source state: post-`6d5a113` release-candidate documentation closure +
-S0/G0 producer-contract hardening.
+Current remote source state: post-real-provider incident fixes after the locally verified
+`63bbad6` package.
 
 **Last fully locally verified executable baseline:**
-`6d5a1133e5eb81d054b0bf0d845e3695c60bfd76`
+`63bbad63f0efdf0930a7c8850c11fa1d89f09627`
 
 Evidence at that baseline:
 
-- focused Provider tests 97 passed;
-- full pytest **526 passed / 0 failed**;
+- focused final-RC tests **119 passed**;
+- full pytest **527 passed / 0 failed**;
 - Ruff clean;
 - frontend production build green;
-- PyInstaller sidecar rebuilt;
-- Tauri/NSIS rebuilt and silently reinstalled;
+- exact-head PyInstaller sidecar rebuilt;
+- exact-head Tauri/NSIS rebuilt and silently reinstalled;
 - `--startup-smoke` exit 0;
-- installed fake-credential restart/Test/Delete lifecycle PASS;
-- normal shutdown leaves 0 MM-Agent processes;
-- UI v2 Phase 1 / Phase 2 / Phase 3 PASS.
+- startup smoke leaves 0 owned orphans;
+- real-provider Test Connection and real token/tool traffic were observed, but no same-run
+  green G0 was achieved.
 
 Release-candidate decisions after that tested baseline:
 
@@ -35,20 +35,27 @@ Release-candidate decisions after that tested baseline:
 - the only deliberately open product-evidence item is **P11: one stronger/stable real
   provider simultaneous green G0 run**.
 
-**Source-only change after the tested baseline:**
+**Source-only changes after the tested baseline:**
 
-S0.2 Reader now receives the canonical Pydantic-generated JSON Schema for
-`交接/题面契约.json` and `交接/数据档案.json`, plus shared required top-level
-envelope-key lists. `ExpectedArtifact.required_json_keys` enforces those explicit keys
-before Pydantic defaults can hide omissions, and G0 consumes the same ProblemContract key
-constant. Both artifacts are also validated against `ProblemContract` / `DataArchive`
-before the Reader leg can seal SUCCEEDED. This directly addresses the prior real-provider
-drift (English/synonym keys such as `题目` instead of canonical `赛题`) without weakening
-G0.
+The real-provider incident audit found several concrete Runtime/provider issues in addition
+to provider/model variance. Source fixes are recorded in
+`docs/reviews/v1.0.0-rebuild-real-provider-incident-source-review.md`:
 
-Because this changes sidecar/pipeline source, current remote HEAD is **not yet regression
-verified**. The final local real-provider round must first run focused/full regression and
-repackage the exact current HEAD before the stronger/ZCode G0 proof.
+1. Wave now honors provider `Retry-After` before its retry pass and emits
+   `wave.retry_backoff`;
+2. `ProblemContract` rejects S0 artifacts already guaranteed to fail G0 (including
+   `问题=[]`), so Reader gets its retry before S0.3 spends tokens;
+3. at `max_turns`, valid required artifacts may be Runtime-accepted without requiring a
+   closing prose turn; missing/invalid artifacts still fail closed;
+4. Reader now has `fs.list` and is instructed to enumerate `输入/题目` /
+   `输入/数据` before reading actual files;
+5. effective reasoning is normalized to declared Provider capabilities, so invocation
+   metadata matches what can actually be sent on the wire.
+
+These changes touch packaged Runtime/provider code, so the current remote HEAD is
+**source-reviewed but not locally regression/package verified**. Do not spend another real
+API call on the old `63bbad6` install. First run focused/full regression and rebuild the
+exact latest sidecar/NSIS.
 
 ## UI v2 Phase-3 Provider UX local validation (2026-09-28) — PASS（不宣布 Product Release GO）
 
