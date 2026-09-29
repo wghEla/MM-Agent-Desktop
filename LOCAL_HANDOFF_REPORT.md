@@ -140,8 +140,10 @@ regression:
 ### Current source-only delta
 
 `mmagent/mm/pipeline/s0_s1.py` now projects the canonical Pydantic schemas for
-`ProblemContract` and `DataArchive` into the Reader instruction and binds those schemas
-to the Reader's expected artifacts.
+`ProblemContract` and `DataArchive` into the Reader instruction, binds those schemas
+to the Reader's expected artifacts, and supplies shared required top-level envelope-key
+lists. `ExpectedArtifact.required_json_keys` enforces those keys before defaults can hide
+omissions; G0 uses the same ProblemContract required-key constant.
 
 Intent:
 
