@@ -243,3 +243,9 @@
   focused/full regression → exact-head repackage/reinstall/smoke → user-entered real
   stronger/ZCode credential → installed S0→G0 green → secret scan → final external release
   review → user tag/merge decision.
+
+- RC S0 contract refinement: added shared required-envelope key constants, generic
+  `ExpectedArtifact.required_json_keys` enforcement, Reader prompt projection of the same
+  required-key lists, and G0 reuse of the ProblemContract key constant. This closes the
+  remaining schema-vs-G0 mismatch where Pydantic defaults could hide an omitted explicit
+  top-level key. Source/test changes remain local-regression pending.
