@@ -29,8 +29,19 @@ class BaseProvider(abc.ABC):
         return requested
 
     def resolve_reasoning(self, requested: str | None) -> str | None:
-        """Resolve task reasoning to the effective provider setting."""
-        return requested
+        """Resolve task reasoning to what this provider actually declares it can send."""
+        if requested is None:
+            return None
+        levels = self.capabilities().reasoning_levels
+        if not levels:
+            return None
+        if requested in levels:
+            return requested
+        # Role routing has an xhigh tier, while several provider protocols only
+        # declare low/medium/high. Never send a level outside the declared set.
+        if requested == "xhigh" and "high" in levels:
+            return "high"
+        return None
 
     @abc.abstractmethod
     async def generate(
@@ -90,7 +101,8 @@ class ModelBoundProvider(BaseProvider):
         return self.model if value in ("", "mock") else value
 
     def resolve_reasoning(self, requested: str | None) -> str | None:
-        return self.reasoning if self.reasoning is not None else requested
+        configured = self.reasoning if self.reasoning is not None else requested
+        return self.inner.resolve_reasoning(configured)
 
     async def generate(
         self,
