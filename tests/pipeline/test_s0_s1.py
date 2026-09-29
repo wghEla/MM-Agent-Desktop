@@ -6,11 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from mmagent.mm.pipeline.s0_s1 import check_g1, run_s0
+from mmagent.agent.errors import ArtifactInvalid
+from mmagent.mm.contracts.s0_contracts import DataArchive, ProblemContract
+from mmagent.mm.pipeline.s0_s1 import _s0_specs, check_g1, run_s0
 from mmagent.providers.mock import MockProvider, MockScript, MockTurn
 from mmagent.state import repositories
 from mmagent.tools.filesystem import FsReadTool, FsWriteTool
 from mmagent.tools.registry import ToolRegistry
+from mmagent.workspace.artifacts import verify_expected_artifacts
 from mmagent.workspace.permissions import PermissionChecker, RolePermissions
 
 
@@ -85,6 +88,49 @@ def ws_full(tmp_path: Path):
     (root / "输入" / "数据").mkdir(parents=True, exist_ok=True)
     yield handle
     handle.workspace.db.close()
+
+
+def test_s0_reader_enforces_canonical_contracts_before_g0(ws_full):
+    """Wrong synonym/English-style keys fail at Reader artifact acceptance, not only G0."""
+    root = ws_full.workspace.root
+    specs = _s0_specs()
+    role_id, node_key, instructions, expected = specs[0]
+
+    assert role_id == "reader"
+    assert node_key == "S0.2:读题"
+    assert "canonical JSON Schema=" in instructions
+    assert "“赛题”" in instructions
+    assert expected[0].schema_model is ProblemContract
+    assert expected[1].schema_model is DataArchive
+
+    # This mimics the real-provider drift seen in the first Groq gate: a semantic
+    # synonym is used instead of the canonical Chinese contract field.
+    wrong_contract = {
+        "题目": "B",
+        "标题": "测试题",
+        "问题": [{
+            "编号": 1,
+            "原文摘录": "问题1",
+            "解读": "解读1",
+            "需求条目": [{"需求号": "1-1", "内容": "建模"}],
+        }],
+        "硬约束清单": [],
+        "歧义裁定": [],
+        "附件清单": [],
+    }
+    (root / "交接" / "题面契约.json").write_text(
+        json.dumps(wrong_contract, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (root / "交接" / "数据档案.json").write_text(
+        ARCHIVE_JSON,
+        encoding="utf-8",
+    )
+
+    from mmagent.workspace.path_policy import PathPolicy
+
+    with pytest.raises(ArtifactInvalid, match="题面契约.json"):
+        verify_expected_artifacts(PathPolicy(root), expected)
 
 
 @pytest.mark.asyncio
