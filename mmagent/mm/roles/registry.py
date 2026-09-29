@@ -46,6 +46,7 @@ class RoleSpec:
 
 
 _FS_RW = frozenset({"fs.read", "fs.write"})
+_FS_RW_LIST = frozenset({"fs.read", "fs.write", "fs.list"})
 _FS_PY = frozenset({"fs.read", "fs.write", "python.run"})
 
 _ROLES: tuple[RoleSpec, ...] = (
@@ -55,8 +56,8 @@ _ROLES: tuple[RoleSpec, ...] = (
         stage="S0",
         read_scopes=("输入/**",),
         write_scopes=("交接/题面契约.json", "交接/数据档案.json", "交接/读题体检.md"),
-        allowed_tools=_FS_RW,
-        notes="不自己补题面没有的硬条件；输出围栏 schema 由 contracts 定义",
+        allowed_tools=_FS_RW_LIST,
+        notes="先用 fs.list 枚举输入文件，再精确 fs.read；不自己补题面没有的硬条件；输出围栏 schema 由 contracts 定义",
     ),
     RoleSpec(
         role_id="answer_predictor",
