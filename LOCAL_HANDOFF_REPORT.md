@@ -8,11 +8,11 @@ Last updated: 2026-09-29 after final release-candidate source review.
 |---|---|
 | Repository | `wghEla/MM-Agent-Desktop` |
 | Branch | `gpt/fidelity-rebuild` |
-| Last fully locally verified executable baseline | `6d5a1133e5eb81d054b0bf0d845e3695c60bfd76` |
-| Baseline regression | 526 passed / 0 failed; Ruff clean; frontend build green |
-| Baseline package | sidecar + Tauri/NSIS rebuilt; silent reinstall; startup smoke 0 |
-| Baseline installed Provider smoke | fake credential restart/Test/Delete + CM cleanup PASS |
-| Current remote state | docs release disposition + S0/G0 producer-contract hardening after `6d5a113` |
+| Last fully locally verified executable baseline | `63bbad63f0efdf0930a7c8850c11fa1d89f09627` |
+| Baseline regression | 119 focused; 527 passed / 0 failed; Ruff clean; frontend build green |
+| Baseline package | exact-head sidecar + Tauri/NSIS rebuilt; silent reinstall; startup smoke 0 |
+| Baseline installed Provider smoke | real Test Connection + real token/tool traffic; no same-run green G0 |
+| Current remote state | source-only real-provider incident fixes after `63bbad6` |
 | Current remote verification | SOURCE-ONLY; final local regression/repackage required |
 | Product release | final real-provider green-G0 gate open |
 
@@ -31,7 +31,7 @@ Last updated: 2026-09-29 after final release-candidate source review.
 | CI acceptance | RESOLVED — ADR-0001 local Windows evidence substitute |
 | Fidelity residual PARTIALs | ACCEPTED for v1.0.0; remain honestly PARTIAL |
 | Real Provider | CONDITIONAL PASS; one stronger/stable simultaneous green G0 remains |
-| Current exact HEAD regression/package | PENDING after S0 producer-contract hardening |
+| Current exact HEAD regression/package | PENDING after real-provider incident fixes |
 
 ## UI v2 Phase-3 local validation summary
 
@@ -117,9 +117,11 @@ Installed product has already proven:
 - real S0 legs;
 - Runtime fail-closed schema gate behavior.
 
-The remaining Real Provider item is one ceremonial full-green G0 run using a stronger or
-more stable model/provider. The prior Groq run was limited by model schema variance and
-free-tier rate limiting; no open product defect is implicated.
+The remaining Real Provider item is one same-run full-green G0 using a stronger or more
+stable model/provider. The latest real-provider incident proved the credential/endpoint
+worked, but also exposed concrete Runtime/provider defects in addition to channel/model
+variance. Those defects are source-fixed after `63bbad6`; see
+`docs/reviews/v1.0.0-rebuild-real-provider-incident-source-review.md`.
 
 ## Final release-candidate handoff
 
@@ -139,20 +141,20 @@ regression:
 
 ### Current source-only delta
 
-`mmagent/mm/pipeline/s0_s1.py` now projects the canonical Pydantic schemas for
-`ProblemContract` and `DataArchive` into the Reader instruction, binds those schemas
-to the Reader's expected artifacts, and supplies shared required top-level envelope-key
-lists. `ExpectedArtifact.required_json_keys` enforces those keys before defaults can hide
-omissions; G0 uses the same ProblemContract required-key constant.
+Real-provider incident source fixes after the locally verified `63bbad6` package:
 
-Intent:
+1. honor provider `Retry-After` before the Wave retry pass;
+2. reject Reader contracts already guaranteed to fail G0, including `问题=[]`;
+3. at `max_turns`, accept already-valid required artifacts without requiring a closing
+   prose message; incomplete artifacts still fail closed;
+4. give Reader `fs.list` and instruct it to enumerate real input filenames before reading;
+5. normalize effective reasoning to Provider capability declarations so invocation metadata
+   matches actual wire behavior.
 
-- canonical Chinese contract field names are visible before generation;
-- `题目`/English synonym drift cannot seal S0.2 as SUCCEEDED;
-- validation happens at artifact acceptance, before G0;
-- G0 remains unchanged/fail-closed.
+Focused source review:
+`docs/reviews/v1.0.0-rebuild-real-provider-incident-source-review.md`.
 
-Distinguishing test added in `tests/pipeline/test_s0_s1.py`.
+Do not spend another real API call on the old `63bbad6` installed package.
 
 ### Only remaining execution work
 
