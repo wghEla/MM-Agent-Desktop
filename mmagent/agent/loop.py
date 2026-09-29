@@ -260,7 +260,12 @@ class AgentLoop:
                 )
             sealed = seal_artifacts(self.policy, checks, spec.task_id)
             rows = build_artifact_rows(self.db, spec.task_id, checks, sealed)
-            final_text = messages[-1].text[:2000] if messages else ""
+            # 终稿 = 模型最后一条 assistant 文本；验收路径可能以 tool 回执结尾，
+            # 不得把 Runtime 工具结果冒充模型 closing message。
+            final_text = next(
+                (m.text for m in reversed(messages) if m.role == "assistant"),
+                "",
+            )[:2000]
             task = repositories.commit_task_success(
                 self.db,
                 spec.task_id,
