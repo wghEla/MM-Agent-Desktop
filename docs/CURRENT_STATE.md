@@ -1,12 +1,51 @@
-# CURRENT_STATE — fidelity rebuild on gpt/fidelity-rebuild
+# CURRENT_STATE — v1.0.0-rebuild release candidate on gpt/fidelity-rebuild
 
 Branch: `gpt/fidelity-rebuild`
-HEAD: `feae95f`（UI v2 phase-3 Provider UX source + source review by GPT-5.6 Sol）+ 本轮
-phase-3 本地验证提交（`644aae5` 测试对齐 §29 四判语义 + 文档/证据提交）——见
-`docs/reviews/v1.0.0-rebuild-ui-v2-phase3-local-validation.md`
-Tests: **locally verified at this state: 526 passed / 0 failed + Ruff clean + frontend build OK
-+ sidecar/Tauri NSIS repack + silent reinstall + --startup-smoke exit 0 + 0 orphan
-+ 安装版 fake-credential 往返 + CM 测试凭据清零**
+
+Current remote source state: post-`6d5a113` release-candidate documentation closure +
+S0/G0 producer-contract hardening.
+
+**Last fully locally verified executable baseline:**
+`6d5a1133e5eb81d054b0bf0d845e3695c60bfd76`
+
+Evidence at that baseline:
+
+- focused Provider tests 97 passed;
+- full pytest **526 passed / 0 failed**;
+- Ruff clean;
+- frontend production build green;
+- PyInstaller sidecar rebuilt;
+- Tauri/NSIS rebuilt and silently reinstalled;
+- `--startup-smoke` exit 0;
+- installed fake-credential restart/Test/Delete lifecycle PASS;
+- normal shutdown leaves 0 MM-Agent processes;
+- UI v2 Phase 1 / Phase 2 / Phase 3 PASS.
+
+Release-candidate decisions after that tested baseline:
+
+- **UI v2 Phase 4 = PASS by aggregation of already-executed Windows evidence** —
+  `docs/reviews/v1.0.0-rebuild-ui-v2-phase4-evidence-aggregation.md`;
+- **CI acceptance resolved by ADR-0001** — current-head GitHub Actions is optional;
+  executable local Windows release evidence is the accepted substitute, with no claim of
+  a fresh Linux runner;
+- residual exact-parity `PARTIAL` rows are explicitly accepted as non-blocking for
+  v1.0.0 in `docs/reviews/v1.0.0-rebuild-fidelity-partial-disposition.md`;
+- E4 timeout/recycle is promoted to MATCH from focused scheduling tests + Installed
+  Cancellation evidence;
+- the only deliberately open product-evidence item is **P11: one stronger/stable real
+  provider simultaneous green G0 run**.
+
+**Source-only change after the tested baseline:**
+
+S0.2 Reader now receives the canonical Pydantic-generated JSON Schema for
+`交接/题面契约.json` and `交接/数据档案.json`, and those two artifacts are validated
+against `ProblemContract` / `DataArchive` before the Reader leg can seal SUCCEEDED.
+This directly addresses the prior real-provider drift (English/synonym keys such as
+`题目` instead of canonical `赛题`) without weakening G0.
+
+Because this changes sidecar/pipeline source, current remote HEAD is **not yet regression
+verified**. The final local real-provider round must first run focused/full regression and
+repackage the exact current HEAD before the stronger/ZCode G0 proof.
 
 ## UI v2 Phase-3 Provider UX local validation (2026-09-28) — PASS（不宣布 Product Release GO）
 
@@ -81,45 +120,40 @@ The 422-test baseline had claimed these deterministic items closed:
 
 v0.1.0 → v0.2.0 → v0.3.0 → v0.4.0 → v0.5.0 → v0.6.0 → v0.8.0 → v1.0.0
 
-## Current work
+## Current work — final release-candidate gate
 
-Fidelity rebuild continues on `gpt/fidelity-rebuild`.
-FIDELITY_MATRIX has been updated to reflect current state.
+Do not reopen broad fidelity development unless a concrete defect appears.
 
-### Recently completed
+Completed / accepted:
 
-- G5 rework loop with R49 figure route, R50 calc shelve, R51 compile-before-recheck, R52 page guard
-- G4 abstract-1-page check (aux abstract:end label)
-- S6 retrospective/feedback schemas (RetrospectiveReport/RunMetrics)
-- Provider failure propagation tests (auth/network/429/5xx at AgentLoop level)
-- Tool environment security boundary tests (secrets excluded from xelatex/matlab)
-- Repair receipt schemas (S5/S5b/G5/S6)
-- Issue Ledger with generation CAS + receipt_id idempotency + state transition table
-- PyInstaller sidecar build verified
-- React frontend build verified (vite 157KB)
+- Source/Pipeline = GO; no known open source-level P0/P1.
+- Windows Package = PASS.
+- Installed Cancellation = PASS.
+- Installed Credential = PASS.
+- UI v2 Phase 1–4 = PASS.
+- CI evidence mechanism = RESOLVED by ADR-0001.
+- residual low-risk fidelity PARTIAL rows = explicitly accepted for v1.0.0 while remaining
+  honestly marked PARTIAL.
 
-### Remaining PARTIAL items
+Current source-only delta:
 
-- A6: Red-team recompute protocol parity
-- A7: Terminology vs numeric disagreement edge cases
-- A8: Arbitration depth/archive parity
-- A11: Escalation swarm full evidence parity
-- A15: S4 editorial-guard ordering parity
-- A17: S5 repair-lane order parity
-- A19: S5a/S5b cosmetic-loop parity
-- B7: Hard/correctness escalation parity
-- B9: Complete appendix/title rules
-- B11: Per-file fingerprint parity
-- B12: Full calc→figure→text propagation proof
-- B14: Full durable invalidation-and-rerun proof
-- C1-C17: Per-role schema parity
-- D5: Full beauty threshold convergence proof
-- D8-D10: Full behavioral parity for all three profiles
+- S0 Reader producer-contract hardening (canonical schema prompt + artifact-time
+  `ProblemContract` / `DataArchive` validation);
+- distinguishing test that synonym key `题目` fails at Reader artifact acceptance.
 
-### Blocked
+Remaining execution gate:
 
-- Real-provider smoke (needs API key from user)
+1. local regression of the current exact HEAD;
+2. current-head sidecar/Tauri/NSIS rebuild and installed startup smoke;
+3. user enters the real ZCode/stronger-provider Base URL + API Key + exact Model ID through
+   Provider Settings (never paste the key into chat or Git);
+4. Test Connection;
+5. one installed-product S0 run with S0.2 + S0.3 + canonical artifacts simultaneously green
+   so G0 PASS is durably recorded;
+6. secret scan / cleanup of test artifacts and final external release review;
+7. only then final tag/merge decision.
 
+No further GitHub Actions run is required by the current acceptance rule.
 
 ## External source review — 2026-09-27
 
