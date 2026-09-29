@@ -1,6 +1,6 @@
 # LOCAL_HANDOFF_REPORT
 
-Last updated: 2026-09-28 after UI v2 Phase-3 (Provider UX) Windows local validation.
+Last updated: 2026-09-29 after final release-candidate source review.
 
 ## Source of truth
 
@@ -8,25 +8,30 @@ Last updated: 2026-09-28 after UI v2 Phase-3 (Provider UX) Windows local validat
 |---|---|
 | Repository | `wghEla/MM-Agent-Desktop` |
 | Branch | `gpt/fidelity-rebuild` |
-| Last fully locally verified HEAD | tip of `gpt/fidelity-rebuild` after the Phase-3 validation commits (`644aae5` test alignment + docs/evidence; source baseline `feae95f`) — see `docs/CURRENT_STATE.md` |
-| Verified regression at that HEAD | 526 passed / 0 failed; Ruff clean; frontend build green |
-| Installed smoke at that HEAD | NSIS rebuilt/reinstalled; `--startup-smoke` exit 0; 0 orphan; installed fake-credential round-trip; CM test credentials cleaned |
-| Current remote | updated by this round's push |
-| Phase-3 evidence state | **LOCAL VALIDATION PASS** |
-| Product release | not yet final GO (Phase 4 open) |
+| Last fully locally verified executable baseline | `6d5a1133e5eb81d054b0bf0d845e3695c60bfd76` |
+| Baseline regression | 526 passed / 0 failed; Ruff clean; frontend build green |
+| Baseline package | sidecar + Tauri/NSIS rebuilt; silent reinstall; startup smoke 0 |
+| Baseline installed Provider smoke | fake credential restart/Test/Delete + CM cleanup PASS |
+| Current remote state | docs release disposition + S0/G0 producer-contract hardening after `6d5a113` |
+| Current remote verification | SOURCE-ONLY; final local regression/repackage required |
+| Product release | final real-provider green-G0 gate open |
 
 ## Gate status
 
 | Gate | Status |
 |---|---|
-| Source / Pipeline | GO |
-| Windows Package | PASS |
+| Source / Pipeline | GO — no known open P0/P1 |
+| Windows Package | PASS at last tested baseline |
 | Installed Cancellation | PASS |
 | Installed Credential | PASS |
-| Real Provider | CONDITIONAL PASS |
-| UI v2 Phase 1 + native picker/recent workspace | PASS |
-| UI v2 Phase 2 (tree/onboarding/dialogs) | PASS |
-| UI v2 Phase 3 (Provider UX) | **PASS** |
+| UI v2 Phase 1 | PASS |
+| UI v2 Phase 2 | PASS |
+| UI v2 Phase 3 | PASS |
+| UI v2 Phase 4 | PASS by evidence aggregation |
+| CI acceptance | RESOLVED — ADR-0001 local Windows evidence substitute |
+| Fidelity residual PARTIALs | ACCEPTED for v1.0.0; remain honestly PARTIAL |
+| Real Provider | CONDITIONAL PASS; one stronger/stable simultaneous green G0 remains |
+| Current exact HEAD regression/package | PENDING after S0 producer-contract hardening |
 
 ## UI v2 Phase-3 local validation summary
 
@@ -116,47 +121,71 @@ The remaining Real Provider item is one ceremonial full-green G0 run using a str
 more stable model/provider. The prior Groq run was limited by model schema variance and
 free-tier rate limiting; no open product defect is implicated.
 
-## UI v2 Phase-3 source handoff
+## Final release-candidate handoff
 
-Phase 2 is fully locally validated. Current unverified source work is Phase 3 only.
+### Already closed
 
-Implemented after the verified `3fbc6bc` baseline:
+Do not repeat these gates unless the final current-head regression exposes a concrete
+regression:
 
-- provider catalog + capability metadata;
-- model discovery/manual fallback;
-- configured-model connection validation;
-- pre-save Test Connection with ephemeral credentials only;
-- Provider create/edit/delete;
-- Credential Manager replace/clear;
-- Compatible capability/auth/path configuration;
-- endpoint/protocol credential scoping;
-- transient/persisted URL/header/path validation;
-- fail-closed credential deletion;
-- OAuth extension registry contract with no advertised/registered OAuth provider.
+- UI v2 Phase 1–4;
+- Windows package/install/startup;
+- installed cancellation/process-tree cleanup;
+- installed Credential Manager lifecycle;
+- Provider catalog/model discovery/pre-save Test/endpoint binding/OAuth fail-closed;
+- broad source/pipeline fidelity review;
+- CI acceptance-rule debate;
+- residual low-risk fidelity parity polishing.
 
-Security invariants added in this round:
+### Current source-only delta
 
-1. a saved API key cannot follow a Provider to a different protocol/Base URL;
-2. `auth_style=none` cannot coexist with a saved/transient Compatible credential;
-3. secret-bearing custom headers are rejected;
-4. Base URLs cannot contain userinfo/query/fragment credentials;
-5. Compatible endpoint paths must remain relative to the configured provider host;
-6. Discover Models never performs a generation fallback;
-7. pre-save Test Connection does not persist the profile/key;
-8. Windows credential deletion errors other than NOT_FOUND fail closed before SQLite drops
-   the reference.
+`mmagent/mm/pipeline/s0_s1.py` now projects the canonical Pydantic schemas for
+`ProblemContract` and `DataArchive` into the Reader instruction and binds those schemas
+to the Reader's expected artifacts.
 
-OAuth remains a **non-operational extension point**. Do not show an account-login button
-until a documented third-party flow is implemented under MM-Agent's own registered client.
+Intent:
 
-## Remaining product work
+- canonical Chinese contract field names are visible before generation;
+- `题目`/English synonym drift cannot seal S0.2 as SUCCEEDED;
+- validation happens at artifact acceptance, before G0;
+- G0 remains unchanged/fail-closed.
 
-1. ~~ZCode local Windows validation of UI v2 Phase 3 current HEAD~~ — done 2026-09-28 (PASS).
-2. One stronger-model / ZCode API real-provider full-green G0 run.
-3. CI acceptance decision.
-4. Explicit acceptance or closure of remaining low-risk fidelity deviations.
+Distinguishing test added in `tests/pipeline/test_s0_s1.py`.
 
-Do not reopen broad Source/Pipeline fidelity review unless a concrete defect appears.
+### Only remaining execution work
 
-Do not merge `main`, tag a final release, force-push, or spend GitHub Actions quota without
-explicit user direction.
+The next local round must:
+
+1. pull the exact current HEAD;
+2. run focused S0/G0 + provider tests;
+3. run full pytest + Ruff + frontend build;
+4. rebuild sidecar + Tauri/NSIS and reinstall the exact current HEAD;
+5. run startup smoke;
+6. user manually enters real ZCode/stronger-provider Base URL + API Key + exact Model ID
+   through Provider Settings;
+7. Test Connection;
+8. run a minimal installed-product S0→G0 path;
+9. require S0.2 + S0.3 + canonical contract/data archive + mechanically generated matrix +
+   G0 PASS in the **same run**;
+10. record provider/model host/model ID but never the credential;
+11. secret scan;
+12. clean normal exit / no orphan;
+13. update final gate docs.
+
+The credential must never be pasted into chat, committed, logged, screenshotted or written to
+evidence.
+
+### Final stop condition
+
+If the current-head regression/package checks are green and the stronger/ZCode run records a
+durable G0 PASS with no new P0/P1:
+
+- Real Provider → PASS;
+- release-candidate evidence is complete;
+- perform one final GPT-5.6 Sol release review;
+- then user may authorize the final `v1.0.0` tag / merge decision.
+
+Do not run GitHub Actions solely for acceptance; ADR-0001 resolves that requirement.
+
+Do not reopen accepted PARTIAL parity rows unless the final real-provider run exposes a
+concrete defect.
