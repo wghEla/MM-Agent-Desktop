@@ -12,6 +12,7 @@ import pytest
 
 from mmagent.agent.errors import ProviderError, RateLimitError
 from mmagent.providers.anthropic_messages import AnthropicMessagesProvider
+from mmagent.providers.base import ModelBoundProvider
 from mmagent.providers.gemini import GeminiProvider
 from mmagent.providers.normalized import ImagePart, NormalizedMessage, NormalizedTool, TextPart
 from mmagent.providers.openai_chat import OpenAIChatProvider
@@ -244,6 +245,48 @@ async def test_openai_compatible_custom_path_and_auth():
     assert "Authorization" not in req.headers
     assert res.usage.output_tokens == 7
     await client.aclose()
+
+
+def test_effective_reasoning_is_normalized_to_declared_provider_capabilities():
+    compatible_off = ModelBoundProvider(
+        OpenAICompatibleProvider(
+            "https://compat.test",
+            lambda: "k",
+            reasoning_effort=False,
+        ),
+        "model-a",
+    )
+    assert compatible_off.resolve_reasoning("xhigh") is None
+    assert compatible_off.resolve_reasoning("high") is None
+
+    compatible_on = ModelBoundProvider(
+        OpenAICompatibleProvider(
+            "https://compat.test",
+            lambda: "k",
+            reasoning_effort=True,
+        ),
+        "model-a",
+    )
+    assert compatible_on.resolve_reasoning("xhigh") == "high"
+    assert compatible_on.resolve_reasoning("medium") == "medium"
+
+    configured_low = ModelBoundProvider(
+        OpenAICompatibleProvider(
+            "https://compat.test",
+            lambda: "k",
+            reasoning_effort=True,
+        ),
+        "model-a",
+        reasoning="low",
+    )
+    assert configured_low.resolve_reasoning("xhigh") == "low"
+
+    # Native providers that declare no reasoning effort must not record/send a
+    # role-default effort that their own capability contract says is unsupported.
+    assert ModelBoundProvider(
+        AnthropicMessagesProvider("https://api.test", lambda: "k"),
+        "claude-test",
+    ).resolve_reasoning("xhigh") is None
 
 
 def test_capabilities_honesty():
