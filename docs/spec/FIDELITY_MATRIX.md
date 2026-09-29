@@ -125,9 +125,13 @@ These are product requirements introduced by the independent desktop reimplement
 
 Do **not** call the rebuild product-complete until all of the following are true:
 
-1. current-head Python Linux + Windows CI is green;
+1. release-candidate regression/build evidence satisfies
+   `docs/decisions/ADR-0001-local-release-evidence-instead-of-mandatory-ci.md`.
+   Current-head GitHub Actions is optional evidence, not a mandatory gate; do not claim a
+   Linux runner was executed when it was not;
 2. Windows release build + managed runtime + NSIS install/startup smoke is green;
 3. hard-crash/restart E2E proves real-stage resume behavior;
 4. remaining fidelity deviations (notably narrower repair-lane/gate parity and residual low-risk carrier schemas) are either closed or explicitly accepted;
-5. timeout/cancel/failure-injection changes on the current head have executable CI evidence, not source-presence evidence only;
+5. timeout/cancel/failure-injection changes have executable release-candidate evidence, not
+   source-presence evidence only;
 6. real-provider smoke status is stated truthfully.
