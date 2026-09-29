@@ -87,7 +87,7 @@
 | E1 | One owner per workspace | MATCH | `run.lock` + PID liveness + tests |
 | E2 | Node/stage/S2-question/S5-round resume; active residue fail-closed | MATCH | real mid-S1 orphan invocation recovery E2E proves fail-closed closure, sealed-node reuse, retry and completion to final PDF; S2 per-question checkpoints skip completed driver work only after carrier revalidation and invalidate broken degraded carriers; S5 round-complete snapshots are separately tested. |
 | E3 | Pause / resume / cancel + process-tree cleanup | MATCH | Installed Cancellation Gate proves the packaged product can cancel a real long-running Runtime-owned Python parent+child Job Object tree through the authenticated product boundary, reach durable CANCELLED within 0.7 s, kill parent+child, freeze post-cancel writes, survive full app restart without auto-resume, leave 0 owned orphans, and successfully run new work afterwards. Report: `docs/reviews/v1.0.0-rebuild-installed-cancellation-gate.md`. |
-| E4 | Layered timeout / recycle before reassignment | PARTIAL | Source now implements the pinned R60 invariant in the new runtime: each wave leg starts its deadline only after acquiring a concurrency slot; timeout cancellation is awaited before retry, preventing old/new double writers; programming exceptions cancel+await peer legs; default wave deadline is 1300s and S4/S5 review waves retain 3600s. Python/XeLaTeX share the Windows Job Object ProcessManager, MATLAB helper uses the same backend, and external-tool envs are allowlisted. Focused timeout/recycle tests exist, but latest-head CI has not executed because GitHub Actions jobs are currently failing before runner startup. |
+| E4 | Layered timeout / recycle before reassignment | MATCH | Source implements the pinned R60 invariant: each wave leg starts its deadline only after acquiring a concurrency slot; timeout cancellation is awaited before retry, preventing old/new double writers; programming exceptions cancel+await peer legs; default wave deadline is 1300s and S4/S5 review waves retain 3600s. Focused timeout/recycle tests cover the scheduling semantics, and the Installed Cancellation Gate proves the packaged Windows Job Object path kills a real parent+child tree, freezes writes, persists CANCELLED across restart and leaves zero owned orphans. ADR-0001 explicitly accepts local executable Windows evidence instead of mandatory current-head Actions. |
 | E5 | 429 handling and concurrency reduction | MATCH | typed `RateLimitError` → durable QUEUED is wired through adaptive 4→2 waves with one retry. Context-aware `run_role_leg` gives direct standalone legs the same one-job-wave retry semantics while an active outer wave owns retry/concurrency to prevent double retry; focused tests cover direct and nested/outer-wave paths. |
 | E6 | MAX_LEGS / MAX_HOURS emergency budget guard | MATCH | durable task count + accumulated RUNNING intervals are checked before executable role legs and at pipeline boundaries; pause time is excluded; unit tests cover both ceilings |
 | E7 | JSON repair loop | PARTIAL | tool-call malformed JSON recovery exists; full artifact-schema rewrite loop parity incomplete |
@@ -120,6 +120,18 @@ These are product requirements introduced by the independent desktop reimplement
 - JSON/PID marker state truth → SQLite + append-only events; files remain carriers/evidence.
 - upstream sandbox implementation → workspace permission scopes + Windows process/path controls.
 - upstream text assets/wordlists are not copied verbatim; equivalent clean-room behavior is implemented.
+
+## v1.0.0 residual PARTIAL disposition
+
+Residual exact-parity `PARTIAL` rows were reviewed in
+`docs/reviews/v1.0.0-rebuild-fidelity-partial-disposition.md`.
+
+They remain `PARTIAL` rather than being inflated to `MATCH`, but A1/A3/A6/A8/A11/A15/
+A17/A19/A20/A21/B9/B11/B12/C1–C17/D5/D8/D9/D10/D11/E7/E10 are explicitly accepted as
+non-blocking low-risk fidelity deltas for the Windows-first v1.0.0-rebuild release.
+
+The only intentionally open product-evidence item from that disposition is **P11**:
+one stronger/stable real-provider simultaneous green G0 run.
 
 ## Current acceptance rule
 
