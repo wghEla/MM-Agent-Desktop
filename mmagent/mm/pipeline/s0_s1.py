@@ -9,16 +9,18 @@ import json
 from pathlib import Path
 from typing import Any
 
-from mmagent.agent.loop import AgentLoop, AgentTask
-from mmagent.mm.roles.prompts import ANSWER_PREDICTOR_SYSTEM, PLANNER_SYSTEM, READER_SYSTEM
-from mmagent.mm.roles.registry import get_role
+from mmagent.mm.contracts.s0_contracts import (
+    DATA_ARCHIVE_REQUIRED_TOP_LEVEL_KEYS,
+    PROBLEM_CONTRACT_REQUIRED_TOP_LEVEL_KEYS,
+    DataArchive,
+    ProblemContract,
+)
+from mmagent.orchestration.role_leg import run_role_leg
 from mmagent.providers.base import BaseProvider
-from mmagent.state import repositories
 from mmagent.state.db import Database
 from mmagent.tools.registry import ToolRegistry
 from mmagent.workspace.artifacts import ExpectedArtifact
 from mmagent.workspace.path_policy import PathPolicy
-from mmagent.workspace.permissions import PermissionChecker
 
 
 async def run_s0(
@@ -35,25 +37,23 @@ async def run_s0(
     返回 {"g0_pass": bool, "g0_issues": [...], "tasks": [...]}。
     """
     tasks: list[dict] = []
-    for role_id, node_key, system, instructions, expected in _s0_specs():
-        task_rec = repositories.create_task(
-            db, run_id=run_id, stage_key="S0", node_key=node_key, role_id=role_id,
-        )
-        loop = AgentLoop(
-            db, provider, registry,
-            PermissionChecker(get_role(role_id).permissions(), policy),
-            policy, cancel=cancel,
-        )
-        spec = AgentTask(
-            task_id=task_rec.id, node_key=node_key, role_id=role_id,
-            system_prompt=system, instructions=instructions,
-            model="mock", reasoning=get_role(role_id).reasoning,
+    for role_id, node_key, instructions, expected in _s0_specs():
+        status = await run_role_leg(
+            db, provider, registry, policy, run_id,
+            stage_key="S0",
+            role_id=role_id,
+            node_key=node_key,
+            instructions=instructions,
             expected_artifacts=expected,
+            cancel=cancel,
         )
-        outcome = await loop.run(spec)
-        tasks.append({"node": node_key, "status": outcome.status.value, "error": outcome.error})
-        if outcome.status.value != "SUCCEEDED":
-            return {"g0_pass": False, "g0_issues": [f"{node_key} 未成功: {outcome.error}"], "tasks": tasks}
+        tasks.append({"node": node_key, "status": status, "error": None})
+        if status != "SUCCEEDED":
+            return {
+                "g0_pass": False,
+                "g0_issues": [f"{node_key} 未成功"],
+                "tasks": tasks,
+            }
 
     # 机械生成需求追踪矩阵
     await _generate_requirement_matrix(db, policy, run_id, registry, cancel)
@@ -65,19 +65,66 @@ async def run_s0(
     return {"g0_pass": ok, "g0_issues": issues, "tasks": tasks}
 
 
-def _s0_specs() -> list[tuple[str, str, str, str, list[ExpectedArtifact]]]:
-    reader = get_role("reader")
-    predictor = get_role("answer_predictor")
+def _canonical_json_schema_instruction(
+    rel_path: str,
+    model: type[ProblemContract] | type[DataArchive],
+) -> str:
+    """Render the contract authority into the model instruction without copying a schema.
+
+    The Pydantic contract remains the single source of truth; this is only a prompt-time
+    projection of that same object so real providers see the exact Chinese field names
+    before artifact verification.
+    """
+    schema = json.dumps(
+        model.model_json_schema(),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return (
+        f"\n{rel_path} 必须写成纯 JSON（不要 Markdown 代码围栏），字段名必须严格遵循"
+        f" Runtime 合同；canonical JSON Schema={schema}"
+    )
+
+
+def _s0_specs() -> list[tuple[str, str, str, list[ExpectedArtifact]]]:
+    required_contract_keys = "、".join(PROBLEM_CONTRACT_REQUIRED_TOP_LEVEL_KEYS)
+    required_archive_keys = "、".join(DATA_ARCHIVE_REQUIRED_TOP_LEVEL_KEYS)
+    reader_instructions = (
+        "读取 输入/题目/ 下的题目文件与 输入/数据/ 下的附件清单。"
+        "产出 交接/题面契约.json 和 交接/数据档案.json。"
+        "不得把中文合同字段翻译成英文，也不得自造同义顶层键；"
+        "例如题面契约的赛题字段必须写作“赛题”，不是“题目”或 contest。"
+        f" 题面契约顶层必须显式包含：{required_contract_keys}；"
+        "没有内容时也要保留对应空字符串或空数组。"
+        f" 数据档案顶层必须显式包含：{required_archive_keys}。"
+        + _canonical_json_schema_instruction("交接/题面契约.json", ProblemContract)
+        + _canonical_json_schema_instruction("交接/数据档案.json", DataArchive)
+    )
     return [
-        ("reader", "S0.2:读题", READER_SYSTEM,
-         "读取 输入/题目/ 下的题目文件与 输入/数据/ 下的附件清单。"
-         "产出 交接/题面契约.json 和 交接/数据档案.json。",
-         [ExpectedArtifact(rel_path="交接/题面契约.json"),
-          ExpectedArtifact(rel_path="交接/数据档案.json")]),
-        ("answer_predictor", "S0.3:预测", ANSWER_PREDICTOR_SYSTEM,
-         "读取 交接/题面契约.json 和 交接/数据档案.json。"
-         "产出 交接/典型答卷预测.md。",
-         [ExpectedArtifact(rel_path="交接/典型答卷预测.md", kind="text")]),
+        (
+            "reader",
+            "S0.2:读题",
+            reader_instructions,
+            [
+                ExpectedArtifact(
+                    rel_path="交接/题面契约.json",
+                    schema_model=ProblemContract,
+                    required_json_keys=PROBLEM_CONTRACT_REQUIRED_TOP_LEVEL_KEYS,
+                ),
+                ExpectedArtifact(
+                    rel_path="交接/数据档案.json",
+                    schema_model=DataArchive,
+                    required_json_keys=DATA_ARCHIVE_REQUIRED_TOP_LEVEL_KEYS,
+                ),
+            ],
+        ),
+        (
+            "answer_predictor",
+            "S0.3:预测",
+            "读取 交接/题面契约.json 和 交接/数据档案.json。"
+            "产出 交接/典型答卷预测.md。",
+            [ExpectedArtifact(rel_path="交接/典型答卷预测.md", kind="text")],
+        ),
     ]
 
 
@@ -106,35 +153,10 @@ async def _generate_requirement_matrix(
     matrix_path.write_text(json.dumps(matrix, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
-# ---------------------------------------------------------------- G1
-def check_g1(workspace_root: Path) -> tuple[bool, list[str]]:
-    """G1 门检：计划存在、每问路线/方法/依赖齐、原型执行证据。"""
-    issues: list[str] = []
-    root = Path(workspace_root)
-    plan_path = root / "交接" / "计划.json"
-    if not plan_path.is_file():
-        return False, ["交接/计划.json 缺失"]
-    try:
-        plan = json.loads(plan_path.read_text(encoding="utf-8"))
-    except Exception as e:
-        return False, [f"计划.json 不可解析: {e}"]
-    problems = plan.get("问题清单") or []
-    if not problems:
-        issues.append("计划 问题清单 为空")
-    for p in problems:
-        num = p.get("编号")
-        if not p.get("主方法"):
-            issues.append(f"问{num} 缺主方法")
-        deps = p.get("依赖问题")
-        if deps is None:
-            issues.append(f"问{num} 缺依赖问题")
-        elif isinstance(deps, list):
-            # 检查 DAG 不成环（简化：不许自依赖）
-            if num in deps:
-                issues.append(f"问{num} 自依赖非法")
-    if not plan.get("叙事主线"):
-        issues.append("计划缺叙事主线")
-    return (len(issues) == 0), issues
+# ---------------------------------------------------------------- G1 compatibility wrappers
+def check_g1(workspace_root: Path, *, profile: str = "标准") -> tuple[bool, list[str]]:
+    from mmagent.mm.gates.g1 import check_g1 as _check
+    return _check(workspace_root, profile=profile)
 
 
 async def run_s1(
@@ -144,27 +166,10 @@ async def run_s1(
     policy: PathPolicy,
     run_id: str,
     *,
+    profile: str = "标准",
     cancel=None,
 ) -> dict[str, Any]:
-    """执行 S1：规划师 → G1 门检。"""
-    task_rec = repositories.create_task(
-        db, run_id=run_id, stage_key="S1", node_key="S1:规划", role_id="planner",
+    from mmagent.mm.pipeline.s1_tournament import run_s1 as _run
+    return await _run(
+        db, provider, registry, policy, run_id, profile=profile, cancel=cancel
     )
-    loop = AgentLoop(
-        db, provider, registry,
-        PermissionChecker(get_role("planner").permissions(), policy),
-        policy, cancel=cancel,
-    )
-    spec = AgentTask(
-        task_id=task_rec.id, node_key="S1:规划", role_id="planner",
-        system_prompt=PLANNER_SYSTEM,
-        instructions="读取 交接/题面契约.json 和 交接/典型答卷预测.md。产出 交接/计划.json。",
-        model="mock", reasoning=get_role("planner").reasoning,
-        expected_artifacts=[ExpectedArtifact(rel_path="交接/计划.json")],
-    )
-    outcome = await loop.run(spec)
-    if outcome.status.value != "SUCCEEDED":
-        return {"g1_pass": False, "g1_issues": [f"S1 未成功: {outcome.error}"]}
-    from mmagent.mm.gates.g0 import check_g0 as _g0  # noqa
-    ok, issues = check_g1(policy.root)
-    return {"g1_pass": ok, "g1_issues": issues}

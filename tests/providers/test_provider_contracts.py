@@ -12,8 +12,9 @@ import pytest
 
 from mmagent.agent.errors import ProviderError, RateLimitError
 from mmagent.providers.anthropic_messages import AnthropicMessagesProvider
+from mmagent.providers.base import ModelBoundProvider
 from mmagent.providers.gemini import GeminiProvider
-from mmagent.providers.normalized import NormalizedMessage, NormalizedTool, TextPart
+from mmagent.providers.normalized import ImagePart, NormalizedMessage, NormalizedTool, TextPart
 from mmagent.providers.openai_chat import OpenAIChatProvider
 from mmagent.providers.openai_compatible import OpenAICompatibleProvider
 from mmagent.providers.openai_responses import OpenAIResponsesProvider
@@ -246,6 +247,48 @@ async def test_openai_compatible_custom_path_and_auth():
     await client.aclose()
 
 
+def test_effective_reasoning_is_normalized_to_declared_provider_capabilities():
+    compatible_off = ModelBoundProvider(
+        OpenAICompatibleProvider(
+            "https://compat.test",
+            lambda: "k",
+            reasoning_effort=False,
+        ),
+        "model-a",
+    )
+    assert compatible_off.resolve_reasoning("xhigh") is None
+    assert compatible_off.resolve_reasoning("high") is None
+
+    compatible_on = ModelBoundProvider(
+        OpenAICompatibleProvider(
+            "https://compat.test",
+            lambda: "k",
+            reasoning_effort=True,
+        ),
+        "model-a",
+    )
+    assert compatible_on.resolve_reasoning("xhigh") == "high"
+    assert compatible_on.resolve_reasoning("medium") == "medium"
+
+    configured_low = ModelBoundProvider(
+        OpenAICompatibleProvider(
+            "https://compat.test",
+            lambda: "k",
+            reasoning_effort=True,
+        ),
+        "model-a",
+        reasoning="low",
+    )
+    assert configured_low.resolve_reasoning("xhigh") == "low"
+
+    # Native providers that declare no reasoning effort must not record/send a
+    # role-default effort that their own capability contract says is unsupported.
+    assert ModelBoundProvider(
+        AnthropicMessagesProvider("https://api.test", lambda: "k"),
+        "claude-test",
+    ).resolve_reasoning("xhigh") is None
+
+
 def test_capabilities_honesty():
     # 各协议能力声明与实现一致（不伪装）
     assert OpenAIChatProvider("u", lambda: "k").capabilities().reasoning_levels == frozenset({"low", "medium", "high"})
@@ -297,15 +340,15 @@ def test_role_routing_defaults_and_override():
 
 # ==================== Round-1 外审修复的负向测试 ====================
 def test_r1_capabilities_image_input_honest():
-    """image_input 已如实降为 False（图片输入未实现，v0.4 随图片腿落地）。"""
+    """Native multimodal protocols advertise image input; generic compatible stays conservative."""
     for maker in (
         lambda: OpenAIChatProvider("u", lambda: "k"),
         lambda: OpenAIResponsesProvider("u", lambda: "k"),
         lambda: AnthropicMessagesProvider("u", lambda: "k"),
         lambda: GeminiProvider("u", lambda: "k"),
-        lambda: OpenAICompatibleProvider("u", lambda: "k"),
     ):
-        assert maker().capabilities().image_input is False
+        assert maker().capabilities().image_input is True
+    assert OpenAICompatibleProvider("u", lambda: "k").capabilities().image_input is False
 
 
 def test_r1_anthropic_reasoning_honest():
@@ -447,3 +490,440 @@ def test_r2_p2_choices_missing_protocol_error():
     with pytest.raises(ProviderError) as ei:
         parse_chat_response({"id": "x", "choices": []})
     assert ei.value.kind == ErrorKind.PROVIDER_PROTOCOL
+
+
+
+def test_native_multimodal_payload_shapes():
+    from mmagent.providers.anthropic_messages import build_messages_payload
+    from mmagent.providers.gemini import build_generate_payload
+    from mmagent.providers.openai_chat import build_chat_payload
+    from mmagent.providers.openai_responses import build_responses_payload
+
+    msg = NormalizedMessage(
+        role="user",
+        content=[
+            TextPart(text="inspect"),
+            ImagePart(b64="YWJj", media_type="image/png"),
+        ],
+    )
+
+    chat = build_chat_payload(
+        [msg], [], model="m", reasoning=None, max_output_tokens=None, stream=False
+    )
+    assert chat["messages"][0]["content"][1]["type"] == "image_url"
+    assert chat["messages"][0]["content"][1]["image_url"]["url"].endswith("YWJj")
+
+    responses = build_responses_payload(
+        [msg], [], model="m", reasoning=None, max_output_tokens=None
+    )
+    assert responses["input"][0]["content"][1]["type"] == "input_image"
+
+    anthropic = build_messages_payload(
+        [msg], [], model="m", max_output_tokens=100
+    )
+    image = anthropic["messages"][0]["content"][1]
+    assert image["type"] == "image"
+    assert image["source"]["data"] == "YWJj"
+
+    gemini = build_generate_payload(
+        [msg], [], max_output_tokens=None
+    )
+    inline = gemini["contents"][0]["parts"][1]["inlineData"]
+    assert inline["mimeType"] == "image/png"
+    assert inline["data"] == "YWJj"
+
+
+# ==================== keyless provider profiles (local relays) ====================
+
+@pytest.mark.asyncio
+async def test_keyless_openai_chat_omits_authorization_header():
+    """A provider profile without an API key (e.g. a local relay) must not send
+    an empty `Authorization: Bearer ` header — httpx rejects it outright."""
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        return httpx.Response(200, json={
+            "id": "c", "object": "chat.completion", "created": 1, "model": "m",
+            "choices": [{"index": 0, "finish_reason": "stop",
+                         "message": {"role": "assistant", "content": "ok"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        })
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    p = OpenAIChatProvider("https://relay.test/v1", lambda: "", client=client)
+    try:
+        resp = await p.generate(
+            [NormalizedMessage(role="user", content=[TextPart(text="hi")])],
+            [], model="m1",
+        )
+        assert resp.message.content[0].text == "ok"
+        assert "Authorization" not in captures[0].headers
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_keyed_openai_chat_keeps_bearer_header():
+    """A keyed profile still sends the Bearer header."""
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        return httpx.Response(200, json={
+            "id": "c", "object": "chat.completion", "created": 1, "model": "m",
+            "choices": [{"index": 0, "finish_reason": "stop",
+                         "message": {"role": "assistant", "content": "ok"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        })
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    p = OpenAIChatProvider("https://api.test/v1", lambda: "sk-test", client=client)
+    try:
+        await p.generate(
+            [NormalizedMessage(role="user", content=[TextPart(text="hi")])],
+            [], model="m1",
+        )
+        assert captures[0].headers["Authorization"] == "Bearer sk-test"
+    finally:
+        await client.aclose()
+
+
+# ==================== openai_chat /models-404 chat fallback ====================
+
+@pytest.mark.asyncio
+async def test_openai_chat_connection_falls_back_to_configured_model():
+    """/models 404 must fall back to a real minimal chat call using the
+    configured model (max_tokens=1) — relays without /models are valid."""
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        if request.url.path.endswith("/models"):
+            return httpx.Response(404)
+        return httpx.Response(200, json={
+            "id": "c", "object": "chat.completion", "created": 1, "model": "m",
+            "choices": [{"index": 0, "finish_reason": "stop",
+                         "message": {"role": "assistant", "content": "OK"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        })
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    p = OpenAIChatProvider(
+        "https://relay.test/v1", lambda: "sk-fake", client=client, test_model="cfg-model"
+    )
+    try:
+        result = await p.test_connection()
+        assert result["ok"] is True
+        assert "chat fallback 成功" in result["detail"]
+        posts = [r for r in captures if r.method == "POST"]
+        assert len(posts) == 1
+        body = json.loads(posts[0].content)
+        assert body["model"] == "cfg-model"
+        assert body["max_tokens"] == 1
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("models_payload", "expected"),
+    [
+        (
+            {"data": [{"id": "cfg-model"}, {"id": "other"}]},
+            {"ok": True, "detail": "models 端点 200; 已确认模型 cfg-model"},
+        ),
+        (
+            {"data": []},
+            {"ok": False, "detail": "models 端点 200; 未能从响应识别模型，无法确认 cfg-model"},
+        ),
+        (
+            {"data": [{"id": "other"}]},
+            {"ok": False, "detail": "models 端点 200; 配置模型不存在或当前账户不可用: cfg-model"},
+        ),
+    ],
+)
+async def test_openai_chat_connection_models_200_no_fallback(models_payload, expected):
+    """A 200 /models endpoint answers directly (configured-model verdict) with no chat call."""
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        return httpx.Response(200, json=models_payload)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    p = OpenAIChatProvider(
+        "https://api.test/v1", lambda: "sk-fake", client=client, test_model="cfg-model"
+    )
+    try:
+        result = await p.test_connection()
+        assert result == expected
+        assert all(r.method == "GET" for r in captures)
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider_factory", "path_suffix"),
+    [
+        (
+            lambda client: OpenAIResponsesProvider(
+                "https://api.test/v1", lambda: "secret-redact-me", client=client
+            ),
+            "/responses",
+        ),
+        (
+            lambda client: AnthropicMessagesProvider(
+                "https://api.test", lambda: "secret-redact-me", client=client, test_model="claude-test"
+            ),
+            "/v1/messages",
+        ),
+        (
+            lambda client: GeminiProvider(
+                "https://api.test", lambda: "secret-redact-me", client=client
+            ),
+            "/v1beta/models/m:generateContent",
+        ),
+    ],
+)
+async def test_native_provider_4xx_error_never_echoes_api_key(
+    provider_factory,
+    path_suffix,
+):
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith(path_suffix)
+        return httpx.Response(400, text="bad credential secret-redact-me")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = provider_factory(client)
+    try:
+        with pytest.raises(ProviderError) as excinfo:
+            await provider.generate(
+                [NormalizedMessage(role="user", content=[TextPart(text="hi")])],
+                [],
+                model="m",
+            )
+        assert "secret-redact-me" not in str(excinfo.value)
+        assert "REDACTED" in str(excinfo.value)
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_anthropic_connection_prefers_model_list_and_validates_configured_model() -> None:
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        if request.url.path == "/v1/models":
+            return httpx.Response(
+                200,
+                json={"data": [{"id": "claude-configured"}]},
+            )
+        return httpx.Response(500)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AnthropicMessagesProvider(
+        "https://api.test",
+        lambda: "test-key",
+        client=client,
+        test_model="claude-configured",
+    )
+    try:
+        result = await provider.test_connection()
+        assert result["ok"] is True
+        assert "claude-configured" in result["detail"]
+        assert [request.url.path for request in captures] == ["/v1/models"]
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_anthropic_connection_falls_back_to_configured_model_when_models_missing() -> None:
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        if request.url.path == "/v1/models":
+            return httpx.Response(404)
+        return httpx.Response(
+            200,
+            json={
+                "id": "msg_test",
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "ok"}],
+                "model": "claude-configured",
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = AnthropicMessagesProvider(
+        "https://api.test",
+        lambda: "test-key",
+        client=client,
+        test_model="claude-configured",
+    )
+    try:
+        result = await provider.test_connection()
+        assert result["ok"] is True
+        assert [request.url.path for request in captures] == [
+            "/v1/models",
+            "/v1/messages",
+        ]
+        body = json.loads(captures[1].content)
+        assert body["model"] == "claude-configured"
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_test_connection_respects_custom_models_path():
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        if request.url.path == "/v1/catalog/models":
+            return httpx.Response(200, json={"data": [{"id": "m1"}]})
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenAICompatibleProvider(
+        "https://compat.test/v1",
+        lambda: "k",
+        models_path="/catalog/models",
+        test_model="m1",
+        client=client,
+    )
+    try:
+        result = await provider.test_connection()
+        assert result["ok"] is True
+        assert captures[0].url.path == "/v1/catalog/models"
+        assert "/catalog/models" in result["detail"]
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_can_disable_models_probe_and_use_chat_fallback():
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        if request.url.path == "/v1/chat/completions":
+            return _resp_200_openai_chat()
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenAICompatibleProvider(
+        "https://compat.test/v1",
+        lambda: "k",
+        models_path=None,
+        test_model="m1",
+        client=client,
+    )
+    try:
+        result = await provider.test_connection()
+        assert result["ok"] is True
+        assert "models 端点已禁用" in result["detail"]
+        assert [request.url.path for request in captures] == ["/v1/chat/completions"]
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_compatible_connection_rejects_configured_model_missing_from_list() -> None:
+    captures: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captures.append(request)
+        return httpx.Response(200, json={"data": [{"id": "other-model"}]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenAICompatibleProvider(
+        "https://compat.test/v1",
+        lambda: "k",
+        test_model="configured-model",
+        client=client,
+    )
+    try:
+        result = await provider.test_connection()
+        assert result["ok"] is False
+        assert "configured-model" in result["detail"]
+        assert "不存在" in result["detail"]
+        assert [request.url.path for request in captures] == ["/v1/models"]
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_connection_rejects_configured_model_missing_from_list() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [{"id": "other-model"}]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenAIChatProvider(
+        "https://api.test/v1",
+        lambda: "k",
+        test_model="configured-model",
+        client=client,
+    )
+    try:
+        result = await provider.test_connection()
+        assert result["ok"] is False
+        assert "configured-model" in result["detail"]
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_responses_connection_accepts_configured_model_present_in_list() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [{"id": "configured-model"}]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenAIResponsesProvider(
+        "https://api.test/v1",
+        lambda: "k",
+        test_model="configured-model",
+        client=client,
+    )
+    try:
+        result = await provider.test_connection()
+        assert result["ok"] is True
+        assert "configured-model" in result["detail"]
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_gemini_connection_rejects_configured_model_missing_from_list() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "models": [
+                    {
+                        "name": "models/other-model",
+                        "supportedGenerationMethods": ["generateContent"],
+                    }
+                ]
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = GeminiProvider(
+        "https://generativelanguage.test",
+        lambda: "k",
+        test_model="configured-model",
+        client=client,
+    )
+    try:
+        result = await provider.test_connection()
+        assert result["ok"] is False
+        assert "configured-model" in result["detail"]
+    finally:
+        await client.aclose()

@@ -38,7 +38,17 @@ class FsReadTool(Tool):
         except MMAgentError as e:
             return ToolResult(ok=False, error=str(e), meta={"denied": True})
         max_bytes = int(args.get("max_bytes") or MAX_READ_BYTES)
-        data = p.read_bytes()[:max_bytes]
+        try:
+            data = p.read_bytes()[:max_bytes]
+        except OSError as e:
+            # 模型常把目录当文件读（Windows 上 read_bytes(目录) 抛
+            # PermissionError(13)）；这必须是可回传给模型的工具错误，
+            # 不能变成未捕获 internal 崩掉整条腿。
+            return ToolResult(
+                ok=False,
+                error=f"无法读取（可能是目录或无权限）: {rel}: {e}",
+                meta={"path": rel, "errno": e.errno},
+            )
         try:
             text = data.decode("utf-8")
         except UnicodeDecodeError:

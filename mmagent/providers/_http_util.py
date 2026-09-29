@@ -61,3 +61,62 @@ def _redact_all(text: str, secrets: tuple[str, ...]) -> str:
 
 
 # ProviderErrorKind 别名（避免循环导入的兼容出口）
+
+
+def openai_style_model_ids(payload: object) -> set[str]:
+    """Extract model ids from the common {"data":[{"id": ...}]} shape."""
+    if not isinstance(payload, dict):
+        return set()
+    rows = payload.get("data")
+    if not isinstance(rows, list):
+        return set()
+    return {
+        value
+        for row in rows
+        if isinstance(row, dict)
+        for value in [row.get("id")]
+        if isinstance(value, str) and value
+    }
+
+
+def gemini_model_ids(payload: object) -> set[str]:
+    """Extract generateContent-capable Gemini model ids without the models/ prefix."""
+    if not isinstance(payload, dict):
+        return set()
+    rows = payload.get("models")
+    if not isinstance(rows, list):
+        return set()
+    values: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        methods = row.get("supportedGenerationMethods")
+        if isinstance(methods, list) and "generateContent" not in methods:
+            continue
+        name = row.get("name")
+        if isinstance(name, str) and name:
+            values.add(name.removeprefix("models/"))
+    return values
+
+
+def configured_model_detail(
+    configured: str | None,
+    available: set[str],
+    *,
+    endpoint_label: str,
+) -> dict[str, object]:
+    """Turn a successful model-list response into a configured-model verdict."""
+    model = (configured or "").strip()
+    if not model:
+        return {"ok": True, "detail": f"{endpoint_label}; 未配置模型，未校验 Model ID"}
+    if model in available:
+        return {"ok": True, "detail": f"{endpoint_label}; 已确认模型 {model}"}
+    if available:
+        return {
+            "ok": False,
+            "detail": f"{endpoint_label}; 配置模型不存在或当前账户不可用: {model}",
+        }
+    return {
+        "ok": False,
+        "detail": f"{endpoint_label}; 未能从响应识别模型，无法确认 {model}",
+    }

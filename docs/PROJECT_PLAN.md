@@ -6,17 +6,34 @@
 
 | 版本 | 主题 | 状态 |
 |---|---|---|
-| baseline | 骨架 + spec 文档 + 开发环境 + 环境探针 | in progress |
-| v0.1.0 | Specification + Agent Kernel | pending |
-| v0.2.0 | Windows Workspace / Process / Permission | pending |
-| v0.3.0 | Provider Abstraction（5 协议，offline contract-tested） | pending |
-| v0.4.0 | S0 + G0 + S1 + G1 | pending |
-| v0.5.0 | S2 + G2 + Multi-Agent + Red Team + DAG | pending |
-| v0.6.0 | S3 + S4 + G3/G4 + Python/MATLAB/XeLaTeX | pending |
-| v0.7.0 | S5 Review Arena + Ledgers + Guards + Rework | pending |
-| v0.8.0 | S5a/S5b + G5 + S6 + Delivery | pending |
-| v0.9.0 | Desktop UI + Windows Packaging + Fidelity Run | pending |
-| v1.0.0 | Hardening + E2E + Final Fidelity + Final External Review | pending |
+| baseline | 骨架 + spec 文档 + 开发环境 + 环境探针 | complete |
+| v0.1.0 | Specification + Agent Kernel | complete (historical tag) |
+| v0.2.0 | Windows Workspace / Process / Permission | complete (historical tag) |
+| v0.3.0 | Provider Abstraction（5 协议，offline contract-tested） | complete (historical tag) |
+| v0.4.0 | S0 + G0 + S1 + G1 | complete (historical tag) |
+| v0.5.0 | S2 + G2 + Multi-Agent + Red Team + DAG | complete (historical tag) |
+| v0.6.0 | S3 + S4 + G3/G4 + Python/MATLAB/XeLaTeX | complete (historical tag) |
+| v0.7.0 | S5 Review Arena + Ledgers + Guards + Rework | absorbed into rebuild; source complete |
+| v0.8.0 | S5a/S5b + G5 + S6 + Delivery | complete (historical tag) |
+| v0.9.0 | Desktop UI + Windows Packaging + Fidelity Run | complete; UI v2 Phase 1–4 PASS |
+| v1.0.0 | Hardening + E2E + Final Fidelity + Final External Review | **release candidate — final stronger/ZCode green-G0 gate open** |
+
+## 当前版本级事实（2026-09-29）
+
+本文件下方早期版本的逐项 checkbox 是历史实施清单，不再作为当前 TODO。
+当前执行真相请以 `docs/CURRENT_STATE.md`、`LOCAL_HANDOFF_REPORT.md`、
+`docs/spec/FIDELITY_MATRIX.md` 为准。
+
+当前剩余发布路径只有：
+
+1. 当前 source-only S0 producer-contract 加固做 focused/full regression；
+2. exact current HEAD 重新打包/安装/smoke；
+3. stronger/ZCode real-provider 同炉 G0 PASS；
+4. 最终 GPT-5.6 Sol release review；
+5. 用户授权后再决定正式 `v1.0.0` tag / merge。
+
+CI current-head Actions 不再是强制门，见
+`docs/decisions/ADR-0001-local-release-evidence-instead-of-mandatory-ci.md`。
 
 ## 每版固定 Release Loop
 

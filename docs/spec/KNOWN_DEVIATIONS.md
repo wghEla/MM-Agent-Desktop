@@ -37,3 +37,15 @@
 12. 降级放行不是 PASS：必须高亮进交付报告。
 13. 同类回流超预算即病根：每跑必算回流账（P10）。
 14. 评审指令最小改动 + 引用源码只许 路径+SHA+片段 ≤60 行（P4/R38 教训）。
+
+## Historical external-review note — resolved
+
+The 2026-09-27 browser/Cloudflare access issue was temporary and is no longer an active
+project blocker.
+
+Subsequent GPT-5.6 Sol external source reviews were completed directly against GitHub,
+including Round 3/4 and the final source/release-gate review.  All known source-level P0/P1
+from those rounds were closed and locally regression-tested.
+
+Current release status is tracked in `docs/CURRENT_STATE.md`; do not treat this historical
+browser incident as an open dependency.

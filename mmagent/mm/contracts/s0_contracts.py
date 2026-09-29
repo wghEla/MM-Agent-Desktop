@@ -8,6 +8,18 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, model_validator
 
+PROBLEM_CONTRACT_REQUIRED_TOP_LEVEL_KEYS: tuple[str, ...] = (
+    "赛题",
+    "标题",
+    "问题",
+    "硬约束清单",
+    "歧义裁定",
+    "附件清单",
+)
+
+DATA_ARCHIVE_REQUIRED_TOP_LEVEL_KEYS: tuple[str, ...] = ("条目",)
+
+
 
 class RequirementItem(BaseModel):
     """单条需求（销号依据，最小可验收粒度）。"""
@@ -62,6 +74,25 @@ class ProblemContract(BaseModel):
     硬约束清单: list[HardConstraint] = Field(default_factory=list)
     歧义裁定: list[AmbiguityItem] = Field(default_factory=list)
     附件清单: list[AttachmentInfo] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def check_g0_required_semantics(self) -> ProblemContract:
+        """Reject producer artifacts that are guaranteed to fail G0."""
+        if not self.问题:
+            raise ValueError("问题不能为空")
+        for prob in self.问题:
+            if not prob.原文摘录.strip():
+                raise ValueError(f"问{prob.编号} 原文摘录不能为空")
+            if not prob.解读.strip():
+                raise ValueError(f"问{prob.编号} 解读不能为空")
+            if not prob.需求条目:
+                raise ValueError(f"问{prob.编号} 需求条目不能为空")
+        for idx, ambiguity in enumerate(self.歧义裁定, 1):
+            if not ambiguity.裁定.strip():
+                raise ValueError(f"歧义裁定第{idx}条 裁定不能为空")
+            if not ambiguity.理由.strip():
+                raise ValueError(f"歧义裁定第{idx}条 理由不能为空")
+        return self
 
     @model_validator(mode="after")
     def check_requirement_ids(self) -> ProblemContract:

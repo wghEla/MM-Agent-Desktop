@@ -21,10 +21,15 @@ from mmagent.agent.errors import (
     RateLimitError,
 )
 from mmagent.providers import redact_secret
-from mmagent.providers._http_util import parse_retry_after
+from mmagent.providers._http_util import (
+    configured_model_detail,
+    openai_style_model_ids,
+    parse_retry_after,
+)
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
 from mmagent.providers.normalized import (
+    ImagePart,
     NormalizedMessage,
     NormalizedResponse,
     NormalizedTool,
@@ -74,7 +79,22 @@ def _msg_to_chat(m: NormalizedMessage) -> dict[str, Any]:
     text = "".join(p.text for p in m.content if isinstance(p, TextPart))
     if m.role == "tool":
         return {"role": "tool", "tool_call_id": m.tool_call_id, "content": text}
-    out: dict[str, Any] = {"role": m.role, "content": text}
+
+    images = [p for p in m.content if isinstance(p, ImagePart)]
+    if images:
+        content: str | list[dict[str, Any]] = []
+        if text:
+            content.append({"type": "text", "text": text})
+        for image in images:
+            content.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{image.media_type};base64,{image.b64}",
+                },
+            })
+    else:
+        content = text
+    out: dict[str, Any] = {"role": m.role, "content": content}
     if m.tool_calls:
         out["tool_calls"] = [
             {
@@ -142,25 +162,34 @@ class OpenAIChatProvider(BaseProvider):
         *,
         client: httpx.AsyncClient | None = None,
         extra_headers: dict[str, str] | None = None,
+        test_model: str | None = None,
     ):
         self.base_url = base_url.rstrip("/")
         self._key = api_key_getter()  # 初始化时取一次（脱敏 + 头部共用）
         self._key_getter = lambda: self._key
         self._client = client or httpx.AsyncClient(timeout=600.0)
         self._extra_headers = extra_headers or {}
+        # Test Connection 的 /models 404 回退用：用 profile 配置的真实模型探测
+        self._test_model = test_model
 
     def capabilities(self) -> CapabilitySet:
         return CapabilitySet(
             protocol=self.protocol,
             tool_calling=True,
-            image_input=False,  # 图片输入未实现（诚实声明，v0.4 随图片腿落地）
+            image_input=True,
             streaming=False,  # v0.3.x：SSE 流式解析落地后启用
             reasoning_levels=frozenset({"low", "medium", "high"}),
             max_output_tokens_limit=None,
         )
 
     def _headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self._key_getter()}", **self._extra_headers}
+        # keyless profiles (e.g. local relays) must not send an empty
+        # Authorization value — httpx rejects it outright.
+        key = self._key_getter()
+        headers = dict(self._extra_headers)
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+        return headers
 
     async def generate(
         self,
@@ -208,6 +237,35 @@ class OpenAIChatProvider(BaseProvider):
         # 无 key/模型列表端点依赖：以最小 models 请求探测（兼容 OpenAI 语义）
         try:
             resp = await self._client.get(f"{self.base_url}/models", headers=self._headers(), timeout=15.0)
-            return {"ok": resp.status_code == 200, "detail": f"models 端点 {resp.status_code}"}
+            if resp.status_code == 200:
+                try:
+                    available = openai_style_model_ids(resp.json())
+                except Exception:
+                    available = set()
+                return configured_model_detail(
+                    self._test_model,
+                    available,
+                    endpoint_label="models 端点 200",
+                )
+            models_detail = f"models 端点 {resp.status_code}"
         except httpx.HTTPError as e:
-            return {"ok": False, "detail": str(e)[:200]}
+            models_detail = f"models 探测失败: {str(e)[:120]}"
+
+        # 许多真实 OpenAI 兼容中转（one-api/new-api/部分 vLLM/Ollama 网关）
+        # 没有 /models 端点但 chat 可用。回退到用配置的模型做一次真实最小
+        # chat 请求（max_tokens=1），避免把可用渠道误报为不可用。这是真实
+        # API 调用，可能消耗极少量 token——与 openai_compatible 的行为一致。
+        try:
+            await self.generate(
+                [NormalizedMessage(role="user", content=[TextPart(text="Reply with OK.")])],
+                [],
+                model=self._test_model or "default",
+                reasoning=None,
+                max_output_tokens=1,
+                timeout_s=15.0,
+            )
+            return {"ok": True, "detail": f"{models_detail}; chat fallback 成功"}
+        except httpx.HTTPError as e:
+            return {"ok": False, "detail": f"{models_detail}; chat fallback 网络失败: {str(e)[:160]}"}
+        except Exception as e:
+            return {"ok": False, "detail": f"{models_detail}; chat fallback 失败: {str(e)[:160]}"}

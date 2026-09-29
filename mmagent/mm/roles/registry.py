@@ -46,6 +46,7 @@ class RoleSpec:
 
 
 _FS_RW = frozenset({"fs.read", "fs.write"})
+_FS_RW_LIST = frozenset({"fs.read", "fs.write", "fs.list"})
 _FS_PY = frozenset({"fs.read", "fs.write", "python.run"})
 
 _ROLES: tuple[RoleSpec, ...] = (
@@ -55,14 +56,14 @@ _ROLES: tuple[RoleSpec, ...] = (
         stage="S0",
         read_scopes=("输入/**",),
         write_scopes=("交接/题面契约.json", "交接/数据档案.json", "交接/读题体检.md"),
-        allowed_tools=_FS_RW,
-        notes="不自己补题面没有的硬条件；输出围栏 schema 由 contracts 定义",
+        allowed_tools=_FS_RW_LIST,
+        notes="先用 fs.list 枚举输入文件，再精确 fs.read；不自己补题面没有的硬条件；输出围栏 schema 由 contracts 定义",
     ),
     RoleSpec(
         role_id="answer_predictor",
         display_name="答卷预测官",
         stage="S0",
-        read_scopes=("输入/**", "交接/题面契约.json"),
+        read_scopes=("输入/**", "交接/题面契约.json", "交接/数据档案.json"),
         write_scopes=("交接/答卷预测.json", "交接/典型答卷预测.md"),
         allowed_tools=_FS_RW,
         notes="预测高质量答卷需证明/结果/图/验证什么，驱动据此生成需求追踪矩阵",
@@ -71,7 +72,7 @@ _ROLES: tuple[RoleSpec, ...] = (
         role_id="planner",
         display_name="规划师",
         stage="S1",
-        read_scopes=("输入/**", "交接/题面契约.json", "交接/数据档案.json", "资产/**"),
+        read_scopes=("输入/**", "交接/题面契约.json", "交接/数据档案.json", "交接/典型答卷预测.md", "交接/路线侦察.json", "交接/原型结果.json", "资产/**"),
         write_scopes=("交接/路线侦察.json", "交接/计划.json"),
         allowed_tools=_FS_RW,
         notes="不能替建模师写完整求解；原型执行由驱动编排",
@@ -96,6 +97,7 @@ _ROLES: tuple[RoleSpec, ...] = (
             "交接/实验记录.json",
             "交接/换版清单_问题{question}.json",
             "交接/升格笔记_问题{question}_*.md",
+            "审稿/回执_*.json",
         ),
         allowed_tools=_FS_PY,
         host_code=True,  # 真正运行求解脚本的角色（host_code 语义见 permissions.py）
@@ -111,6 +113,7 @@ _ROLES: tuple[RoleSpec, ...] = (
             "交接/题面契约.json",
             "交接/数据档案.json",
             "交接/结果声明_问题{question}.json",
+            "求解/问题{question}/红队结果/**",
         ),
         write_scopes=(
             "求解/问题{question}/复算.py",
@@ -159,6 +162,7 @@ _ROLES: tuple[RoleSpec, ...] = (
             "求解/问题{question}/绘图_*.py",
             "求解/成图*.sh",
             "求解/问题{question}/图片/*.png",
+            "交接/图注素材_问题{question}.json",
             "审稿/回执_*.json",
         ),
         allowed_tools=_FS_RW,
@@ -186,7 +190,13 @@ _ROLES: tuple[RoleSpec, ...] = (
             "台账/**",
             "资产/**",
         ),
-        write_scopes=("论文/*.tex", "审稿/回执_*.json"),
+        write_scopes=(
+            "论文/*.tex",
+            "交接/叙事底稿.md",
+            "交接/论点脊柱.json",
+            "交接/需求覆盖.json",
+            "审稿/回执_*.json",
+        ),
         allowed_tools=_FS_RW,
         notes="不能擅改算出的事实；最小修订（P4）；体量纪律：源码引用=路径+SHA+片段≤60行",
     ),
@@ -204,7 +214,7 @@ _ROLES: tuple[RoleSpec, ...] = (
         display_name="读者",
         stage="S4/S5a",
         read_scopes=("论文/**",),  # 闭卷：不给工程上下文
-        write_scopes=("审稿/读者R*.json", "审稿/摘要复述.json"),
+        write_scopes=("审稿/读者R*.json", "审稿/摘要复述*.json"),
         allowed_tools=_FS_RW,
         notes="能否理解/卡住/自造词；摘要复述门四要素",
     ),
@@ -237,7 +247,12 @@ _ROLES: tuple[RoleSpec, ...] = (
             "审稿/**",
             "台账/**",
         ),
-        write_scopes=("审稿/硬伤_轮*.json", "审稿/裁定_*.json"),
+        write_scopes=(
+            "审稿/硬伤_轮*.json",
+            "审稿/裁定_*.json",
+            "审稿/G5复核*.json",
+            "审稿/S6终审复核*.json",
+        ),
         allowed_tools=_FS_RW,
         notes="必查换版清单（P3）；写明依据的 PDF 版本与页（P9）",
     ),

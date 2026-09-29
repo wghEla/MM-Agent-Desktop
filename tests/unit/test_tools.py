@@ -3,9 +3,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from mmagent.runtime.cancellation import CancellationToken
+from mmagent.runtime.environment import managed_python
+from mmagent.runtime.tool_env import latex_env, matlab_env
 from mmagent.tools.filesystem import FsListTool, FsReadTool, FsWriteTool
+from mmagent.tools.latex import LatexTool, render_pdf_pages
+from mmagent.tools.matlab import MatlabTool
+from mmagent.tools.python import PythonRunTool
 from mmagent.tools.registry import ToolRegistry
 from mmagent.tools.tool_protocol import ToolContext
 
@@ -54,8 +63,6 @@ def test_unknown_tool_denied(policy):
 
 def test_duplicate_registration_rejected(policy):
     reg = _registry()
-    import pytest
-
     with pytest.raises(ValueError):
         reg.register(FsReadTool())
 
@@ -67,3 +74,166 @@ def test_fs_write_then_read_roundtrip(policy):
     assert w.ok
     r = asyncio.run(reg.invoke("fs.read", {"path": "交接/a.json"}, _ctx(policy, checker)))
     assert r.ok and json.loads(r.content) == {"k": 1}
+
+
+
+def test_latex_missing_executable_returns_structured_failure(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    paper = root / "论文"
+    paper.mkdir(parents=True)
+    (paper / "论文.tex").write_text("\\documentclass{article}", encoding="utf-8")
+
+    result = LatexTool(root, xelatex_path=str(root / "missing-xelatex")).compile()
+
+    assert result["rc"] == -1
+    assert result["pages"] == 0
+    assert any("启动失败" in item for item in result["errors"])
+
+
+def test_matlab_missing_executable_returns_structured_failure(tmp_path: Path) -> None:
+    result = MatlabTool(
+        tmp_path, matlab_path=str(tmp_path / "missing-matlab")
+    ).run_batch("disp(1)")
+
+    assert result["rc"] == -1
+    assert result["stdout"] == ""
+    assert result["stderr"]
+
+
+def test_corrupt_pdf_render_fails_with_runtime_error(tmp_path: Path) -> None:
+    paper = tmp_path / "论文"
+    paper.mkdir(parents=True)
+    (paper / "论文.pdf").write_bytes(b"not-a-pdf")
+
+    with pytest.raises(RuntimeError, match="PDF 页渲染失败"):
+        render_pdf_pages(tmp_path)
+
+
+
+def test_python_tool_prefers_explicit_managed_runtime(monkeypatch, tmp_path: Path) -> None:
+    managed = tmp_path / ("python.exe" if __import__("os").name == "nt" else "python")
+    managed.write_bytes(b"placeholder")
+    monkeypatch.setenv("MMAGENT_PYTHON", str(managed))
+
+    tool = PythonRunTool()
+
+    assert tool.interpreter == str(managed)
+
+
+def test_environment_reports_missing_configured_managed_runtime(
+    monkeypatch, tmp_path: Path
+) -> None:
+    missing = tmp_path / "missing-python.exe"
+    monkeypatch.setenv("MMAGENT_PYTHON", str(missing))
+
+    capability = managed_python()
+
+    assert capability.ok is False
+    assert capability.path == str(missing)
+    assert "不存在" in capability.detail
+
+
+
+class _FakeProcessManager:
+    def __init__(self, *, timed_out: bool = False):
+        self.timed_out = timed_out
+        self.spawned: list[dict] = []
+        self.recycled: list[str] = []
+
+    def spawn(self, name, argv, *, cwd=None, env=None):
+        self.spawned.append({
+            "name": name,
+            "argv": list(argv),
+            "cwd": cwd,
+            "env": env,
+        })
+        return SimpleNamespace(name=name)
+
+    def communicate(self, proc, timeout_s, cancel=None):
+        if self.timed_out:
+            return 137, b"", b"", True
+        return 0, b"managed-out", b"", False
+
+    def recycle(self, name):
+        self.recycled.append(name)
+        return True
+
+
+def test_latex_managed_timeout_is_structured_and_recycles(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    paper = root / "论文"
+    paper.mkdir(parents=True)
+    (paper / "论文.tex").write_text("\\documentclass{article}", encoding="utf-8")
+    manager = _FakeProcessManager(timed_out=True)
+
+    result = LatexTool(
+        root,
+        xelatex_path="xelatex.exe",
+        process_manager=manager,
+    ).compile(timeout_s=1)
+
+    assert result["rc"] == -2
+    assert result["pages"] == 0
+    assert manager.spawned
+    assert manager.recycled == [manager.spawned[0]["name"]]
+
+
+def test_matlab_managed_timeout_is_structured_and_recycles(tmp_path: Path) -> None:
+    manager = _FakeProcessManager(timed_out=True)
+
+    result = MatlabTool(
+        tmp_path,
+        matlab_path="matlab.exe",
+        process_manager=manager,
+    ).run_batch("disp(1)", timeout_s=1)
+
+    assert result["rc"] == -2
+    assert manager.spawned
+    assert manager.recycled == [manager.spawned[0]["name"]]
+
+
+def test_latex_managed_success_preserves_output_contract(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    paper = root / "论文"
+    paper.mkdir(parents=True)
+    (paper / "论文.tex").write_text("\\documentclass{article}", encoding="utf-8")
+    manager = _FakeProcessManager()
+
+    result = LatexTool(
+        root,
+        xelatex_path="xelatex.exe",
+        process_manager=manager,
+    ).compile(timeout_s=1)
+
+    assert result["rc"] == 0
+    assert "managed-out" in result["stdout_tail"]
+    assert result["errors"] == []
+    assert manager.recycled == [manager.spawned[0]["name"]]
+
+
+
+def test_external_tool_env_is_allowlisted_and_secret_safe(monkeypatch) -> None:
+    monkeypatch.setenv("PATH", "C:\\Tools")
+    monkeypatch.setenv("TEXMFHOME", "C:\\texmf-home")
+    monkeypatch.setenv("MLM_LICENSE_FILE", "27000@license-host")
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-openai")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "secret-anthropic")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret-aws")
+    monkeypatch.setenv("MMAGENT_SIDECAR_TOKEN", "secret-sidecar")
+
+    tex = latex_env()
+    matlab = matlab_env()
+
+    assert tex["PATH"] == "C:\\Tools"
+    assert tex["TEXMFHOME"] == "C:\\texmf-home"
+    assert "MLM_LICENSE_FILE" not in tex
+
+    assert matlab["PATH"] == "C:\\Tools"
+    assert matlab["MLM_LICENSE_FILE"] == "27000@license-host"
+    assert "TEXMFHOME" not in matlab
+
+    for child_env in (tex, matlab):
+        assert "OPENAI_API_KEY" not in child_env
+        assert "ANTHROPIC_API_KEY" not in child_env
+        assert "AWS_SECRET_ACCESS_KEY" not in child_env
+        assert "MMAGENT_SIDECAR_TOKEN" not in child_env

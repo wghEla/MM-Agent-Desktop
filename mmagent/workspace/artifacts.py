@@ -31,6 +31,7 @@ class ExpectedArtifact:
     schema_model: type[BaseModel] | None = None
     required: bool = True
     kind: str = "json"
+    required_json_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,19 @@ def verify_expected_artifacts(
                 parsed = json.loads(data_bytes.decode("utf-8"))
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 raise ArtifactInvalid(f"产物不是合法 JSON: {exp.rel_path} ({e})") from e
+            if exp.required_json_keys:
+                if not isinstance(parsed, dict):
+                    raise ArtifactInvalid(
+                        f"产物 JSON 顶层必须是对象: {exp.rel_path}"
+                    )
+                missing = [
+                    key for key in exp.required_json_keys
+                    if key not in parsed
+                ]
+                if missing:
+                    raise ArtifactInvalid(
+                        f"产物缺少必备顶层键: {exp.rel_path}: {missing}"
+                    )
         if model is not None:
             try:
                 model.model_validate(parsed)

@@ -9,10 +9,20 @@ from __future__ import annotations
 import httpx
 
 from mmagent.agent.errors import ErrorKind, ProviderError, RateLimitError
-from mmagent.providers._http_util import parse_retry_after
+from mmagent.providers import redact_secret
+from mmagent.providers._http_util import (
+    configured_model_detail,
+    openai_style_model_ids,
+    parse_retry_after,
+)
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
-from mmagent.providers.normalized import NormalizedMessage, NormalizedResponse, NormalizedTool
+from mmagent.providers.normalized import (
+    NormalizedMessage,
+    NormalizedResponse,
+    NormalizedTool,
+    TextPart,
+)
 from mmagent.providers.openai_chat import (
     build_chat_payload,
     parse_chat_response,
@@ -35,24 +45,44 @@ class OpenAICompatibleProvider(BaseProvider):
         api_key_getter,
         *,
         completions_path: str = "/chat/completions",
+        models_path: str | None = "/models",
         auth_style: str = "bearer",  # bearer | x-api-key | none
         client: httpx.AsyncClient | None = None,
         extra_headers: dict[str, str] | None = None,
+        image_input: bool = False,
+        reasoning_effort: bool = False,
+        test_model: str | None = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.completions_path = completions_path
+        self.models_path = (
+            None
+            if models_path is None or not str(models_path).strip()
+            else (
+                str(models_path).strip()
+                if str(models_path).strip().startswith("/")
+                else "/" + str(models_path).strip()
+            )
+        )
         self.auth_style = auth_style
         self._key_getter = api_key_getter
         self._client = client or httpx.AsyncClient(timeout=600.0)
         self._extra_headers = extra_headers or {}
+        self._image_input = bool(image_input)
+        self._reasoning_effort = bool(reasoning_effort)
+        self._test_model = (test_model or "").strip()
 
     def capabilities(self) -> CapabilitySet:
         return CapabilitySet(
             protocol=self.protocol,
             tool_calling=True,
-            image_input=False,  # 兼容渠道能力不一：默认保守关闭，用户可按渠道声明
+            image_input=self._image_input,  # 默认保守关闭；profile 可显式声明
             streaming=False,    # v0.3.x 引入流式后按渠道探测
-            reasoning_levels=frozenset(),
+            reasoning_levels=(
+                frozenset({"low", "medium", "high"})
+                if self._reasoning_effort
+                else frozenset()
+            ),
         )
 
     def _headers(self) -> dict[str, str]:
@@ -75,8 +105,14 @@ class OpenAICompatibleProvider(BaseProvider):
         max_output_tokens: int | None = None,
         timeout_s: float = 300.0,
     ) -> NormalizedResponse:
-        payload = build_chat_payload(messages, tools, model=model, reasoning=reasoning,
-                                     max_output_tokens=max_output_tokens, stream=False)
+        payload = build_chat_payload(
+            messages,
+            tools,
+            model=model,
+            reasoning=reasoning if self._reasoning_effort else None,
+            max_output_tokens=max_output_tokens,
+            stream=False,
+        )
         url = f"{self.base_url}{self.completions_path}"
         try:
             resp = await self._client.post(url, json=payload, headers=self._headers(), timeout=timeout_s)
@@ -92,13 +128,72 @@ class OpenAICompatibleProvider(BaseProvider):
         if resp.status_code >= 500:
             raise ProviderError(f"服务端错误 {resp.status_code}", kind=ErrorKind.PROVIDER_SERVER, retryable=True)
         if resp.status_code >= 400:
-            raise ProviderError(f"请求错误 {resp.status_code}: {resp.text[:300]}",
-                                kind=ErrorKind.PROVIDER_BAD_REQUEST)
+            detail = redact_secret(resp.text[:300], self._key_getter())
+            raise ProviderError(
+                f"请求错误 {resp.status_code}: {detail}",
+                kind=ErrorKind.PROVIDER_BAD_REQUEST,
+            )
         return parse_chat_response(resp.json(), self.protocol)
 
     async def test_connection(self) -> dict:
+        if self.models_path is None:
+            models_detail = "models 端点已禁用"
+        else:
+            try:
+                resp = await self._client.get(
+                    f"{self.base_url}{self.models_path}",
+                    headers=self._headers(),
+                    timeout=15.0,
+                )
+                if resp.status_code == 200:
+                    try:
+                        available = openai_style_model_ids(resp.json())
+                    except Exception:
+                        available = set()
+                    return configured_model_detail(
+                        self._test_model,
+                        available,
+                        endpoint_label=f"models 端点 200 ({self.models_path})",
+                    )
+                models_detail = (
+                    f"models 端点 {resp.status_code} ({self.models_path})"
+                )
+            except httpx.HTTPError as exc:
+                models_detail = f"models 探测失败: {str(exc)[:120]}"
+
+        # Many otherwise valid OpenAI-compatible relays do not implement
+        # /models.  Fall back to the actual configured chat path/model rather
+        # than reporting a false negative.  This is a real, minimal API call.
+        if not self._test_model:
+            return {
+                "ok": False,
+                "detail": f"{models_detail}; 未配置 test_model，无法执行 chat fallback",
+            }
         try:
-            resp = await self._client.get(f"{self.base_url}/models", headers=self._headers(), timeout=15.0)
-            return {"ok": resp.status_code == 200, "detail": f"models 端点 {resp.status_code}"}
-        except httpx.HTTPError as e:
-            return {"ok": False, "detail": str(e)[:200]}
+            await self.generate(
+                [
+                    NormalizedMessage(
+                        role="user",
+                        content=[TextPart(text="Reply with OK.")],
+                    )
+                ],
+                [],
+                model=self._test_model,
+                reasoning=None,
+                max_output_tokens=1,
+                timeout_s=15.0,
+            )
+            return {
+                "ok": True,
+                "detail": f"{models_detail}; chat fallback 成功",
+            }
+        except ProviderError as exc:
+            return {
+                "ok": False,
+                "detail": f"{models_detail}; chat fallback 失败: {str(exc)[:160]}",
+            }
+        except httpx.HTTPError as exc:
+            return {
+                "ok": False,
+                "detail": f"{models_detail}; chat fallback 网络失败: {str(exc)[:160]}",
+            }

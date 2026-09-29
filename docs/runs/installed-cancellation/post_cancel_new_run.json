@@ -1,0 +1,56 @@
+{
+ "new_project": "proj_33b01498fd31",
+ "new_run": "run_38e837a2df6e",
+ "prototype_tasks_succeeded": true,
+ "run_state_after_pause": "PAUSED",
+ "tasks": [
+  [
+   "S0.2:读题",
+   "SUCCEEDED"
+  ],
+  [
+   "S0.3:预测",
+   "SUCCEEDED"
+  ],
+  [
+   "S1:路线侦察",
+   "SUCCEEDED"
+  ],
+  [
+   "S1:问1:原型1",
+   "SUCCEEDED"
+  ],
+  [
+   "S1:问1:原型2",
+   "SUCCEEDED"
+  ],
+  [
+   "S1:裁决定稿",
+   "FAILED"
+  ],
+  [
+   "S0.2:读题",
+   "SUCCEEDED"
+  ],
+  [
+   "S0.3:预测",
+   "SUCCEEDED"
+  ],
+  [
+   "S1:路线侦察",
+   "SUCCEEDED"
+  ],
+  [
+   "S1:问1:原型1",
+   "SUCCEEDED"
+  ],
+  [
+   "S1:问1:原型2",
+   "SUCCEEDED"
+  ],
+  [
+   "S1:裁决定稿",
+   "FAILED"
+  ]
+ ]
+}

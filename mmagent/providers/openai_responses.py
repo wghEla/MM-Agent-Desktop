@@ -13,10 +13,16 @@ from typing import Any
 import httpx
 
 from mmagent.agent.errors import ErrorKind, ProviderError, RateLimitError
-from mmagent.providers._http_util import parse_retry_after
+from mmagent.providers import redact_secret
+from mmagent.providers._http_util import (
+    configured_model_detail,
+    openai_style_model_ids,
+    parse_retry_after,
+)
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
 from mmagent.providers.normalized import (
+    ImagePart,
     NormalizedMessage,
     NormalizedResponse,
     NormalizedTool,
@@ -42,7 +48,16 @@ def build_responses_payload(
         if m.role == "system":
             input_items.append({"role": "system", "content": [{"type": "input_text", "text": text}]})
         elif m.role == "user":
-            input_items.append({"role": "user", "content": [{"type": "input_text", "text": text}]})
+            content: list[dict[str, Any]] = []
+            if text:
+                content.append({"type": "input_text", "text": text})
+            for image in m.content:
+                if isinstance(image, ImagePart):
+                    content.append({
+                        "type": "input_image",
+                        "image_url": f"data:{image.media_type};base64,{image.b64}",
+                    })
+            input_items.append({"role": "user", "content": content})
         elif m.role == "tool":
             input_items.append({
                 "type": "function_call_output",
@@ -123,22 +138,32 @@ def parse_responses_response(data: dict[str, Any], protocol: str = "openai_respo
 class OpenAIResponsesProvider(BaseProvider):
     protocol = "openai_responses"
 
-    def __init__(self, base_url: str, api_key_getter, *, client: httpx.AsyncClient | None = None):
+    def __init__(
+        self,
+        base_url: str,
+        api_key_getter,
+        *,
+        client: httpx.AsyncClient | None = None,
+        test_model: str | None = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self._key_getter = api_key_getter
         self._client = client or httpx.AsyncClient(timeout=600.0)
+        self._test_model = (test_model or "").strip()
 
     def capabilities(self) -> CapabilitySet:
         return CapabilitySet(
             protocol=self.protocol,
             tool_calling=True,
-            image_input=False,  # 图片输入未实现（v0.4）
+            image_input=True,
             streaming=False,  # v0.3.x：SSE 流式解析落地后启用
             reasoning_levels=frozenset({"minimal", "low", "medium", "high"}),
         )
 
     def _headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self._key_getter()}"}
+        # keyless profiles must not send an empty Authorization value.
+        key = self._key_getter()
+        return {"Authorization": f"Bearer {key}"} if key else {}
 
     async def generate(
         self,
@@ -167,13 +192,33 @@ class OpenAIResponsesProvider(BaseProvider):
         if resp.status_code >= 500:
             raise ProviderError(f"服务端错误 {resp.status_code}", kind=ErrorKind.PROVIDER_SERVER, retryable=True)
         if resp.status_code >= 400:
-            raise ProviderError(f"请求错误 {resp.status_code}: {resp.text[:300]}",
-                                kind=ErrorKind.PROVIDER_BAD_REQUEST)
+            detail = redact_secret(resp.text[:300], self._key_getter())
+            raise ProviderError(
+                f"请求错误 {resp.status_code}: {detail}",
+                kind=ErrorKind.PROVIDER_BAD_REQUEST,
+            )
         return parse_responses_response(resp.json(), self.protocol)
 
     async def test_connection(self) -> dict:
         try:
-            resp = await self._client.get(f"{self.base_url}/models", headers=self._headers(), timeout=15.0)
-            return {"ok": resp.status_code == 200, "detail": f"models 端点 {resp.status_code}"}
+            resp = await self._client.get(
+                f"{self.base_url}/models",
+                headers=self._headers(),
+                timeout=15.0,
+            )
+            if resp.status_code != 200:
+                return {
+                    "ok": False,
+                    "detail": f"models 端点 {resp.status_code}",
+                }
+            try:
+                available = openai_style_model_ids(resp.json())
+            except Exception:
+                available = set()
+            return configured_model_detail(
+                self._test_model,
+                available,
+                endpoint_label="models 端点 200",
+            )
         except httpx.HTTPError as e:
             return {"ok": False, "detail": str(e)[:200]}

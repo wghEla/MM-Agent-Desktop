@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import time
 import uuid
@@ -34,6 +35,7 @@ from mmagent.agent.errors import (
 )
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.normalized import (
+    ImagePart,
     NormalizedMessage,
     NormalizedToolCall,
     StopReason,
@@ -72,6 +74,7 @@ class AgentTask:
     provider_profile: str = "default"
     reasoning: str | None = None
     expected_artifacts: list[ExpectedArtifact] = field(default_factory=list)
+    image_paths: list[str] = field(default_factory=list)
     max_turns: int = 16
     context_manifest: ContextManifest | None = None
 
@@ -132,6 +135,9 @@ class AgentLoop:
         invocation_id: str | None = None
         usage = Usage()
         turns = 0
+        max_turns_artifact_check = False
+        effective_model = self.provider.resolve_model(spec.model)
+        effective_reasoning = self.provider.resolve_reasoning(spec.reasoning)
         try:
             # attempt+invocation+事件在同一事务（外审 round2 gate #4）
             attempt, invocation_id = repositories.begin_task_attempt(
@@ -140,8 +146,8 @@ class AgentLoop:
                 owner,
                 role_id=spec.role_id,
                 provider_profile=spec.provider_profile,
-                model=spec.model,
-                reasoning=spec.reasoning,
+                model=effective_model,
+                reasoning=effective_reasoning,
                 context_manifest=spec.context_manifest.to_dict() if spec.context_manifest else None,
             )
 
@@ -167,8 +173,8 @@ class AgentLoop:
                 response = await self.provider.generate(
                     messages,
                     tools,
-                    model=spec.model,
-                    reasoning=spec.reasoning,
+                    model=effective_model,
+                    reasoning=effective_reasoning,
                 )
                 usage = Usage(
                     input_tokens=usage.input_tokens + response.usage.input_tokens,
@@ -212,15 +218,54 @@ class AgentLoop:
                     self._persist_message(invocation_id, messages[-1], seq=seq)
                 task = self._safe_back_to_running(spec.task_id, owner)
             else:
-                raise MMAgentError(f"agent 超过最大轮数 {spec.max_turns} 仍未给出终稿")
+                # A terminal prose message is not the success authority. If the model
+                # consumed the final allowed turn with tool calls, give Runtime one final
+                # chance to validate required artifacts instead of failing solely because
+                # the model omitted a closing sentence. Tasks without any required
+                # artifact still fail closed at the turn limit.
+                if not any(exp.required for exp in spec.expected_artifacts):
+                    raise MMAgentError(
+                        f"agent 超过最大轮数 {spec.max_turns} 仍未给出终稿"
+                    )
+                max_turns_artifact_check = True
+                events.append_event(
+                    self.db,
+                    "agent.max_turns_artifact_check",
+                    {
+                        "max_turns": spec.max_turns,
+                        "expected": [
+                            exp.rel_path for exp in spec.expected_artifacts if exp.required
+                        ],
+                    },
+                    run_id=run_id,
+                    task_id=spec.task_id,
+                    invocation_id=invocation_id,
+                )
 
             # 4) 验收：取消复查（DB + token）→ 校验 → 封存 → 事务提交
             self.cancel.check()
             self._check_db_cancelled(spec.task_id)
             checks = verify_expected_artifacts(self.policy, spec.expected_artifacts)
+            if max_turns_artifact_check:
+                events.append_event(
+                    self.db,
+                    "agent.max_turns_artifacts_accepted",
+                    {
+                        "max_turns": spec.max_turns,
+                        "artifacts": [check.rel_path for check in checks],
+                    },
+                    run_id=run_id,
+                    task_id=spec.task_id,
+                    invocation_id=invocation_id,
+                )
             sealed = seal_artifacts(self.policy, checks, spec.task_id)
             rows = build_artifact_rows(self.db, spec.task_id, checks, sealed)
-            final_text = messages[-1].text[:2000] if messages else ""
+            # 终稿 = 模型最后一条 assistant 文本；验收路径可能以 tool 回执结尾，
+            # 不得把 Runtime 工具结果冒充模型 closing message。
+            final_text = next(
+                (m.text for m in reversed(messages) if m.role == "assistant"),
+                "",
+            )[:2000]
             task = repositories.commit_task_success(
                 self.db,
                 spec.task_id,
@@ -363,15 +408,52 @@ class AgentLoop:
         parts = [spec.instructions]
         if spec.context_manifest:
             parts.append("\n" + spec.context_manifest.render())
+
+        user_content: list[TextPart | ImagePart] = [TextPart(text="\n".join(parts))]
+        if spec.image_paths:
+            if len(spec.image_paths) > 8:
+                raise MMAgentError("单条图片腿最多允许 8 张图片")
+            if not self.provider.capabilities().image_input:
+                raise MMAgentError(
+                    f"当前 Provider {self.provider.protocol} 未声明 image_input 能力，"
+                    "不能运行需要视觉输入的角色"
+                )
+            media_types = {
+                ".png": "image/png",
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
+                ".webp": "image/webp",
+            }
+            for rel in spec.image_paths:
+                self.permission.check_read(rel)
+                path = self.policy.resolve(rel, must_exist=True)
+                media_type = media_types.get(path.suffix.lower())
+                if media_type is None:
+                    raise MMAgentError(f"不支持的图片格式: {rel}")
+                data = path.read_bytes()
+                if len(data) > 12 * 1024 * 1024:
+                    raise MMAgentError(f"图片过大（>12 MiB）: {rel}")
+                user_content.append(
+                    ImagePart(
+                        b64=base64.b64encode(data).decode("ascii"),
+                        media_type=media_type,
+                    )
+                )
+
         return [
             NormalizedMessage(role="system", content=[TextPart(text=spec.system_prompt)]),
-            NormalizedMessage(role="user", content=[TextPart(text="\n".join(parts))]),
+            NormalizedMessage(role="user", content=user_content),
         ]
 
     def _persist_message(self, invocation_id: str, msg: NormalizedMessage, *, seq: int) -> None:
+        # Persist image metadata but never duplicate base64 image payloads into SQLite.
+        payload = msg.model_dump(mode="json")
+        for part in payload.get("content", []):
+            if part.get("type") == "image":
+                part["b64"] = "<omitted>"
         self.db.execute(
             "INSERT INTO messages(invocation_id, seq, role, content_json) VALUES (?,?,?,?)",
-            (invocation_id, seq, msg.role, msg.model_dump_json()),
+            (invocation_id, seq, msg.role, json.dumps(payload, ensure_ascii=False)),
         )
 
     def _persist_tool_call(

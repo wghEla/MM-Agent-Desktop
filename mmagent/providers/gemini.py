@@ -14,10 +14,16 @@ from typing import Any
 import httpx
 
 from mmagent.agent.errors import ErrorKind, ProviderError, RateLimitError
-from mmagent.providers._http_util import parse_retry_after
+from mmagent.providers import redact_secret
+from mmagent.providers._http_util import (
+    configured_model_detail,
+    gemini_model_ids,
+    parse_retry_after,
+)
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
 from mmagent.providers.normalized import (
+    ImagePart,
     NormalizedMessage,
     NormalizedResponse,
     NormalizedTool,
@@ -52,6 +58,15 @@ def build_generate_payload(
         parts: list[dict[str, Any]] = []
         if text:
             parts.append({"text": text})
+        if m.role == "user":
+            for image in m.content:
+                if isinstance(image, ImagePart):
+                    parts.append({
+                        "inlineData": {
+                            "mimeType": image.media_type,
+                            "data": image.b64,
+                        }
+                    })
         if m.role == "assistant" and m.tool_calls:
             import json
 
@@ -131,16 +146,24 @@ def parse_generate_response(data: dict[str, Any], protocol: str = "gemini") -> N
 class GeminiProvider(BaseProvider):
     protocol = "gemini"
 
-    def __init__(self, base_url: str, api_key_getter, *, client: httpx.AsyncClient | None = None):
+    def __init__(
+        self,
+        base_url: str,
+        api_key_getter,
+        *,
+        client: httpx.AsyncClient | None = None,
+        test_model: str | None = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self._key_getter = api_key_getter
         self._client = client or httpx.AsyncClient(timeout=600.0)
+        self._test_model = (test_model or "").strip()
 
     def capabilities(self) -> CapabilitySet:
         return CapabilitySet(
             protocol=self.protocol,
             tool_calling=True,
-            image_input=False,  # 图片输入未实现（v0.4）
+            image_input=True,
             streaming=False,  # v0.3.x：SSE 流式解析落地后启用
             reasoning_levels=frozenset(),
         )
@@ -179,15 +202,33 @@ class GeminiProvider(BaseProvider):
         if resp.status_code >= 500:
             raise ProviderError(f"服务端错误 {resp.status_code}", kind=ErrorKind.PROVIDER_SERVER, retryable=True)
         if resp.status_code >= 400:
-            raise ProviderError(f"请求错误 {resp.status_code}: {resp.text[:300]}",
-                                kind=ErrorKind.PROVIDER_BAD_REQUEST)
+            detail = redact_secret(resp.text[:300], self._key_getter())
+            raise ProviderError(
+                f"请求错误 {resp.status_code}: {detail}",
+                kind=ErrorKind.PROVIDER_BAD_REQUEST,
+            )
         return parse_generate_response(resp.json(), self.protocol)
 
     async def test_connection(self) -> dict:
         try:
             resp = await self._client.get(
-                f"{self.base_url}/v1beta/models", headers=self._headers(), timeout=15.0,
+                f"{self.base_url}/v1beta/models",
+                headers=self._headers(),
+                timeout=15.0,
             )
-            return {"ok": resp.status_code == 200, "detail": f"models 端点 {resp.status_code}"}
+            if resp.status_code != 200:
+                return {
+                    "ok": False,
+                    "detail": f"models 端点 {resp.status_code}",
+                }
+            try:
+                available = gemini_model_ids(resp.json())
+            except Exception:
+                available = set()
+            return configured_model_detail(
+                self._test_model,
+                available,
+                endpoint_label="models 端点 200",
+            )
         except httpx.HTTPError as e:
             return {"ok": False, "detail": str(e)[:200]}

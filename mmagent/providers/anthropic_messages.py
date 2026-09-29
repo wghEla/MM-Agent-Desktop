@@ -14,10 +14,16 @@ from typing import Any
 import httpx
 
 from mmagent.agent.errors import ErrorKind, ProviderError, RateLimitError
-from mmagent.providers._http_util import parse_retry_after
+from mmagent.providers import redact_secret
+from mmagent.providers._http_util import (
+    configured_model_detail,
+    openai_style_model_ids,
+    parse_retry_after,
+)
 from mmagent.providers.base import BaseProvider
 from mmagent.providers.capabilities import CapabilitySet
 from mmagent.providers.normalized import (
+    ImagePart,
     NormalizedMessage,
     NormalizedResponse,
     NormalizedTool,
@@ -66,8 +72,24 @@ def build_messages_payload(
                 content.append({"type": "tool_use", "id": tc.id, "name": tc.name, "input": args})
             api_messages.append({"role": "assistant", "content": content})
             continue
-        api_messages.append({"role": "user" if m.role == "user" else "assistant",
-                             "content": [{"type": "text", "text": text}]})
+        content: list[dict[str, Any]] = []
+        if text:
+            content.append({"type": "text", "text": text})
+        if m.role == "user":
+            for image in m.content:
+                if isinstance(image, ImagePart):
+                    content.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": image.media_type,
+                            "data": image.b64,
+                        },
+                    })
+        api_messages.append({
+            "role": "user" if m.role == "user" else "assistant",
+            "content": content,
+        })
     payload: dict[str, Any] = {
         "model": model,
         "max_tokens": max_output_tokens or 8192,
@@ -131,18 +153,26 @@ def parse_messages_response(data: dict[str, Any], protocol: str = "anthropic_mes
 class AnthropicMessagesProvider(BaseProvider):
     protocol = "anthropic_messages"
 
-    def __init__(self, base_url: str, api_key_getter, *, client: httpx.AsyncClient | None = None,
-                 api_version: str = _ANTHROPIC_VERSION):
+    def __init__(
+        self,
+        base_url: str,
+        api_key_getter,
+        *,
+        client: httpx.AsyncClient | None = None,
+        api_version: str = _ANTHROPIC_VERSION,
+        test_model: str | None = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self._key_getter = api_key_getter
         self._client = client or httpx.AsyncClient(timeout=600.0)
         self._api_version = api_version
+        self._test_model = (test_model or "").strip()
 
     def capabilities(self) -> CapabilitySet:
         return CapabilitySet(
             protocol=self.protocol,
             tool_calling=True,
-            image_input=False,  # 图片输入未实现（v0.4）
+            image_input=True,
             streaming=False,  # v0.3.x：SSE 流式解析落地后启用
             reasoning_levels=frozenset(),  # thinking 预算映射未实现（v0.4；诚实声明空集）
         )
@@ -179,21 +209,56 @@ class AnthropicMessagesProvider(BaseProvider):
         if resp.status_code >= 500:
             raise ProviderError(f"服务端错误 {resp.status_code}", kind=ErrorKind.PROVIDER_SERVER, retryable=True)
         if resp.status_code >= 400:
-            raise ProviderError(f"请求错误 {resp.status_code}: {resp.text[:300]}",
-                                kind=ErrorKind.PROVIDER_BAD_REQUEST)
+            detail = redact_secret(resp.text[:300], self._key_getter())
+            raise ProviderError(
+                f"请求错误 {resp.status_code}: {detail}",
+                kind=ErrorKind.PROVIDER_BAD_REQUEST,
+            )
         return parse_messages_response(resp.json(), self.protocol)
 
     async def test_connection(self) -> dict:
-        # Anthropic 无 models 列表端点：以 1-token 消息探测
+        # Prefer the read-only models endpoint so Test Connection does not
+        # spend tokens when the account exposes a model catalogue.
+        try:
+            models_resp = await self._client.get(
+                f"{self.base_url}/v1/models",
+                headers=self._headers(),
+                timeout=15.0,
+            )
+            if models_resp.status_code == 200:
+                try:
+                    available = openai_style_model_ids(models_resp.json())
+                except Exception:
+                    available = set()
+                return configured_model_detail(
+                    self._test_model,
+                    available,
+                    endpoint_label="models 端点 200",
+                )
+            if models_resp.status_code not in (404, 405):
+                return {
+                    "ok": False,
+                    "detail": f"models 端点 {models_resp.status_code}",
+                }
+        except httpx.HTTPError:
+            # Fall through to the actual configured model probe.
+            pass
+
         try:
             resp = await self._client.post(
                 f"{self.base_url}/v1/messages",
-                json={"model": "claude-3-5-haiku-20241022", "max_tokens": 1,
-                      "messages": [{"role": "user", "content": "ping"}]},
-                headers=self._headers(), timeout=20.0,
+                json={
+                    "model": self._test_model or "claude-3-5-haiku-20241022",
+                    "max_tokens": 1,
+                    "messages": [{"role": "user", "content": "ping"}],
+                },
+                headers=self._headers(),
+                timeout=20.0,
             )
-            # 4xx（除 401/403/429/429 类）也算连通（端点可达、鉴权语义可辨）
             ok = resp.status_code == 200
-            return {"ok": ok, "detail": f"messages 探测 {resp.status_code}"}
+            return {
+                "ok": ok,
+                "detail": f"models 端点不可用; messages 探测 {resp.status_code}",
+            }
         except httpx.HTTPError as e:
             return {"ok": False, "detail": str(e)[:200]}

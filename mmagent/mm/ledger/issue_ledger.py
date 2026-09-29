@@ -34,6 +34,7 @@ class Issue:
 
 _PUNCT_CHARS = "，。；：、()（）【】"
 
+
 def _net(s: str) -> str:
     for ch in _PUNCT_CHARS:
         s = s.replace(ch, "")
@@ -53,6 +54,79 @@ def _位置键(定位: str) -> str:
     return ((文件.group(1) if 文件 else "") + ":" + (数.group(1) if 数 else "")).strip(":")
 
 
+_ABSTAIN_RE = re.compile(
+    r"未核实|不能核实|无法核实|未能核[实验]|"
+    r"未获.{0,8}(?:实物|材料|范围)|不能证明|本通道|未提供|未展示|"
+    r"无法验证|回执代验|不能销号"
+)
+
+
+def _is_abstention(channel: str, verdict: dict) -> bool:
+    """Only the page-limited judge may abstain on evidence it cannot inspect."""
+    if channel != "judge_simulator":
+        return False
+    decision = str(verdict.get("裁定", "")).strip()
+    reason = str(verdict.get("理由", ""))
+    return decision != "已消解" and bool(_ABSTAIN_RE.search(reason))
+
+
+def merge_channel_verdicts(
+    channel_verdicts: list[tuple[str, list[dict]]],
+) -> tuple[list[dict], int]:
+    """Merge paired-review verdicts while preserving R45 abstention semantics.
+
+    Per issue generation: any substantive unresolved vote wins; otherwise any
+    resolved vote resolves it.  Judge-simulator abstentions do not vote.  If all
+    votes for an issue are abstentions, no verdict is emitted so the ledger's
+    missed-verdict path returns the issue to 待改.
+    """
+    grouped: dict[tuple[str, int | None], list[tuple[str, dict]]] = {}
+    abstentions = 0
+    for channel, verdicts in channel_verdicts:
+        for raw in verdicts or []:
+            if not isinstance(raw, dict):
+                continue
+            issue_id = str(raw.get("id", "")).strip()
+            if not issue_id:
+                continue
+            generation = raw.get("generation")
+            try:
+                normalized_generation = (
+                    int(generation) if generation is not None else None
+                )
+            except (TypeError, ValueError):
+                normalized_generation = None
+            key = (issue_id, normalized_generation)
+            if _is_abstention(channel, raw):
+                abstentions += 1
+                continue
+            grouped.setdefault(key, []).append((channel, raw))
+
+    merged: list[dict] = []
+    for (issue_id, generation), votes in grouped.items():
+        unresolved = [
+            (channel, vote)
+            for channel, vote in votes
+            if str(vote.get("裁定", "")).strip() != "已消解"
+        ]
+        chosen_channel, _ = unresolved[0] if unresolved else votes[0]
+        decision = "未消解" if unresolved else "已消解"
+        reasons = [
+            f"{channel}:{str(vote.get('理由', '')).strip()}"
+            for channel, vote in votes
+            if str(vote.get("理由", "")).strip()
+        ]
+        item = {
+            "id": issue_id,
+            "generation": generation,
+            "裁定": decision,
+            "理由": "｜".join(reasons)[:600],
+            "来源通道": chosen_channel,
+        }
+        merged.append(item)
+    return merged, abstentions
+
+
 class IssueLedger:
     """意见台账：状态机 + 身份合并 + 回执/裁定 + 熔断。"""
 
@@ -61,6 +135,35 @@ class IssueLedger:
         self.轮次: int = 0
         self._前缀 = 前缀
         self._序号 = 0
+
+    @classmethod
+    def 从快照(cls, rows: list[dict], *, 前缀: str = "意") -> IssueLedger:
+        """Restore a ledger from a trusted runtime snapshot/carrier."""
+        ledger = cls(前缀=前缀)
+        max_seq = 0
+        for raw in rows or []:
+            if not isinstance(raw, dict):
+                continue
+            allowed = {
+                "id", "级别", "目标", "定位", "问题", "指令", "验收", "来源",
+                "轮次", "状态", "尝试次数", "重开次数", "回执", "历史", "对应",
+                "generation",
+            }
+            payload = {k: raw[k] for k in allowed if k in raw}
+            issue = Issue(**payload)
+            ledger.条目.append(issue)
+            ledger.轮次 = max(ledger.轮次, int(issue.轮次))
+            match = re.search(r"-(\d+)$", issue.id)
+            if match:
+                max_seq = max(max_seq, int(match.group(1)))
+        ledger._序号 = max(max_seq, len(ledger.条目))
+        return ledger
+
+    def 快照(self) -> list[dict]:
+        """Return a JSON-serializable full-state snapshot."""
+        from dataclasses import asdict
+
+        return [asdict(item) for item in self.条目]
 
     def 并入(self, 新条目: list[dict], 轮次: int) -> dict[str, int]:
         """把一轮评审的新意见并进台账。返回 {新增, 合并, 重开}。"""
@@ -73,10 +176,15 @@ class IssueLedger:
             if match:
                 stats["合并"] += 1
                 match.历史.append({"轮次": 轮次, "来源": 新.get("来源", ""), "问题": 新.get("问题", "")[:200]})
-                if match.状态 == 已消解:
+                if match.状态 in (已消解, 搁置):
                     match.状态 = 待改
                     match.重开次数 += 1
-                    match.generation += 1  # generation 递增（round15 P1-1 CAS 依据）
+                    match.generation += 1
+                    # attempt budget is generation-local: a reopened issue gets
+                    # a fresh bounded-repair budget, while prior receipts remain
+                    # in history for audit.
+                    match.尝试次数 = 0
+                    match.轮次 = 轮次
                     stats["重开"] += 1
                 # 级别只升不降
                 if _级别序.get(新.get("级别", ""), 9) < _级别序.get(match.级别, 9):
@@ -125,30 +233,61 @@ class IssueLedger:
                 best = (score, x)
         return best[1] if best else None
 
-    def 收回执(self, 回执们: list[dict], 腿名: str = "") -> dict[str, int]:
-        """修改腿回执：→ 待复核。未知 id 忽略。"""
-        stats = {"受理": 0, "未知id": 0}
+    def 收回执(
+        self, 回执们: list[dict], 腿名: str = "", 轮次: int | None = None
+    ) -> dict[str, int]:
+        """修改腿回执：严格绑定 (issue_id, generation, receipt_id)。
+
+        回执缺 generation / receipt_id、generation 过期、改动为空或当前
+        Issue 不在可修改状态时均 fail-closed。receipt_id 的幂等范围是当前
+        generation；reopen 后可以安全地开启新的 attempt 序列。
+        """
+        stats = {"受理": 0, "未知id": 0, "拒绝": 0}
         for r in 回执们 or []:
+            if not isinstance(r, dict):
+                stats["拒绝"] += 1
+                continue
             x = self._get(str(r.get("id", "")).strip())
             if x is None:
                 stats["未知id"] += 1
                 continue
-            new_change = str(r.get("改动", ""))[:300]
-            import uuid as _uuid
-            receipt_id = str(r.get("receipt_id", "")) or str(_uuid.uuid4())
-            # 幂等（外审 round15 P1-2）：按 receipt_id 去重（非内容匹配）
-            if any(rc.get("receipt_id") == receipt_id for rc in x.回执):
+            if x.状态 not in (待改, 未消解):
+                stats["拒绝"] += 1
                 continue
-            x.回执.append({"腿": 腿名, "改动": new_change,
-                           "证据": str(r.get("证据", ""))[:200],
-                           "receipt_id": receipt_id})
-            # generation CAS for receipt（round16 P1-2）
+
             receipt_gen = r.get("generation")
-            if receipt_gen is not None and int(receipt_gen) != x.generation:
-                continue  # stale receipt → 忽略
+            try:
+                if receipt_gen is None or int(receipt_gen) != x.generation:
+                    stats["拒绝"] += 1
+                    continue
+            except (TypeError, ValueError):
+                stats["拒绝"] += 1
+                continue
+
+            receipt_id = str(r.get("receipt_id", "")).strip()
+            new_change = str(r.get("改动", "")).strip()[:300]
+            if not receipt_id or not new_change:
+                stats["拒绝"] += 1
+                continue
+
+            if any(
+                rc.get("receipt_id") == receipt_id
+                and rc.get("generation") == x.generation
+                for rc in x.回执
+                if isinstance(rc, dict)
+            ):
+                continue
+
+            x.回执.append({
+                "腿": 腿名,
+                "轮次": int(轮次) if 轮次 is not None else None,
+                "generation": x.generation,
+                "改动": new_change,
+                "证据": str(r.get("证据", ""))[:200],
+                "receipt_id": receipt_id,
+            })
             x.尝试次数 += 1
-            if x.状态 in (待改, 未消解):
-                x.状态 = 待复核
+            x.状态 = 待复核
             stats["受理"] += 1
         return stats
 
@@ -161,14 +300,21 @@ class IssueLedger:
         """
         stats = {"已消解": 0, "未消解": 0, "未知id": 0}
         for r in 裁定们 or []:
+            if not isinstance(r, dict):
+                stats["未知id"] += 1
+                continue
             x = self._get(str(r.get("id", "")).strip())
             if x is None:
                 stats["未知id"] += 1
                 continue
-            # per-item generation CAS（外审 round16 P1-1：每条 verdict 必须携带）
+            # per-item generation CAS（每条 verdict 必须携带）
             verdict_gen = r.get("generation")
-            if verdict_gen is None or int(verdict_gen) != x.generation:
-                stats["未知id"] += 1  # stale or missing generation → fail-closed
+            try:
+                if verdict_gen is None or int(verdict_gen) != x.generation:
+                    stats["未知id"] += 1
+                    continue
+            except (TypeError, ValueError):
+                stats["未知id"] += 1
                 continue
             # 状态迁移表（外审 round15 P1-2）
             if x.状态 not in (待复核,):
@@ -198,6 +344,29 @@ class IssueLedger:
                 n += 1
         return n
 
+    def 回退轮修订(self, 轮次: int, 理由: str) -> int:
+        """Invalidate verdicts for receipts produced by a rolled-back round."""
+        marker = int(轮次)
+        changed = 0
+        for issue in self.条目:
+            touched = any(
+                int(receipt.get("轮次", -1)) == marker
+                for receipt in issue.回执
+                if isinstance(receipt, dict)
+            )
+            if touched and issue.状态 in (待复核, 已消解):
+                issue.状态 = 未消解
+                # Rollback invalidates the identity of the reverted repair.
+                # A delayed verdict/receipt from the reverted generation must
+                # never be able to mutate the next repair attempt.
+                issue.generation += 1
+                issue.尝试次数 = 0
+                issue.历史.append(
+                    {"轮次": self.轮次, "裁定": "回退", "理由": str(理由)[:300]}
+                )
+                changed += 1
+        return changed
+
     def 待改条目(self, 级别们: list[str] | None = None, 目标们: list[str] | None = None) -> list[Issue]:
         out = [x for x in self.条目 if x.状态 in (待改, 未消解)]
         if 级别们:
@@ -225,8 +394,8 @@ class IssueLedger:
             return False  # 理由不许为空
         if x.尝试次数 < 2:
             return False  # 未经两次修订不得搁置
-        if x.状态 not in (待改, 未消解, 待复核):
-            return False  # 活跃态+待复核可搁置（待复核时评审可能延迟）
+        if x.状态 not in (待改, 未消解):
+            return False  # 待复核必须先由 reviewer 明确裁定，不能提前旁路
         x.状态 = 搁置
         x.历史.append({"裁定": "搁置", "理由": 理由[:200]})
         return True

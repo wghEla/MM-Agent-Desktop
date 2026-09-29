@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Main window capability: native folder/file picker for workspace and import actions.",
+  "windows": ["main"],
+  "permissions": [
+    "dialog:allow-open"
+  ]
+}

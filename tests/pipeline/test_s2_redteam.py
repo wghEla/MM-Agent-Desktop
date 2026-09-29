@@ -138,19 +138,33 @@ class TestDAGLayers:
 class TestG2GateModule:
     """mmagent/mm/gates/g2.py 的门检模块。"""
 
-    def _setup(self, tmp_path: Path, *, metrics=None, rt_conclusion="对齐", arb=None):
+    def _setup(self, tmp_path: Path, *, metrics=None, red_metrics=None, arb=None):
+        from mmagent.mm.gates.g2 import normalize_red_team_report
+
         root = tmp_path / "g2"
-        (root / "求解" / "问题1").mkdir(parents=True)
+        (root / "求解" / "问题1" / "红队结果").mkdir(parents=True)
         (root / "交接").mkdir()
-        (root / "求解" / "问题1" / "求解_问题1.py").write_text("print(1)", encoding="utf-8")
+        (root / "求解" / "问题1" / "求解_问题1.py").write_text(
+            "print(1)", encoding="utf-8"
+        )
         m = metrics if metrics is not None else {"厚度": 2.17}
+        red = red_metrics if red_metrics is not None else dict(m)
         (root / "交接" / "结果声明_问题1.json").write_text(
-            json.dumps({"问题编号": 1, "核心指标": m}), encoding="utf-8")
-        if rt_conclusion is not None:
-            (root / "交接" / "红队_问题1.json").write_text(
-                json.dumps({"问题编号": 1, "结论": rt_conclusion, "分歧明细": []}), encoding="utf-8")
+            json.dumps({"问题编号": 1, "核心指标": m}), encoding="utf-8"
+        )
+        (root / "求解" / "问题1" / "红队结果" / "复算.json").write_text(
+            json.dumps(red), encoding="utf-8"
+        )
+        # Deliberately let the model carrier claim alignment; Runtime owns the verdict.
+        (root / "交接" / "红队_问题1.json").write_text(
+            json.dumps({"问题编号": 1, "结论": "对齐", "分歧明细": []}),
+            encoding="utf-8",
+        )
+        normalize_red_team_report(root, 1)
         if arb is not None:
-            (root / "交接" / "仲裁_问题1.json").write_text(json.dumps(arb), encoding="utf-8")
+            (root / "交接" / "仲裁_问题1.json").write_text(
+                json.dumps(arb), encoding="utf-8"
+            )
         return root
 
     def test_pass_aligned(self, tmp_path):
@@ -168,7 +182,7 @@ class TestG2GateModule:
 
     def test_fail_rt_misaligned(self, tmp_path):
         from mmagent.mm.gates.g2 import check_g2
-        root = self._setup(tmp_path, rt_conclusion="不齐")
+        root = self._setup(tmp_path, red_metrics={"厚度": 2.50})
         ok, issues = check_g2(root, 1)
         assert not ok
         assert any("不齐" in i for i in issues)

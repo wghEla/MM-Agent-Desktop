@@ -1,0 +1,19 @@
+{
+ "run_id": "run_be4d2a95f093",
+ "full_s1_succeeded": true,
+ "run_state": "PAUSED",
+ "tasks": {
+  "S0.2:读题": "SUCCEEDED",
+  "S0.3:预测": "SUCCEEDED",
+  "S1:路线侦察": "SUCCEEDED",
+  "S1:问1:原型1": "SUCCEEDED",
+  "S1:问1:原型2": "SUCCEEDED",
+  "S1:裁决定稿": "SUCCEEDED",
+  "S2:问1:建模:初验": "FAILED",
+  "S2:问1:返工建模:返工1": "FAILED",
+  "S2:问1:返工建模:返工2": "FAILED",
+  "S2:问1:升格变体1": "RUNNING",
+  "S2:问1:升格变体2": "RUNNING",
+  "S2:问1:升格变体3": "PENDING"
+ }
+}

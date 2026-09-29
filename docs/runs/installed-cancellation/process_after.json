@@ -1,0 +1,7 @@
+{
+ "parent_pid": 41264,
+ "child_pid": 34204,
+ "parent_alive_after": false,
+ "child_alive_after": false,
+ "owned_orphans": []
+}

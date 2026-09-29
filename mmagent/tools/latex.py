@@ -3,16 +3,24 @@ from __future__ import annotations
 
 import re
 import subprocess
+import uuid
 from pathlib import Path
 
 from mmagent.runtime.environment import discover_xelatex
+from mmagent.runtime.tool_env import latex_env
 
 
 class LatexTool:
     """XeLaTeX 编译器包装（工具发现由 EnvironmentManager 负责，Agent 不猜路径）。"""
 
-    def __init__(self, workspace_root: Path, xelatex_path: str | None = None):
+    def __init__(
+        self,
+        workspace_root: Path,
+        xelatex_path: str | None = None,
+        process_manager=None,
+    ):
         self.root = workspace_root
+        self.process_manager = process_manager
         if xelatex_path:
             self.xelatex = xelatex_path
         else:
@@ -21,23 +29,92 @@ class LatexTool:
                 raise RuntimeError(f"XeLaTeX 未发现: {cap.detail}")
             self.xelatex = cap.path
 
-    def compile(self, tex_file: str = "论文/论文.tex", *, timeout_s: float = 120.0) -> dict:
+    def compile(
+        self,
+        tex_file: str = "论文/论文.tex",
+        *,
+        timeout_s: float = 120.0,
+        cancel=None,
+    ) -> dict:
         """编译论文，返回 {"rc", "stdout_tail", "errors", "pages", "log_path"}。"""
         tex_path = self.root / tex_file
         if not tex_path.is_file():
             return {"rc": -1, "stdout_tail": "", "errors": [f"文件不存在: {tex_file}"], "pages": 0}
         workdir = tex_path.parent
-        try:
-            proc = subprocess.run(
-                [self.xelatex, "-interaction=nonstopmode", "-synctex=1",
-                 tex_path.name],
-                cwd=str(workdir), capture_output=True, timeout=timeout_s,
-                stdin=subprocess.DEVNULL,
-            )
-            rc = proc.returncode
-            stdout = proc.stdout.decode("utf-8", errors="replace")[-5000:]
-        except subprocess.TimeoutExpired:
-            return {"rc": -2, "stdout_tail": "编译超时", "errors": ["超时"], "pages": 0}
+        argv = [
+            self.xelatex,
+            "-interaction=nonstopmode",
+            "-synctex=1",
+            tex_path.name,
+        ]
+        if self.process_manager is not None:
+            from mmagent.agent.errors import ToolTimeout
+
+            name = f"latex_{uuid.uuid4().hex[:10]}"
+            try:
+                managed = self.process_manager.spawn(
+                    name,
+                    argv,
+                    cwd=str(workdir),
+                    env=latex_env(),
+                )
+            except (OSError, RuntimeError) as exc:
+                return {
+                    "rc": -1,
+                    "stdout_tail": "",
+                    "errors": [f"XeLaTeX 启动失败: {exc}"],
+                    "pages": 0,
+                }
+            try:
+                try:
+                    rc, out_b, _err_b, timed_out = self.process_manager.communicate(
+                        managed,
+                        timeout_s,
+                        cancel,
+                    )
+                except ToolTimeout as exc:
+                    return {
+                        "rc": -2,
+                        "stdout_tail": "编译超时",
+                        "errors": [f"超时: {exc}"],
+                        "pages": 0,
+                    }
+                stdout = out_b.decode("utf-8", errors="replace")[-5000:]
+                if timed_out:
+                    return {
+                        "rc": -2,
+                        "stdout_tail": stdout or "编译超时",
+                        "errors": ["超时"],
+                        "pages": 0,
+                    }
+            finally:
+                self.process_manager.recycle(name)
+        else:
+            try:
+                proc = subprocess.run(
+                    argv,
+                    cwd=str(workdir),
+                    capture_output=True,
+                    timeout=timeout_s,
+                    stdin=subprocess.DEVNULL,
+                    env=latex_env(),
+                )
+                rc = proc.returncode
+                stdout = proc.stdout.decode("utf-8", errors="replace")[-5000:]
+            except subprocess.TimeoutExpired:
+                return {
+                    "rc": -2,
+                    "stdout_tail": "编译超时",
+                    "errors": ["超时"],
+                    "pages": 0,
+                }
+            except OSError as exc:
+                return {
+                    "rc": -1,
+                    "stdout_tail": "",
+                    "errors": [f"XeLaTeX 启动失败: {exc}"],
+                    "pages": 0,
+                }
 
         log_path = workdir / (tex_path.stem + ".log")
         errors, pages = [], 0
@@ -72,3 +149,50 @@ class LatexTool:
         if not log_path.is_file():
             return 0
         return self.count_pages_text(log_path.read_text(encoding="utf-8", errors="replace"))
+
+
+
+def render_pdf_pages(
+    workspace_root: Path,
+    pdf_file: str = "论文/论文.pdf",
+    *,
+    output_dir: str = "论文/页",
+    dpi: int = 144,
+) -> list[Path]:
+    """Render the current paper PDF into deterministic PNG page images.
+
+    This is a trusted runtime operation rather than an Agent-authored script.
+    Existing page PNGs are removed first so reviewers cannot accidentally inspect
+    stale pages from an older PDF revision.
+    """
+    if dpi < 72 or dpi > 300:
+        raise ValueError("dpi must be between 72 and 300")
+
+    import fitz
+
+    root = Path(workspace_root)
+    pdf_path = root / pdf_file
+    if not pdf_path.is_file():
+        raise FileNotFoundError(f"PDF 不存在: {pdf_file}")
+
+    out = root / output_dir
+    out.mkdir(parents=True, exist_ok=True)
+    for old in out.glob("*.png"):
+        old.unlink()
+
+    rendered: list[Path] = []
+    scale = dpi / 72.0
+    matrix = fitz.Matrix(scale, scale)
+    try:
+        with fitz.open(pdf_path) as doc:
+            for index, page in enumerate(doc, 1):
+                pix = page.get_pixmap(matrix=matrix, alpha=False)
+                path = out / f"page_{index:03d}.png"
+                pix.save(path)
+                rendered.append(path)
+    except Exception as exc:
+        # PyMuPDF exposes several backend-specific exception classes across
+        # versions. Normalize them at the runtime boundary so callers can
+        # handle corrupt/unreadable PDF carriers deterministically.
+        raise RuntimeError(f"PDF 页渲染失败: {exc}") from exc
+    return rendered

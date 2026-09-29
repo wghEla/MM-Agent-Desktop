@@ -44,3 +44,228 @@
   Responses continuation_items、safe_json/parse_retry_after/stop fail-closed、ProviderConfig ref 校验。117→124 测试。
 - 03:20 R2：1 P1（parse_retry_after 未接线 429 路径）。修复 + generate() 级集成测试 4 场景。124→129。
 - 03:30 R3：GO。tag v0.3.0。
+- 09-27 Round2 收口：G5 返工真闭包（图/文强制回执→收回执→逐项裁定 gen CAS→已消解/未消解、
+  算路 upsert 降级放行保 S2 条目、每轮台账落盘、有降级记录的存活条目返工耗尽后回搁置）。
+- 09-27 S5 熔断升格真实化：必选回执 artifact、started/succeeded/failed 事件按状态落账、
+  运行时收回执、每 (id,generation) 一次、终轮熔断必执行；修 len(bool) 崩溃
+  （checkpoint.s5_escalation_extension 从未被测试暴露）。
+- 09-27 S5 升格耗尽→Runtime 登记 (id,generation) 精确降级放行 + 搁置；G5 端回搁置闭环。
+- 09-27 S6 终局：修复后重跑机械 G5 + 新鲜当前 PDF 硬伤终审（S6:出版终审/审稿/S6终审复核.json，
+  defect_hunter scope 扩展），两者都过才 harvest。
+- 09-27 删手工 append 事件的伪测试，换 run_s5/run_g5_rework/run_s6 真实路径行为测试 8 条。
+- 09-27 全量回归 416 passed / 0 failed，Ruff clean。FIDELITY_MATRIX A17/A20/B7/A21 证据更新。
+- 09-27 下一步：重生成 review packet → Round 3 外审。
+- 09-27 外审阻塞：ChatGPT 会话登出（登录页），Round 3 外审待用户登录后同会话提交。
+  转入 PARTIAL 项收口：
+- 09-27 B14：S2 checkpoint 重用补下游级联失效——上游问题因任何原因重算（checkpoint 失效或
+  崩溃后缺失）时，all_downstreams 闭包内的下游 checkpoint 一律删除并强制重算
+  （pipeline.s2_downstream_invalidated 事件）。真实路径测试：仅损坏问题1声明，
+  下游自身 G2 仍过也必须重算。
+- 09-27 E8：有界编译修复协议 compile_repair.py——编译失败→撰稿腿拿日志改 tex（必须回执）→
+  重编译；腿失败或耗尽即 fail-closed。接入 S4 终编译、S5b 初始编译、G5 返工 R51 编译。
+- 09-27 B9：结构守卫补 R38③（附录 lstlisting 清单减少）+ R68⑤（正文插图减少且接收章联动）
+  + R47 代码章判定；guarded_repair.py 实现 改前快照→腿→结构守卫→违规整份回退+留底
+  审稿/回退稿/，接入 G5 返工文路（REVERTED 腿的回执不被受理）。
+- 09-27 全量回归 422 passed / 0 failed，Ruff clean。B9/B14/E8 升 MATCH。
+- 09-27 Round 3 本地收口：同步 GPT source-only closure 到 f94d08e（33544ec 之后 54 提交），
+  按 handoff 执行本地验证。Stage A focused：修 4 个 fixture（S4 定向修订回执、G5 图事务
+  writer-sync 腿、S5 升格失败不再给扩展轮、裁定 generation 不再由 Runtime 代填），149 passed。
+- 09-27 Stage B：新增 tests/pipeline/test_round3_closures.py 12 条区分性真实路径测试——
+  S5 算级联（solver→红队→G2→下游重算→换版清单→绘图→guarded 同步→才收回执）、算失败无回执、
+  清单先于同步且同步失败仍留痕、算升格获胜变体 Runtime 晋升为正典真值、图/算回执自证被拒
+  （S5+G5）、G5 writer-sync 失败保持 active、Change Guard 整份回退、0.45/0.70 区分、
+  守卫快照崩溃恢复、回退即删陈旧回执。调试要点：run_s5 台账只从 checkpoint 事件恢复
+  （磁盘 seed 不可见）；终轮不跑返工；红队脚本必须写 复算.json；叙事级问题不阻塞收敛。
+- 09-27 Stage C：openai_compatible extra.image_input 三态后端 round-trip 测试
+  （True/False/默认 False）+ 前端 checkbox「该兼容渠道支持图片输入」确认存在。
+- 09-27 Stage D：全量 439 passed / 0 failed，Ruff clean，前端 vite build 158KB 通过。
+- 09-27 FIDELITY_MATRIX：B7/B8/B14/E8 → MATCH（含 HEAD 证据），B9 保持 PARTIAL
+  （P2-1 核心结构文件/问题章节数不变量未做），A17/A20 证据刷新仍 PARTIAL。
+  提交推送，不 tag，不 merge。下一步 Round 4 外审。
+- 09-27 Round 4 本地收口：同步 GPT source-only fixes 到 902abe2（f17d248 后 13 提交）。
+  Stage A focused：90 tests，唯一 fixture 回归正是 R4-P1 本身（旧 fixture 故意让失败的图事务
+  走文路）——改断言为「排队一个本可成功的 Writer 响应也不被消费 + 回退日志无 G5:R1:文」。
+- 09-27 新增 tests/pipeline/test_round4_closures.py 9 条区分性测试：S5 多问题算/图 Issue 一律
+  unrouted（零回执、尝试次数不增）、S5 返工后编译/修复先于 round checkpoint（post_rework_compile
+  证据 + 编译失败合并为 硬伤/文/编译 且先于 checkpoint 落账）、G5 页数守卫控制返工轮
+  （new_pass = page_ok AND hunter，20页 vs 基线10 不再提前 break）、compatible 4xx 正文
+  redact_secret 不泄漏 key、reasoning_effort 仅显式能力开启才发送/宣告、profile extra 双能力
+  round-trip。
+- 09-27 Stage B：全量 448 passed / 0 failed，Ruff clean，前端 build 158.10 kB，
+  secret scan 247 文件无真实密钥。A17/A20 保持 PARTIAL（完整 ordering/parity audit 未做），
+  B9 保持 PARTIAL（P2-1 结构不变量）。不 tag、不 merge。下一步 GPT-5.6 Sol 终审。
+- 09-27 Final source gate 本地验证：同步 GPT final fixes 到 cc46332（c4a38cb 后 11 提交）。
+  S6 图修复升级为完整事务（Plotter→Runtime 跑图→guarded Writer 同步 回执_S6_图同步问{q}.json
+  →final compile→机械 G5→新鲜可视化终审→harvest），同步失败即 S6 false、无 harvest、
+  无 checkpoint.s6_complete；Runtime 机械生成 交付/交付报告.md（降级问题、精确 (id,generation)、
+  全部非已消解台账行、运行指标——模型无权隐藏）；compatible Test Connection 增加
+  /models 失败→配置模型最小 chat fallback（max_tokens=1、无 reasoning_effort、4xx 脱敏）。
+- 09-27 验证结果：focused 20 passed；全量 451 passed / 0 failed（129.9s）；Ruff clean
+  （仅 compatible import 排序一处修复）；前端 build 158.10 kB；secret scan 249 文件 clean。
+- 09-27 Gate 决定：Source/Pipeline Gate = GO（Round 1-4 + 终审无已知源码级 P0/P1）；
+  A12 → MATCH（producer+精确消费+G5 fail-closed+S6 披露 全链条测试证据）；
+  A17/A20/B9 保持 PARTIAL；Product Release Gate = HOLD（MSVC/NSIS/安装版取消证明/
+  真实 provider smoke/CI 决议/偏差接受 待办）。不 tag、不 merge、不开第五轮泛化。
+
+## 2026-09-28
+
+- 10:50 接手上下文恢复，HEAD 同步至 8ba3231（5 处桌面发行元数据对齐 1.0.0-rebuild.1）。
+- 10:55 源码回归验证：`uv run ruff check .` clean；`uv run pytest -q` 451 passed / 0 failed (208.1s)；`apps/desktop` npm ci + npm run build 产物 158.10 kB (vite)。元数据对齐验证通过。
+- 11:03 PyInstaller sidecar 构建：`uv run python scripts/build_sidecar.py` 生成 `apps/desktop/src-tauri/binaries/mmagent-sidecar-x86_64-pc-windows-msvc.exe` (40.5MB)，`--help` 验证通过 (exit code 0)。
+- 11:13 独立科学计算受管 Python Runtime：修复 `scripts/build_managed_runtime.py` 在存在 local .venv 时的 `uv python find` 隔离路径，打入 CPython 3.11.16 + 39 个数模科学包；`apps/desktop/src-tauri/resources/runtime/python.exe` import 验证输出 `managed-runtime-ok`，生成 `MMAGENT_RUNTIME.json`。
+- 12:01 MSVC Build Tools 安装：下载官方 vs_BuildTools.exe，用户 UAC 授权后以 `--installPath D:\dev\msvc --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --wait --norestart` 安装至 `D:\dev\msvc` (v17.14.37710.0, cl 19.44.35229, link 14.44.35229, MSBuild 17.14.60, Windows SDK 10.0.26100.0)；vcvars64.bat 初始化环境后 cl/link/msbuild/rustc 1.98.1 验证通过。
+- 12:21 Tauri Release 构建与 NSIS 打包：`apps/desktop` 执行 `npm run tauri -- build --bundles nsis`，生成：
+  - Release 二进制：`apps/desktop/src-tauri/target/release/mmagent-desktop.exe` (12,878,336 字节)
+  - NSIS 安装包：`apps/desktop/src-tauri/target/release/bundle/nsis/MM-Agent Desktop_1.0.0-rebuild.1_x64-setup.exe` (158,394,058 字节，内含受管 Python 科学栈与 Sidecar)。
+- 12:22 隔离静默安装验证：静默安装至 `D:\dev\MM-Agent-Desktop-release-smoke`，安装器 ExitCode = 0。安装目录中 mmagent-desktop.exe、mmagent-sidecar.exe、runtime/python.exe、uninstall.exe 完备。运行安装版受管 Python 执行科学库 import 验证，输出 `installed-runtime-ok`。
+- 12:23 宿主 Python 隔离启动 Smoke 验证：在剥离一切开发态 Python 环境变量 (PATH 仅留 Windows 系统目录，清空 MMAGENT_PYTHON, PYTHONPATH, VIRTUAL_ENV) 的隔离子环境中运行 `mmagent-desktop.exe --startup-smoke`，成功完成随机 loopback token 分配、受管 Python sidecar 启动、带鉴权 `/health` 探活与优雅退出，ExitCode = 0。
+- 12:23 孤儿进程检查：Win32_Process 全局扫描确认无任何残留的 mmagent-desktop.exe / mmagent-sidecar*.exe / runtime/python.exe 孤儿进程。
+- 12:25 Gate 决议：Windows Product Release Package Gate = PASS；Source/Pipeline Gate = GO；整体 Product Release Gate = PARTIAL / HOLD（待办：Installed Live Cancellation Gate、Real Provider Smoke、CI 决议、偏差最终确认）。
+
+- 09-28 Installed Cancellation Gate：安装版（重打包后）通过产品鉴权取消端点取消真实长任务
+  （Runtime 托管 python 父+子 Job Object 树）。0.7s 进入 CANCELLED；父/子进程双亡；0 孤儿；
+  finished 标记不存在；进度冻结；无重试/双写者；全新 sidecar 重启后仍 CANCELLED 且无自动恢复；
+  取消后新 run 原型任务 SUCCEEDED 并干净 PAUSED。证据 docs/runs/installed-cancellation/。
+- 09-28 门内发现并修复两个产品 bug（源码修复→重打包→重装后再跑门）：
+  ① WindowsCredentialStore 在当前 pywin32 下不可用（CredWrite 需 str blob / CredRead 返回
+  utf-16le）——3 focused tests；② 无 key provider 发送空 `Authorization: Bearer ` 被 httpx
+  拒绝——openai_chat/responses 改为省略该头——2 focused tests。全量 456 passed，Ruff clean。
+- 09-28 遗留到 Real Provider Gate：冻结 sidecar 内 Credential READ 路径端到端复验
+  （写路径已在产品内验证，读 round-trip 由 dev 树单测覆盖）。
+- 09-28 Installed Credential Gate：根因为 PyInstaller 漏掉 win32cred 惰性导入的
+  win32timezone（旧 get() 把一切读失败伪装成 not found）。修复：build 脚本加
+  --hidden-import；credentials.py 引入 CredentialNotFound/CredentialReadError 分级
+  + describe() 非机密诊断；sidecar 新增鉴权诊断端点；openai_chat Test Connection
+  补 /models-404→配置模型最小 chat fallback。462 passed（新增跨进程/错误分级/fallback
+  等测试），Ruff clean，重打包+静默重装+smoke 0。
+- 09-28 安装版 E2E（fake secret）：产品边界写 → SQLite 仅存 ref（字节扫描无 secret）
+  → 完全退出 → 全新 sidecar 读到（found=true）→ Test Connection 404→fallback 成功 →
+  环回 relay 强制校验 Bearer，29 次请求 0 失配，安装版 Runtime 完整跑通 S0+S1 全部
+  腿并在 S2 边界干净 PAUSED。测试凭据事后全部从 Credential Manager 删除。
+  Installed Credential Gate = PASS；Real Provider = WAITING_FOR_USER_CREDENTIAL。
+- 09-28 Real Provider Gate（Groq，openai/gpt-oss-20b）：R1 重启后凭据读取、R2 Test
+  Connection 200、R3 真实生成（真实 token 计量）、R4 真实工具调用全部 PASS；image
+  N/A；reasoning_effort 为 gpt-oss 在 Groq 的必填参数（400 证实）→ profile 设 low。
+  两次 provider 证实的配置修正：llama-3.1-8b-instant 已下线(404)→gpt-oss-20b。
+  门内修两个产品 bug：fs.read 读目录 PermissionError 崩腿→干净工具错误；answer_predictor
+  读权限缺 数据档案.json（与其腿指令矛盾）。464 passed，重打包重装后所有真实运行均在
+  新安装版上执行。S0 双腿多次全 SUCCEEDED（v8/v10 同轮双绿），G0 单轮绿灯被小模型
+  schema 方差（英文键/题目≠赛题/坏 JSON）+免费档 429 阻——门每次都正确 fail-closed。
+  Real Provider = CONDITIONAL PASS（唯一遗留：一次礼节性 G0 全绿 run）。secret scan
+  （gsk_ 模式）267 文件 CLEAN；真实 key 仅存 Credential Manager。
+- 09-28 UI v2 Phase-1 Local Validation（Windows 本机，HEAD f317663+改动）：Stage1 前端
+  32 modules 零错误；dev 真实窗口视觉验收 1440×900/≈1220×740/≈1040×700（显示 200%）
+  全清单 PASS（3 项 P3 化妆 nit 登记未改）。功能验证 keyless relay：provider 预设/详情/
+  Test Connection(chat 回退)；运行→S0/S1 绿→G1 fail-closed（缺 交接/计划.json）→FAILED
+  如实呈现；控制门控矩阵；运行历史只读；Artifact text/JSON/PNG/PDF 内嵌渲染；Recent
+  书签跨重启持久。新增 Windows 原生选择器：官方 tauri-plugin-dialog 全链路（npm+crate+
+  main.rs+capabilities 仅 dialog:allow-open），原生 IFileDialog 实测选择→回填→自动命名→
+  创建工作区 ✓。坑：release 构建 npm/crate minor 不一致被拒（api 2.12 vs crate 2.11），
+  对齐 2.11.1/2.7.3 后通过。回归 464 passed/0 failed + Ruff clean（顺手清 credentials.py
+  B007）；sidecar+NSIS 重打包、静默重装、--startup-smoke=0。证据 docs/runs/ui-v2/ 15 张；
+  报告 docs/reviews/v1.0.0-rebuild-ui-v2-local-validation.md。不宣布 Product Release GO。
+- 09-28 UI v2 Phase-2 Local Validation（Windows 本机，HEAD 3d83004+修复）：依赖锁定核对
+  （npm api=2.11.1/dialog=2.7.3；crate =2.11.6/=2.7.3/=2.3.6/=2.6.3）npm ci+build 绿；
+  focused 14 passed；全量 466 passed/0 failed + Ruff clean。Onboarding 三步/新建+打开 Dialog
+  （原生选择器/自动命名/高级手动路径/pending 不可误关）；重复创建与空目录打开的后端错误
+  原文显示在 Dialog 不关闭——暴露并修复产品 bug：sidecar 缺 FileExistsError/FileNotFoundError
+  处理器导致 500 空 body → 补 409/400 映射 + 集成测试。Workspace Tree（Runtime 供给，
+  .mmagent/快照不暴露；PathPolicy 五种逃逸产品 API 全拒）；tree→TEXT/PDF/IMG 预览+相对路径；
+  import→tree 自动刷新（workspaceRevision）；RUNNING 期 live 轮询；preview stability >8s
+  不被轮询清除（distinguishing test）；UI 取消→CANCELLED+0 孤儿；setup checklist 配置→→✓；
+  Recent ×移除（remove≠delete，project.db 完好）+ 完全重启持久；corrupted localStorage 仅
+  源码级验证（devtools 自动化不可用，如实登记）。窗口 1440×900(200%DPI)/≈1220×740/≈1040×700
+  全过。重打包 sidecar+NSIS、静默重装、--startup-smoke=0、0 孤儿。证据
+  docs/runs/ui-v2-phase2/ 16 张+EVIDENCE；报告 v1.0.0-rebuild-ui-v2-phase2-local-validation.md。
+  UI v2 Phase 2 = PASS；不宣布 Product Release GO。
+- 09-29 UI v2 Phase-3 Provider UX Local Validation（Windows 本机，source HEAD feae95f + 测试
+  对齐 644aae5）：依赖锁定核对（npm api=2.11.1/dialog=2.7.3；crate =2.11.6/=2.3.6/=2.7.3/=2.6.3）
+  未跑任何 update；唯一代码改动 = test_openai_chat_connection_models_200_no_fallback 参数化
+  对齐 §29 四判语义（GET-only/no-fallback 断言保留）；focused 97 passed；全量 526/0 + Ruff
+  clean + vite build 绿。dev 真实 Tauri UI（relay3 127.0.0.1:28911，仅 fake key）：Catalog 7
+  预设+capability pills（Runtime 供给；未知协议 400）；OpenAI 预设 Base URL Advanced 锁定；
+  ZCode 预设空 Base URL/Model 可编辑；Compatible auth_style=none 隐藏 Key、key+none→400；
+  发现模型 GET-only 去重稳定排序+manual fallback+0 token（relay 仅见 GET /models）；自定义
+  models_path 往返（/v1/catalog/models）；空 path 禁用往返；预保存 Test 走全局
+  /providers/test-config 不落 provider 行、0 CM 条目；2s relay 延迟双击 Test 仅 1 请求
+  （single-flight）；创建→自动选中；凭据绑定 protocol+base_url（有 key 改任一→400、清除后
+  放行）；清除→Keyless；keyless→加 Key Bearer/x-api-key 选择器且实传 relay；两步删除+
+  secret-first（1168 幂等）；§29 模型缺失 UI 可见 FAIL 判定；错误脱敏 ***REDACTED***；
+  非法 Base URL×5/endpoint path×6 全拒；OAuth fail-closed（无预设宣称/页脚声明）；窗口
+  1440×900/1280×800/≈1100×760（200% DPI）全过。登记 1 项化妆级偏差（§21 编辑态锁定 UI 截图
+  因 AX 索引漂移未捕获，行为由 API 400+source review 覆盖）。重打包 sidecar+NSIS（非复用）、
+  静默重装 release-smoke、--startup-smoke=0、安装版 fake-credential 往返（新建工作区→
+  Compatible+fake key→强杀重启→has_api_key 持久+checklist ✓→Test ✓ Bearer 实传→两步删除
+  联动 CM 删除→cmdkey 0 条目→正常退出 0 进程）。注：强杀 app 会遗留 sidecar 孤儿至手动
+  清理（正常关窗退出干净，与既往取消/退出行为一致，非 Phase-3 新缺陷，已登记）。
+  证据 docs/runs/ui-v2-phase3/ 18 张+EVIDENCE；报告
+  docs/reviews/v1.0.0-rebuild-ui-v2-phase3-local-validation.md。UI v2 Phase 3 = PASS；
+  不宣布 Product Release GO。
+
+
+## 2026-09-29 — Final release-candidate source convergence
+
+- GPT-5.6 Sol reviewed the post-Phase-3 repository instead of reopening broad pipeline work.
+  UI v2 Phase 4 was closed by **evidence aggregation**: every Phase-4 checklist item had
+  already been executed in Phase 1–3 / Windows Package / Installed Cancellation /
+  Installed Credential gates. Report:
+  `docs/reviews/v1.0.0-rebuild-ui-v2-phase4-evidence-aggregation.md`.
+- CI acceptance decision resolved by
+  `docs/decisions/ADR-0001-local-release-evidence-instead-of-mandatory-ci.md`:
+  mandatory current-head GitHub Actions was replaced with exact-head executable Windows
+  regression/package/install evidence for the frozen Windows-first release. No fresh Linux
+  runner is claimed.
+- Residual exact-parity `PARTIAL` rows were risk-reviewed in
+  `docs/reviews/v1.0.0-rebuild-fidelity-partial-disposition.md`. They remain honestly
+  PARTIAL but are explicitly accepted as non-blocking for v1.0.0-rebuild. E4
+  timeout/recycle was promoted to MATCH from focused scheduler tests + Installed
+  Cancellation evidence. The only deliberately open product-evidence item is P11:
+  stronger/stable real-provider simultaneous green G0.
+- Final G0 source audit found one concrete producer-contract weakness from the prior Groq
+  gate: S0.2 Reader artifacts were only existence/JSON checked before G0, while the model
+  had previously drifted canonical fields (`题目`/English keys instead of `赛题`).
+  Source fix in `mmagent/mm/pipeline/s0_s1.py`: attach `ProblemContract` /
+  `DataArchive` directly to `ExpectedArtifact`, and project the same Pydantic
+  `model_json_schema()` into the Reader instruction. G0 itself is unchanged/fail-closed.
+  Distinguishing test added:
+  `test_s0_reader_enforces_canonical_contracts_before_g0`.
+- Truth carriers converged: CURRENT_STATE, LOCAL_HANDOFF_REPORT, PROJECT_PLAN,
+  FIDELITY_MATRIX, SOURCE_MAP, UI_V2; KNOWN_DEVIATIONS duplicate block removed and stale
+  browser-review blocker retired.
+- Final RC source review:
+  `docs/reviews/v1.0.0-rebuild-final-rc-source-review.md`.
+- **Evidence boundary:** last fully locally verified executable baseline remains
+  `6d5a1133e5eb81d054b0bf0d845e3695c60bfd76` with 526 passed / 0 failed, Ruff clean,
+  frontend green, rebuilt NSIS/install/startup and installed fake-credential lifecycle.
+  The new S0 producer-contract hardening is source-only and must be regression-tested and
+  repackaged on the exact final RC HEAD before the stronger/ZCode G0 proof.
+- Do not run another broad fidelity cycle. Next local work is exactly:
+  focused/full regression → exact-head repackage/reinstall/smoke → user-entered real
+  stronger/ZCode credential → installed S0→G0 green → secret scan → final external release
+  review → user tag/merge decision.
+
+- RC S0 contract refinement: added shared required-envelope key constants, generic
+  `ExpectedArtifact.required_json_keys` enforcement, Reader prompt projection of the same
+  required-key lists, and G0 reuse of the ProblemContract key constant. This closes the
+  remaining schema-vs-G0 mismatch where Pydantic defaults could hide an omitted explicit
+  top-level key. Source/test changes remain local-regression pending.
+
+
+- 09-29 real-provider incident follow-up on locally verified `63bbad6` package:
+  focused 119 passed, full 527/0, Ruff/frontend/package/reinstall/startup smoke all green
+  before real API attempts. Four real runs exposed both provider/model variance and source
+  defects. Source fixes landed after the tested baseline:
+  ① Wave now consumes durable `task.rate_limited.retry_after_s`, emits
+  `wave.retry_backoff`, and waits cancellation-aware before retry;
+  ② `ProblemContract` rejects producer artifacts already guaranteed to fail G0
+  (`问题=[]`, blank per-question required semantics, incomplete ambiguity verdicts), so
+  Reader retry happens before S0.3 spends tokens;
+  ③ at max tool turns, valid required artifacts can seal SUCCEEDED without a model closing
+  sentence, while incomplete artifacts still fail closed;
+  ④ Reader gains `fs.list` and is instructed to enumerate actual input filenames before
+  reading, reducing guess/read-directory tool churn;
+  ⑤ effective reasoning is normalized to provider capability declarations, preventing
+  misleading invocation metadata / unsupported effort levels.
+  Review: `docs/reviews/v1.0.0-rebuild-real-provider-incident-source-review.md`.
+  These fixes are source-only and require focused/full regression + exact-head repackage
+  before another paid real-provider attempt.

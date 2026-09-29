@@ -128,10 +128,37 @@ def discover_ghostscript() -> ToolCapability:
 
 
 def managed_python() -> ToolCapability:
-    """受管解释器 = 当前 venv 的 python（产品版由 %LOCALAPPDATA% 受管 runtime 提供）。"""
+    """Resolve and verify the interpreter used for model-authored Python scripts."""
+    import os
     import sys
 
-    return ToolCapability("managed_python", sys.executable, f"{sys.version_info.major}.{sys.version_info.minor}", True, "")
+    configured = os.environ.get("MMAGENT_PYTHON")
+    if configured:
+        candidate = Path(configured)
+    elif getattr(sys, "frozen", False):
+        return ToolCapability(
+            "managed_python",
+            None,
+            None,
+            False,
+            "冻结 sidecar 未收到 MMAGENT_PYTHON；拒绝把 sidecar exe 当解释器",
+        )
+    else:
+        candidate = Path(sys.executable)
+
+    if not candidate.is_file():
+        return ToolCapability(
+            "managed_python", str(candidate), None, False, "受管 Python 文件不存在"
+        )
+    version = _run_version([str(candidate), "--version"])
+    ok = version.startswith("Python 3.11")
+    return ToolCapability(
+        "managed_python",
+        str(candidate),
+        version.split()[-1] if version else None,
+        ok,
+        version[:120] if version else "无法读取版本",
+    )
 
 
 def disk_free_gb(path: str | Path = ".") -> float | None:

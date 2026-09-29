@@ -1,0 +1,37 @@
+{
+ "fresh_sidecar_pid": 64924,
+ "credential_diagnostic": {
+  "ref": "provider/provider_94d4d6bb6e6b/api-key",
+  "target_name": "MM-Agent-Desktop/provider/provider_94d4d6bb6e6b/api-key",
+  "found": true,
+  "blob_len": 112,
+  "sha256_prefix": "39cdceee4441",
+  "blob_kind": "bytes"
+ },
+ "test_connection": {
+  "ok": true,
+  "detail": "models 端点 200"
+ },
+ "test_connection_latency_s": 1.56,
+ "model_correction": {
+  "old_model": "llama-3.1-8b-instant",
+  "error": "404 model_not_found (provider-confirmed)",
+  "available_chat_models": [
+   "allam-2-7b",
+   "openai/gpt-oss-120b",
+   "openai/gpt-oss-20b",
+   "qwen/qwen3.8-27b"
+  ],
+  "chosen": "openai/gpt-oss-20b (smallest general tool-calling text model)",
+  "corrected_model_profile_id": "model_39d2a6aa3bbe",
+  "test_connection_after_correction": {
+   "ok": true,
+   "detail": "models 端点 200"
+  }
+ },
+ "second_correction": {
+  "error": "400: reasoning_effort must be one of low/medium/high (provider REQUIRES the param for gpt-oss)",
+  "resolution": "profile reasoning=low (cheapest tier, provider-mandated)",
+  "model_profile_id": "model_a173e6d6865e"
+ }
+}

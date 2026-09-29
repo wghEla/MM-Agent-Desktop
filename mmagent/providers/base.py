@@ -24,6 +24,25 @@ class BaseProvider(abc.ABC):
 
     protocol: str
 
+    def resolve_model(self, requested: str) -> str:
+        """Resolve a task-level model placeholder to the provider's effective model."""
+        return requested
+
+    def resolve_reasoning(self, requested: str | None) -> str | None:
+        """Resolve task reasoning to what this provider actually declares it can send."""
+        if requested is None:
+            return None
+        levels = self.capabilities().reasoning_levels
+        if not levels:
+            return None
+        if requested in levels:
+            return requested
+        # Role routing has an xhigh tier, while several provider protocols only
+        # declare low/medium/high. Never send a level outside the declared set.
+        if requested == "xhigh" and "high" in levels:
+            return "high"
+        return None
+
     @abc.abstractmethod
     async def generate(
         self,
@@ -42,3 +61,75 @@ class BaseProvider(abc.ABC):
 
     @abc.abstractmethod
     def capabilities(self) -> CapabilitySet: ...
+
+    async def aclose(self) -> None:
+        """Release adapter-owned network resources when present."""
+        client = getattr(self, "_client", None)
+        closer = getattr(client, "aclose", None)
+        if closer is not None:
+            await closer()
+
+
+class ModelBoundProvider(BaseProvider):
+    """Bind a concrete model to an existing protocol adapter.
+
+    Pipeline roles may use the historical "mock" placeholder.  The bound
+    provider converts that placeholder to the user's configured model while
+    preserving explicit non-placeholder model requests.
+    """
+
+    def __init__(
+        self,
+        inner: BaseProvider,
+        model: str,
+        *,
+        reasoning: str | None = None,
+        max_output_tokens: int | None = None,
+        timeout_s: float | None = None,
+    ):
+        if not model.strip():
+            raise ValueError("bound model must be non-empty")
+        self.inner = inner
+        self.model = model.strip()
+        self.reasoning = reasoning
+        self.max_output_tokens = max_output_tokens
+        self.timeout_s = timeout_s
+        self.protocol = inner.protocol
+
+    def resolve_model(self, requested: str) -> str:
+        value = (requested or "").strip()
+        return self.model if value in ("", "mock") else value
+
+    def resolve_reasoning(self, requested: str | None) -> str | None:
+        configured = self.reasoning if self.reasoning is not None else requested
+        return self.inner.resolve_reasoning(configured)
+
+    async def generate(
+        self,
+        messages: list[NormalizedMessage],
+        tools: list[NormalizedTool],
+        *,
+        model: str,
+        reasoning: str | None = None,
+        max_output_tokens: int | None = None,
+        timeout_s: float = 300.0,
+    ) -> NormalizedResponse:
+        return await self.inner.generate(
+            messages,
+            tools,
+            model=self.resolve_model(model),
+            reasoning=self.resolve_reasoning(reasoning),
+            max_output_tokens=(
+                self.max_output_tokens if max_output_tokens is None else max_output_tokens
+            ),
+            timeout_s=self.timeout_s if self.timeout_s is not None else timeout_s,
+        )
+
+    async def test_connection(self) -> dict:
+        return await self.inner.test_connection()
+
+    def capabilities(self) -> CapabilitySet:
+        return self.inner.capabilities()
+
+    async def aclose(self) -> None:
+        await self.inner.aclose()

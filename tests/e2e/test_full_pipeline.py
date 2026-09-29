@@ -15,6 +15,7 @@ from mmagent.mm.pipeline.s0_s1 import check_g1, run_s0
 from mmagent.providers.mock import MockProvider, MockScript, MockTurn
 from mmagent.state import repositories
 from mmagent.tools.filesystem import FsReadTool, FsWriteTool
+from mmagent.tools.python import PythonRunTool
 from mmagent.tools.registry import ToolRegistry
 from mmagent.workspace.permissions import PermissionChecker, RolePermissions
 
@@ -32,7 +33,16 @@ CONTRACT = json.dumps({
 ARCHIVE = json.dumps({"条目": []}, ensure_ascii=False)
 PREDICTION = "# 预测\n\n撞车方法：线性回归\n"
 PLAN = json.dumps({
-    "问题清单": [{"编号": 1, "主方法": "LS", "依赖问题": []}],
+    "问题清单": [{
+        "编号": 1,
+        "主方法": "LS",
+        "依赖问题": [],
+        "锦标赛": {
+            "参赛路线": ["路线A", "路线B", "路线C"],
+            "优胜": "路线A",
+            "依据": "三条原型均真实执行，路线A诊断最好",
+        },
+    }],
     "叙事主线": "数据→厚度",
 }, ensure_ascii=False)
 
@@ -52,12 +62,44 @@ def _s0_script() -> MockScript:
 
 
 def _s1_script() -> MockScript:
-    return MockScript([
+    scout = json.dumps({
+        "问题清单": [{
+            "编号": 1,
+            "路线": [
+                {"路线名": "路线A", "方法": "LS", "方法理由": "基准", "原型目标": "诊断A"},
+                {"路线名": "路线B", "方法": "Robust", "方法理由": "稳健", "原型目标": "诊断B"},
+                {"路线名": "路线C", "方法": "Ridge", "方法理由": "正则", "原型目标": "诊断C"},
+            ],
+        }],
+        "最难问题编号": 1,
+    }, ensure_ascii=False)
+    turns = [
         MockTurn(tool_calls=[
-            ("c1", "fs.write", {"path": "交接/计划.json", "content": PLAN}),
+            ("s1s", "fs.write", {"path": "交接/路线侦察.json", "content": scout}),
+        ]),
+        MockTurn(text="侦察完成"),
+    ]
+    for index, name in enumerate(("A", "B", "C"), 1):
+        turns += [
+            MockTurn(tool_calls=[
+                (
+                    f"s1p{index}",
+                    "fs.write",
+                    {
+                        "path": f"求解/问题1/原型_{index}.py",
+                        "content": f"print('route {name} diagnostic={1.0-index*0.1:.1f}')\n",
+                    },
+                ),
+            ]),
+            MockTurn(text=f"原型{name}完成"),
+        ]
+    turns += [
+        MockTurn(tool_calls=[
+            ("s1f", "fs.write", {"path": "交接/计划.json", "content": PLAN}),
         ]),
         MockTurn(text="规划完成"),
-    ])
+    ]
+    return MockScript(turns)
 
 
 def _setup(tmp_path: Path):
@@ -73,6 +115,7 @@ def _setup(tmp_path: Path):
     reg = ToolRegistry()
     reg.register(FsReadTool())
     reg.register(FsWriteTool())
+    reg.register(PythonRunTool())
 
     perms = RolePermissions(
         role_id="test", read_scopes=("**",), write_scopes=("交接/**",),
@@ -142,7 +185,7 @@ async def test_crash_recovery_preserves_state(tmp_path: Path):
 
     # 模拟崩溃恢复：检查 RUNNING 残留
     from mmagent.api.projects import reset_interrupted_tasks
-    n = reset_interrupted_tasks(handle, run_id)
+    reset_interrupted_tasks(handle, run_id)
     # 第二次 S0：新 run_id（崩溃后重新启动的正确语义）
     provider2 = MockProvider(_s0_script())
     run_id2 = repositories.create_run(db, project_id=handle.project_id, profile="标准")
