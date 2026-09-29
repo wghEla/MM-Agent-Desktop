@@ -65,18 +65,14 @@ async def _wait_retry_backoff(delay_s: float, cancel=None) -> None:
         await asyncio.sleep(delay)
         return
 
-    cancel.check()
-    sleeper = asyncio.create_task(asyncio.sleep(delay))
-    cancelled = asyncio.create_task(cancel.wait())
-    done, pending = await asyncio.wait(
-        {sleeper, cancelled},
-        return_when=asyncio.FIRST_COMPLETED,
-    )
-    for task in pending:
-        task.cancel()
-    await asyncio.gather(*pending, return_exceptions=True)
-    if cancelled in done:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + delay
+    while True:
         cancel.check()
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            return
+        await asyncio.sleep(min(remaining, 0.25))
 
 
 def current_wave_concurrency(
